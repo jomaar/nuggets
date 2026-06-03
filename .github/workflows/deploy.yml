@@ -8,21 +8,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -30,8 +15,10 @@ jobs:
           username: ${{ secrets.NETCUP_USER }}
           password: ${{ secrets.NETCUP_PASSWORD }}
           script: |
+            set -e
             cd ~/nuggets.jomaar.de
             git pull origin main
-            npm ci --production
+            npm ci
+            npx prisma migrate deploy
             npm run build
             pm2 restart nuggets || pm2 start npm --name nuggets -- start
