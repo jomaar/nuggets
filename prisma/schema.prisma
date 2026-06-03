@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Nugget {
+  id           String   @id @default(cuid())
+  contentHtml  String
+  contentPlain String
+  sourceUrl    String?
+  sourceLabel  String?
+  aiChatUrl    String?
+  tags         String   @default("[]") // JSON array as string for SQLite
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reviews      Review[]
+
+  @@map("nuggets")
+}
+
+model Review {
+  id            String   @id @default(cuid())
+  nuggetId      String
+  nugget        Nugget   @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
+  nextReview    DateTime @default(now())
+  intervalDays  Float    @default(1)
+  easeFactor    Float    @default(2.5)  // SM-2 algorithm
+  repetitions   Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@map("reviews")
+}
