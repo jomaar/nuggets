@@ -15,7 +15,7 @@ export async function GET() {
     }
   })
 
-  const due = nuggets.filter(n => {
+  const due = nuggets.filter((n: typeof nuggets[number]) => {
     const latest = n.reviews[0]
     if (!latest) return true  // never reviewed → always due
     return latest.nextReview <= now
