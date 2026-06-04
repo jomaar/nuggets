@@ -21,4 +21,4 @@ jobs:
             npm ci
             npx prisma migrate deploy
             npm run build
-            pm2 restart nuggets || pm2 start npm --name nuggets -- start
+            touch tmp/restart.txt
