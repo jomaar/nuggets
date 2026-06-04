@@ -16,9 +16,10 @@ jobs:
           password: ${{ secrets.NETCUP_PASSWORD }}
           script: |
             set -e
-            cd ~/httpdocs
+            cd ~/nuggets.jomaar.de
             git pull origin main
             npm ci
+            npx prisma generate
             npx prisma migrate deploy
             npm run build
-            touch tmp/restart.txt
+            pm2 restart nuggets
