@@ -66,6 +66,7 @@ export default function AllPage() {
           key={n.id}
           {...n}
           tags={JSON.parse(n.tags || '[]')}
+          onDelete={id => setNuggets(prev => prev.filter(x => x.id !== id))}
         />
       ))}
 

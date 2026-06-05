@@ -11,15 +11,17 @@ interface NuggetCardProps {
   tags: string[]
   nextReview?: Date | null
   onReview?: (id: string, rating: 'again' | 'hard' | 'easy') => void
+  onDelete?: (id: string) => void
   showReviewButtons?: boolean
 }
 
 export default function NuggetCard({
   id, contentHtml, sourceUrl, sourceLabel, aiChatUrl,
-  tags, onReview, showReviewButtons = false
+  tags, onReview, onDelete, showReviewButtons = false
 }: NuggetCardProps) {
   const [reviewed, setReviewed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const handleReview = async (rating: 'again' | 'hard' | 'easy') => {
     if (!onReview || loading) return
@@ -27,6 +29,12 @@ export default function NuggetCard({
     await onReview(id, rating)
     setReviewed(true)
     setLoading(false)
+  }
+
+  const handleDelete = async () => {
+    if (!confirmDelete) { setConfirmDelete(true); return }
+    await fetch(`/api/nuggets/${id}`, { method: 'DELETE' })
+    onDelete?.(id)
   }
 
   return (
@@ -86,6 +94,32 @@ export default function NuggetCard({
           </a>
         )}
       </div>
+
+      {/* Delete button */}
+      {onDelete && (
+        <div className="flex justify-end mt-3">
+          <button
+            onClick={handleDelete}
+            className="text-xs px-3 py-1 rounded-lg transition-all"
+            style={{
+              background: confirmDelete ? '#c0392b' : 'transparent',
+              color: confirmDelete ? 'white' : 'var(--muted)',
+              border: `1px solid ${confirmDelete ? '#c0392b' : 'var(--border)'}`,
+            }}
+          >
+            {confirmDelete ? 'Wirklich löschen?' : 'Löschen'}
+          </button>
+          {confirmDelete && (
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="text-xs px-3 py-1 rounded-lg ml-2"
+              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+            >
+              Abbrechen
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Review buttons */}
       {showReviewButtons && !reviewed && (
