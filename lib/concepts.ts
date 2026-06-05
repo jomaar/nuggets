@@ -4,10 +4,13 @@ import { anthropic } from './anthropic'
 const SYSTEM_PROMPT = `You are a knowledge graph assistant for a personal knowledge management app.
 The user writes notes in German, English, or sometimes includes Greek/Hebrew theological terms.
 
-Your task: analyze a new note, give it a title, and identify the key concepts it discusses.
+Your task: analyze a new note, give it a title, extract concepts, suggest tags, and extract URLs if present.
 
 Rules:
 - Title: one short line (max 80 chars), in the same language as the note, capturing the core idea
+- Tags: 2–4 short keywords in the note's language (e.g. "Gebet", "Motivation", "Leadership")
+- sourceUrl: extract only if a URL is explicitly present in the note text — otherwise omit
+- sourceLabel: short human-readable name for the source (e.g. "YouTube", "Wikipedia", "Buch", domain name)
 - Only include concepts CENTRAL to the text — not briefly mentioned (minimum relevance: 0.3)
 - Relevance scale: 1.0 = main topic, 0.7 = important supporting idea, 0.3 = briefly mentioned
 - Match existing concepts even across languages (ἀγάπη = Liebe = Love = same concept)
@@ -24,6 +27,9 @@ interface ExistingConceptsArg {
 
 interface ClauseResult {
   title: string
+  tags: string[]
+  sourceUrl?: string
+  sourceLabel?: string
   existingConcepts: { id: string; relevance: number }[]
   newConcepts: {
     description: string
@@ -74,6 +80,19 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string): Pr
                 type: 'string',
                 description: 'Short title summarizing the note (max 80 chars, same language as note)',
               },
+              tags: {
+                type: 'array',
+                description: '2–4 short keyword tags in the note\'s language',
+                items: { type: 'string' },
+              },
+              sourceUrl: {
+                type: 'string',
+                description: 'URL found verbatim in the note text — omit if no URL present',
+              },
+              sourceLabel: {
+                type: 'string',
+                description: 'Short human-readable source name (YouTube, Wikipedia, domain, …)',
+              },
               existingConcepts: {
                 type: 'array',
                 description: 'Existing concepts from the list that apply to this note.',
@@ -110,7 +129,7 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string): Pr
                 },
               },
             },
-            required: ['title', 'existingConcepts', 'newConcepts'],
+            required: ['title', 'tags', 'existingConcepts', 'newConcepts'],
           },
         },
       ],
@@ -132,12 +151,23 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string): Pr
       },
     })
 
-    // Update title (only if not already set by the user)
-    if (result.title) {
-      const nugget = await prisma.nugget.findUnique({ where: { id: nuggetId }, select: { title: true } })
-      if (nugget && !nugget.title) {
-        await prisma.nugget.update({ where: { id: nuggetId }, data: { title: result.title } })
+    // Update title, tags, and source URL (only fields not already set by the user)
+    const nugget = await prisma.nugget.findUnique({
+      where: { id: nuggetId },
+      select: { title: true, tags: true, sourceUrl: true },
+    })
+    if (nugget) {
+      const patch: Record<string, unknown> = {}
+      if (result.title && !nugget.title)
+        patch.title = result.title
+      if (result.tags?.length && nugget.tags === '[]')
+        patch.tags = JSON.stringify(result.tags)
+      if (result.sourceUrl && !nugget.sourceUrl) {
+        patch.sourceUrl = result.sourceUrl
+        if (result.sourceLabel) patch.sourceLabel = result.sourceLabel
       }
+      if (Object.keys(patch).length > 0)
+        await prisma.nugget.update({ where: { id: nuggetId }, data: patch })
     }
 
     // Link existing concepts
@@ -165,7 +195,7 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string): Pr
       })
     }
 
-    console.log(`[concepts] nugget ${nuggetId}: title="${result.title}", ${result.existingConcepts?.length ?? 0} matched, ${result.newConcepts?.length ?? 0} new`)
+    console.log(`[concepts] nugget ${nuggetId}: title="${result.title}", tags=${JSON.stringify(result.tags)}, ${result.existingConcepts?.length ?? 0} matched, ${result.newConcepts?.length ?? 0} new`)
   } catch (err) {
     console.error('[concepts] extraction failed:', err)
   }
