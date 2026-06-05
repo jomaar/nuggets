@@ -21,10 +21,17 @@ export default function AllPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const params = search ? `?search=${encodeURIComponent(search)}` : ''
-    const data = await fetch(`/api/nuggets${params}`).then(r => r.json())
-    setNuggets(data)
-    setLoading(false)
+    try {
+      const params = search ? `?search=${encodeURIComponent(search)}` : ''
+      const res = await fetch(`/api/nuggets${params}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setNuggets(data)
+    } catch (e) {
+      console.error('Fehler beim Laden:', e)
+    } finally {
+      setLoading(false)
+    }
   }, [search])
 
   useEffect(() => {
