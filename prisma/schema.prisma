@@ -6,20 +6,74 @@ datasource db {
   provider = "sqlite"
 }
 
-model Nugget {
-  id           String   @id @default(cuid())
-  contentHtml  String
-  contentPlain String
-  sourceUrl    String?
-  sourceLabel  String?
-  aiChatUrl    String?
-  tags         String   @default("[]") // JSON array as string for SQLite
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+model Domain {
+  id      String   @id @default(cuid())
+  name    String   @unique
+  slug    String   @unique
+  icon    String?
 
-  reviews      Review[]
+  nuggets Nugget[]
+
+  @@map("domains")
+}
+
+model Nugget {
+  id              String   @id @default(cuid())
+  title           String   @default("")
+  contentMarkdown String   @default("")
+  contentHtml     String
+  contentPlain    String
+  sourceUrl       String?
+  sourceLabel     String?
+  aiChatUrl       String?
+  tags            String   @default("[]")
+  domainId        String?
+  aiInputTokens   Int      @default(0)
+  aiOutputTokens  Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  domain          Domain?        @relation(fields: [domainId], references: [id])
+  reviews         Review[]
+  concepts        NuggetConcept[]
 
   @@map("nuggets")
+}
+
+model Concept {
+  id          String   @id @default(cuid())
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  labels      ConceptLabel[]
+  nuggets     NuggetConcept[]
+
+  @@map("concepts")
+}
+
+model ConceptLabel {
+  id        String  @id @default(cuid())
+  conceptId String
+  language  String  // "de" | "en" | "el" | "he"
+  term      String
+
+  concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@unique([conceptId, language, term])
+  @@map("concept_labels")
+}
+
+model NuggetConcept {
+  nuggetId  String
+  conceptId String
+  relevance Float   @default(1.0)
+
+  nugget    Nugget  @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
+  concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@id([nuggetId, conceptId])
+  @@map("nugget_concepts")
 }
 
 model Review {
@@ -28,7 +82,7 @@ model Review {
   nugget        Nugget   @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
   nextReview    DateTime @default(now())
   intervalDays  Float    @default(1)
-  easeFactor    Float    @default(2.5)  // SM-2 algorithm
+  easeFactor    Float    @default(2.5)
   repetitions   Int      @default(0)
   createdAt     DateTime @default(now())
 

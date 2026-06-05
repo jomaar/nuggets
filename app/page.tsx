@@ -2,25 +2,44 @@
 
 import { useEffect, useState } from 'react'
 import NuggetCard from '@/components/NuggetCard'
-import BottomNav from '@/components/BottomNav'
+
+interface Domain {
+  id: string
+  name: string
+  slug: string
+  icon: string | null
+}
+
+interface NuggetConceptEntry {
+  relevance: number
+  concept: { id: string; description: string; labels: { language: string; term: string }[] }
+}
 
 interface Nugget {
   id: string
+  title: string
   contentHtml: string
   sourceUrl: string | null
   sourceLabel: string | null
   aiChatUrl: string | null
   tags: string
+  domain: Domain | null
+  concepts: NuggetConceptEntry[]
 }
 
 export default function TodayPage() {
   const [nuggets, setNuggets] = useState<Nugget[]>([])
   const [loading, setLoading] = useState(true)
+  const [isOwner, setIsOwner] = useState(false)
 
   useEffect(() => {
     fetch('/api/due')
       .then(r => r.json())
       .then(data => { setNuggets(data); setLoading(false) })
+    fetch('/api/auth/me')
+      .then(r => r.json())
+      .then((d: { isOwner: boolean }) => setIsOwner(d.isOwner))
+      .catch(() => {})
   }, [])
 
   const handleReview = async (id: string, rating: 'again' | 'hard' | 'easy') => {
@@ -61,12 +80,16 @@ export default function TodayPage() {
           key={n.id}
           {...n}
           tags={JSON.parse(n.tags || '[]')}
-          onReview={handleReview}
-          showReviewButtons
+          title={n.title}
+          domain={n.domain}
+          concepts={n.concepts}
+          defaultExpanded={true}
+          onReview={isOwner ? handleReview : undefined}
+          showReviewButtons={isOwner}
         />
       ))}
 
-      <BottomNav />
+
     </>
   )
 }

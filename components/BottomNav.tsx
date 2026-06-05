@@ -3,9 +3,10 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const links = [
-  { href: '/',      label: 'Heute',   icon: '◈' },
-  { href: '/add',   label: 'Neu',     icon: '+' },
-  { href: '/all',   label: 'Alle',    icon: '≡' },
+  { href: '/',          label: 'Heute',   icon: '◈' },
+  { href: '/add',       label: 'Neu',     icon: '+' },
+  { href: '/all',       label: 'Alle',    icon: '≡' },
+  { href: '/concepts',  label: 'Graph',   icon: '◉' },
 ]
 
 export default function BottomNav() {
@@ -14,9 +15,9 @@ export default function BottomNav() {
     <nav
       className="fixed bottom-0 left-0 right-0 flex justify-around items-center px-4 py-3 z-50"
       style={{
-        background: 'rgba(245,240,232,0.92)',
-        backdropFilter: 'blur(12px)',
+        background: 'var(--surface)',
         borderTop: '1px solid var(--border)',
+        boxShadow: '0 -4px 16px rgba(26,23,20,0.08)',
       }}
     >
       {links.map(({ href, label, icon }) => {

@@ -31,6 +31,9 @@ npx prisma studio
 git push origin main   # triggers deploy
 ```
 
+## Development Plan
+See `PLAN.md` for the full roadmap (Markdown editor, Concept Graph, Claude API, related nuggets).
+
 ## Open TODOs
 1. Push Notifications (iOS, 3×/day)
 2. iOS Shortcut → Share Sheet quick-add

@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback } from 'react'
+import { useRouter, useParams } from 'next/navigation'
 import { marked } from 'marked'
 
 interface Domain {
@@ -11,8 +11,11 @@ interface Domain {
   icon: string | null
 }
 
-export default function AddPage() {
+export default function EditPage() {
   const router = useRouter()
+  const { id } = useParams<{ id: string }>()
+
+  const [title, setTitle]             = useState('')
   const [content, setContent]         = useState('')
   const [preview, setPreview]         = useState(false)
   const [domains, setDomains]         = useState<Domain[]>([])
@@ -21,26 +24,38 @@ export default function AddPage() {
   const [sourceLabel, setSourceLabel] = useState('')
   const [aiChatUrl, setAiChatUrl]     = useState('')
   const [tags, setTags]               = useState('')
+  const [loading, setLoading]         = useState(true)
   const [saving, setSaving]           = useState(false)
 
-  useEffect(() => {
-    fetch('/api/domains')
-      .then(r => r.json())
-      .then((data: Domain[]) => {
-        setDomains(data)
-        const books = data.find(d => d.slug === 'books')
-        if (books) setDomainId(books.id)
-      })
-      .catch(() => {})
-  }, [])
+  const loadNugget = useCallback(async () => {
+    const [nuggetRes, domainsRes] = await Promise.all([
+      fetch(`/api/nuggets/${id}`),
+      fetch('/api/domains'),
+    ])
+    const nugget  = await nuggetRes.json()
+    const domList = await domainsRes.json() as Domain[]
+
+    setDomains(domList)
+    setTitle(nugget.title || '')
+    setContent(nugget.contentMarkdown || nugget.contentPlain || '')
+    setDomainId(nugget.domainId || '')
+    setSourceUrl(nugget.sourceUrl || '')
+    setSourceLabel(nugget.sourceLabel || '')
+    setAiChatUrl(nugget.aiChatUrl || '')
+    setTags(JSON.parse(nugget.tags || '[]').join(', '))
+    setLoading(false)
+  }, [id])
+
+  useEffect(() => { loadNugget() }, [loadNugget])
 
   const handleSave = async () => {
     if (!content.trim()) return
     setSaving(true)
-    await fetch('/api/nuggets', {
-      method: 'POST',
+    await fetch(`/api/nuggets/${id}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        title:       title,
         contentMarkdown: content,
         domainId:    domainId    || null,
         sourceUrl:   sourceUrl   || null,
@@ -65,15 +80,37 @@ export default function AddPage() {
     outline: 'none',
   }
 
+  if (loading) {
+    return (
+      <div className="pt-10">
+        <p className="text-sm" style={{ color: 'var(--muted)' }}>Lädt…</p>
+
+      </div>
+    )
+  }
+
   return (
     <>
       <header className="pt-10 pb-6">
         <h1 className="text-3xl" style={{ fontFamily: 'Playfair Display, serif' }}>
-          Neuer Nugget
+          Nugget bearbeiten
         </h1>
       </header>
 
       <div className="flex flex-col gap-4">
+        {/* Title */}
+        <div>
+          <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
+            Titel <span style={{ opacity: 0.5 }}>(leer = wird von KI generiert)</span>
+          </label>
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="Kurzer, aussagekräftiger Titel…"
+            style={inputStyle}
+          />
+        </div>
+
         {/* Domain selector */}
         {domains.length > 0 && (
           <div>
@@ -137,7 +174,6 @@ export default function AddPage() {
             <textarea
               value={content}
               onChange={e => setContent(e.target.value)}
-              placeholder="Markdown hier schreiben…"
               rows={8}
               style={{ ...inputStyle, resize: 'vertical', lineHeight: '1.6' }}
             />
@@ -184,7 +220,7 @@ export default function AddPage() {
           <input
             value={aiChatUrl}
             onChange={e => setAiChatUrl(e.target.value)}
-            placeholder="https://claude.ai/chat/… oder ChatGPT-Link"
+            placeholder="https://claude.ai/chat/…"
             style={inputStyle}
           />
         </div>
@@ -197,7 +233,7 @@ export default function AddPage() {
           <input
             value={tags}
             onChange={e => setTags(e.target.value)}
-            placeholder="Philosophie, Lernen, Technik…"
+            placeholder="Philosophie, Lernen…"
             style={inputStyle}
           />
         </div>
@@ -205,7 +241,7 @@ export default function AddPage() {
         {/* Buttons */}
         <div className="flex gap-3 mt-2">
           <button
-            onClick={() => router.back()}
+            onClick={() => router.push('/all')}
             className="flex-1 py-4 rounded-2xl text-base font-medium"
             style={{ background: 'var(--surface)', color: 'var(--muted)', border: '1px solid var(--border)' }}
           >
@@ -220,7 +256,7 @@ export default function AddPage() {
               color:      content.trim() ? 'white'         : 'var(--muted)',
             }}
           >
-            {saving ? 'Speichert…' : 'Nugget speichern'}
+            {saving ? 'Speichert…' : 'Änderungen speichern'}
           </button>
         </div>
       </div>

@@ -8,11 +8,10 @@ export async function GET() {
   // Get all nuggets with their latest review
   const nuggets = await prisma.nugget.findMany({
     include: {
-      reviews: {
-        orderBy: { createdAt: 'desc' },
-        take: 1
-      }
-    }
+      reviews: { orderBy: { createdAt: 'desc' }, take: 1 },
+      domain: true,
+      concepts: { include: { concept: { include: { labels: true } } }, orderBy: { relevance: 'desc' } },
+    },
   })
 
   const due = nuggets.filter((n: typeof nuggets[number]) => {
