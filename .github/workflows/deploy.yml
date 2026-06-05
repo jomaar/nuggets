@@ -17,6 +17,7 @@ jobs:
           script: |
             set -e
             cd ~/nuggets.jomaar.de
+            [ -f .env ] || echo "DATABASE_URL=file:$(pwd)/nuggets.db" > .env
             git pull origin main
             npm ci
             npx prisma generate
