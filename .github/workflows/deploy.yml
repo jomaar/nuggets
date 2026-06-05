@@ -22,5 +22,6 @@ jobs:
             npm ci
             npx prisma generate
             npx prisma migrate deploy
+            export NEXT_PUBLIC_BUILD_VERSION="$(git rev-parse --short HEAD) · $(date '+%d.%m.%Y %H:%M')"
             npm run build
             pm2 restart nuggets

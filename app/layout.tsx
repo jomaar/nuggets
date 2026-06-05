@@ -18,6 +18,8 @@ export const viewport: Viewport = {
   initialScale: 1,
 }
 
+const buildVersion = process.env.NEXT_PUBLIC_BUILD_VERSION ?? 'dev'
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="de">
@@ -27,6 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <div className="max-w-2xl mx-auto px-4 pb-24">
           {children}
+          <p className="text-center pb-2" style={{ fontSize: '10px', color: 'var(--border)' }}>
+            {buildVersion}
+          </p>
         </div>
       </body>
     </html>
