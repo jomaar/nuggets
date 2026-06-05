@@ -23,8 +23,11 @@ jobs:
             [ -f .env ] || echo "DATABASE_URL=file:$(pwd)/nuggets.db" > .env
             git pull origin main
             npm ci
+            set -a; source .env; set +a
             npx prisma generate
             npx prisma migrate deploy
             export NEXT_PUBLIC_BUILD_VERSION="$(git rev-parse --short HEAD) · $(date '+%d.%m.%Y %H:%M')"
             npm run build
-            pm2 restart nuggets
+            pm2 delete nuggets || true
+            pm2 start npm --name nuggets -- start
+            pm2 save
