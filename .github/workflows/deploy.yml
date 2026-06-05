@@ -16,6 +16,9 @@ jobs:
           password: ${{ secrets.NETCUP_PASSWORD }}
           script: |
             set -e
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            nvm use 22
             cd ~/nuggets.jomaar.de
             [ -f .env ] || echo "DATABASE_URL=file:$(pwd)/nuggets.db" > .env
             git pull origin main
