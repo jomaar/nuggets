@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { marked } from 'marked'
+import TurndownService from 'turndown'
 
 interface Domain {
   id: string
@@ -42,8 +43,8 @@ export default function AddPage() {
     reader.onload = () => {
       const text = reader.result as string
       if (file.name.endsWith('.html') || file.name.endsWith('.htm')) {
-        const doc = new DOMParser().parseFromString(text, 'text/html')
-        setContent(doc.body.innerText.trim())
+        const td = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' })
+        setContent(td.turndown(text))
       } else {
         setContent(text)
       }
