@@ -18,17 +18,19 @@ automatisch. Abrufbar über Spaced Repetition (SM-2).
 |---|---|
 | Phase 1 | Markdown-Editor, Domains, Edit-Seite, Auth (Session-Cookie), DSGVO (Impressum, Datenschutz, self-hosted Fonts) |
 | Phase 2 | Konzept-Graph DB-Schema (Concept, ConceptLabel, NuggetConcept) |
-| Phase 3 | Claude Sonnet 4.6 Integration: Titel-Generierung, Konzept-Extraktion, Tag-Generierung, URL-Extraktion |
+| Phase 3 | Claude Sonnet 4.6 Integration: Titel-Generierung, Konzept-Extraktion, Tag-Generierung, URL-Extraktion aus Text |
 | Phase 4 | Konzept-Chips auf NuggetCard, /concepts Übersicht, /concepts/[id] Detailseite |
-| Infra | Deployment auf Netcup via GitHub Actions, Node 22, pm2, prisma migrate deploy |
+| Infra | Deployment auf Netcup via GitHub Actions, Node 22, pm2, prisma migrate deploy + seed |
 | UX | NuggetCard ausklappbar, BottomNav im Root-Layout, AI-generierte Fallback-Titel |
 | Tracking | Token-/Kosten-Anzeige für Owner auf /all |
+| Security | SSH-Key Auth auf Netcup, Root-Passwort geändert, Session-Cookie-Auth |
+| Import | "↑ Datei laden"-Button in Add + Edit (.md, .txt, .html → Markdown via turndown) |
 
 ### Produktion
 - URL: nuggets.jomaar.de
-- DB: `prisma/prod.db` (SQLite auf Netcup)
-- Modell: `claude-sonnet-4-6`
-- Alle 5 Migrations angewandt, Domains geseedet
+- DB: `prisma/prod.db` (SQLite auf Netcup), aktuell Testdaten
+- Modell: `claude-sonnet-4-6`, max_tokens: 4096
+- Alle Migrations angewandt, Domains geseedet
 
 ---
 
@@ -36,25 +38,43 @@ automatisch. Abrufbar über Spaced Repetition (SM-2).
 
 | # | Aufgabe | Prio | Notiz |
 |---|---------|------|-------|
-| 1 | ⚠️ ANTHROPIC_API_KEY rotieren | hoch | War kurz in Chat-Verlauf sichtbar |
+| 1 | Produktions-DB neu aufsetzen | hoch | Testdaten löschen, sauber starten (Befehl siehe unten) |
 | 2 | Konzepte bei PATCH neu extrahieren | mittel | Aktuell nur bei POST (neuer Nugget) |
-| 3 | Batch-Re-Extraktion für alte Nuggets | mittel | Bestehende Nuggets haben noch keine Konzepte/Titel |
+| 3 | Batch-Datei-Import | mittel | Mehrere Dateien auswählen → je ein Nugget |
 | 4 | Force-directed Graph-Visualisierung | mittel | d3 oder react-force-graph, /graph Route |
-| 5 | Push Notifications (iOS, 3×/day) | mittel | Web Push API |
+| 5 | Push Notifications (iOS, 3×/day) | niedrig | Web Push API |
 | 6 | iOS Shortcut → Share Sheet quick-add | niedrig | |
 | 7 | icon-192.png / icon-512.png | niedrig | PWA-Icons fehlen noch |
 
 ---
 
-## Nächste Schritte (Empfehlung)
+## Server-Befehle (Referenz)
 
-**Kurzfristig:**
-1. API-Key rotieren (Sicherheit)
-2. Konzepte bei PATCH re-extrahieren (Konsistenz beim Bearbeiten)
-3. Batch-Endpunkt für alte Nuggets (`POST /api/admin/reextract`)
+### DB neu aufsetzen (Testdaten löschen)
+```bash
+ssh root@37.120.184.77
+rm ~/nuggets.jomaar.de/prisma/prod.db
+cd ~/nuggets.jomaar.de
+export $(grep -v '^#' .env | xargs)
+npx prisma migrate deploy
+npx prisma db seed
+```
 
-**Mittelfristig:**
-4. Graph-Visualisierung — die Konzept-Daten sind da, fehlt nur der visuelle Layer
+### .env geändert (neuer API-Key, neues Secret)
+```bash
+ssh root@37.120.184.77
+cd ~/nuggets.jomaar.de && bash scripts/reload.sh
+```
+
+### Logs prüfen
+```bash
+ssh root@37.120.184.77 "pm2 logs nuggets --lines 30 --nostream"
+```
+
+### DB abfragen
+```bash
+ssh root@37.120.184.77 "sqlite3 ~/nuggets.jomaar.de/prisma/prod.db 'SELECT id, title, tags FROM nuggets ORDER BY createdAt DESC LIMIT 5;'"
+```
 
 ---
 
