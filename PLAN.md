@@ -48,6 +48,148 @@ automatisch. Abrufbar über Spaced Repetition (SM-2).
 
 ---
 
+## Phase 5 — KI-Kernkomponente verbessern
+
+Dies ist die nächste große Entwicklungsphase. Ziel: aus rohem Input (Text, Datei, URL)
+wird ein sauber strukturierter, verlustfrei verdichteter Wissensnugget.
+
+---
+
+### 5a — Content-Überarbeitung durch Claude (hohe Prio)
+
+**Problem:** Rohtexte aus KI-Chats oder Markdown-Exporten sind oft redundant, schlecht
+strukturiert, enthalten Nachfragen, Gesprächsartefakte und Wiederholungen.
+
+**Lösung:** Claude überarbeitet den Inhalt aktiv vor dem Speichern:
+- Eliminiert Redundanz, ohne Wissen zu verlieren
+- Strukturiert neu (Überschriften, Absätze, ggf. Aufzählungen)
+- Kürzt ohne Informationsverlust
+- Behält Fachbegriffe, Zitate, Quellverweise
+
+**Umsetzung:**
+- Zweistufiger API-Aufruf: 1. Inhalt überarbeiten → 2. Konzepte extrahieren (wie heute)
+- Oder: erweitertes Tool mit `revisedContent` als zusätzlichem Ausgabefeld
+- Überarbeiteter Text wird als `contentMarkdown` gespeichert (Original kann optional erhalten bleiben)
+- Toggle im Formular: "KI-Überarbeitung aktivieren" (default: an)
+
+---
+
+### 5b — Domain-spezifische Prompt-Injections (hohe Prio)
+
+**Problem:** Theologie (NT-Griechisch, Exegese, Konzepte wie ἀγάπη vs. φιλία) braucht
+ganz andere Anweisungen als Business/IoT oder Gesundheit.
+
+**Lösung:** Jede Domain hat einen eigenen Zusatz-Prompt, der in den System-Prompt injiziert wird.
+
+**Umsetzung:**
+- `domainPrompt`-Feld auf dem `Domain`-Model (Prisma-Migration nötig)
+- In `lib/concepts.ts`: `SYSTEM_PROMPT + '\n\n' + domain.domainPrompt`
+- Verwaltung über Seed oder Admin-UI (vorerst Seed)
+
+**Entwurf Domain-Prompts:**
+```
+faith: "This domain covers biblical theology and exegesis. Greek terms (ἀγάπη, φιλία, ἔρως, 
+        λόγος etc.) are DISTINCT concepts — never merge them. Hebrew terms should be 
+        transliterated. Distinguish NT from OT usage carefully."
+
+business: "This domain covers business, technology, and IoT. Focus on practical frameworks,
+           processes, and technical concepts. Distinguish between strategy and implementation."
+
+health: "This domain covers health, fitness, and nutrition. Prefer evidence-based concepts.
+         Distinguish between mental and physical health topics."
+
+books: "This domain covers book notes, philosophy, and general knowledge. Capture the 
+        author's core argument and key concepts. Note direct quotes explicitly."
+```
+
+---
+
+### 5c — Per-Nugget Prompt-Ergänzung (mittlere Prio)
+
+**Problem:** Manchmal will man Claude für einen bestimmten Nugget auf etwas Besonderes
+hinweisen (z.B. "Fokus auf den Unterschied zwischen Paulus und Johannes").
+
+**Lösung:** Optionales Textfeld im Formular "Hinweis an KI" — wird als zusätzlicher
+Kontext an Claude übergeben, aber nicht gespeichert.
+
+**Umsetzung:**
+- State `aiHint` in `app/add/page.tsx` und `app/edit/[id]/page.tsx`
+- Wird im API-Body mitgeschickt: `{ contentMarkdown, aiHint, ... }`
+- In `extractAndLinkConcepts`: als zusätzliche User-Message oder System-Prompt-Ergänzung
+- Nicht in der DB gespeichert (einmaliger Hinweis)
+
+---
+
+### 5d — URL-Import: Webseite → Nugget (mittlere Prio)
+
+**Problem:** Manchmal reicht ein Link — die Seite soll automatisch geladen und zu einem
+Nugget verarbeitet werden.
+
+**Fälle:**
+1. Beliebige URL → Seite laden → Text extrahieren → Claude überarbeitet zu Nugget
+2. Claude.ai / ChatGPT public link → Konversation extrahieren → zu Nugget verdichten
+
+**Umsetzung:**
+- Formular erkennt, wenn der Inhalt nur eine URL ist
+- Server-seitiger Fetch (nicht client, wegen CORS): `POST /api/fetch-url { url }`
+- HTML → Markdown via `turndown` (serverseitig)
+- Dann normaler Überarbeitungs- + Extraktions-Flow
+- `sourceUrl` wird automatisch gesetzt
+
+**Einschränkungen:** Viele Seiten blockieren Server-Requests (kein JS-Rendering). Öffentliche
+KI-Chat-Links sind oft zugänglich, aber das Format variiert je nach Plattform.
+
+---
+
+### 5e — Konzept-Skalierung & Prompt-Effizienz (strategische Frage)
+
+**Problem:** Mit wachsendem Konzeptgraph wird die Liste der bestehenden Konzepte im Prompt
+immer länger → höhere Kosten, langsamere Antworten, schlechtere Fokussierung.
+
+**Vergleich mit Karpathy-Ansatz:** Karpathys Wiki ist ein flaches Dokument ohne KI-Matching.
+Nuggets geht weiter: strukturierter Graph, sprachübergreifend, mit Relevanzgewichtung.
+Der Mehrwert entsteht erst wenn der Graph groß ist — aber dann wird der Prompt groß.
+
+**Mögliche Lösungen:**
+
+1. **Domain-Filterung** (einfach): Nur Konzepte aus der gleichen Domain an Claude schicken.
+   Verliert domänen-übergreifende Verbindungen, aber reduziert Prompt-Größe stark.
+
+2. **Frequenz-/Relevanz-Filter** (mittel): Nur Konzepte mit ≥ N Nuggets in den Prompt.
+   Seltene Konzepte werden nicht zum Matching angeboten, aber neu angelegt wenn passend.
+
+3. **Lokales Keyword-Matching** (mittel, kein KI-Overhead): Vor dem API-Aufruf per
+   Algorithmus prüfen, welche Konzept-Labels im Text vorkommen (Substring-Match, normalisiert).
+   Diese vorgematchten Konzepte prominent in den Prompt — Rest weglassen.
+   Reduziert KI-Arbeit für offensichtliche Matches, ohne Qualitätsverlust.
+
+4. **Embedding-basiertes Pre-Filtering** (aufwändig): Vektor-Ähnlichkeit um relevante
+   Konzepte vorab zu selektieren. Benötigt Embedding-API oder lokales Modell.
+
+**Empfehlung:** Erst 3 (lokales Keyword-Matching) implementieren — kostenlos, schnell,
+kombinierbar mit allen anderen Ansätzen. Dann beobachten ab welcher Graph-Größe es
+relevant wird.
+
+---
+
+### 5f — Inline Concept-Links im Text (niedrige Prio, hoher Mehrwert)
+
+**Idee:** Konzeptbegriffe werden direkt im Nugget-Text verlinkt (wie Wikipedia), nicht
+nur als Chips am Ende.
+
+**Beispiel:**
+```
+"Paulus verwendet [ἀγάπη](/concepts/abc123) in einem anderen Sinn als [φιλία](/concepts/def456)..."
+```
+
+**Umsetzung:**
+- Nach der Konzept-Extraktion: Text-Postprocessing
+- Für jeden verknüpften Begriff: ersten Treffer im Text durch Markdown-Link ersetzen
+- Nur erste Erwähnung verlinken (wie Wikipedia)
+- Nur wenn der Begriff exakt im Text vorkommt (kein Fuzzy-Match)
+
+---
+
 ## Server-Befehle (Referenz)
 
 ### DB neu aufsetzen (Testdaten löschen)
