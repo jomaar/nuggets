@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { marked } from 'marked'
 
@@ -22,6 +22,7 @@ export default function AddPage() {
   const [aiChatUrl, setAiChatUrl]     = useState('')
   const [tags, setTags]               = useState('')
   const [saving, setSaving]           = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetch('/api/domains')
@@ -33,6 +34,23 @@ export default function AddPage() {
       })
       .catch(() => {})
   }, [])
+
+  const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = reader.result as string
+      if (file.name.endsWith('.html') || file.name.endsWith('.htm')) {
+        const doc = new DOMParser().parseFromString(text, 'text/html')
+        setContent(doc.body.innerText.trim())
+      } else {
+        setContent(text)
+      }
+    }
+    reader.readAsText(file, 'UTF-8')
+    e.target.value = ''
+  }
 
   const handleSave = async () => {
     if (!content.trim()) return
@@ -102,10 +120,27 @@ export default function AddPage() {
 
         {/* Content with Edit / Preview toggle */}
         <div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".md,.txt,.html,.htm"
+            onChange={handleFileLoad}
+            style={{ display: 'none' }}
+          />
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
-              Inhalt *
-            </label>
+            <div className="flex items-center gap-2">
+              <label className="text-xs tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
+                Inhalt *
+              </label>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-xs px-2 py-0.5 rounded-lg"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                ↑ Datei laden
+              </button>
+            </div>
             <div className="flex gap-1">
               <button
                 type="button"
