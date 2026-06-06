@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { marked } from 'marked'
+import TurndownService from 'turndown'
 
 interface Domain {
   id: string
@@ -10,6 +11,8 @@ interface Domain {
   slug: string
   icon: string | null
 }
+
+const td = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' })
 
 export default function EditPage() {
   const router = useRouter()
@@ -26,6 +29,7 @@ export default function EditPage() {
   const [tags, setTags]               = useState('')
   const [loading, setLoading]         = useState(true)
   const [saving, setSaving]           = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadNugget = useCallback(async () => {
     const [nuggetRes, domainsRes] = await Promise.all([
@@ -37,7 +41,14 @@ export default function EditPage() {
 
     setDomains(domList)
     setTitle(nugget.title || '')
-    setContent(nugget.contentMarkdown || nugget.contentPlain || '')
+    // Prefer contentMarkdown; for old nuggets without it, convert contentHtml to Markdown
+    if (nugget.contentMarkdown) {
+      setContent(nugget.contentMarkdown)
+    } else if (nugget.contentHtml) {
+      setContent(td.turndown(nugget.contentHtml))
+    } else {
+      setContent(nugget.contentPlain || '')
+    }
     setDomainId(nugget.domainId || '')
     setSourceUrl(nugget.sourceUrl || '')
     setSourceLabel(nugget.sourceLabel || '')
@@ -47,6 +58,22 @@ export default function EditPage() {
   }, [id])
 
   useEffect(() => { loadNugget() }, [loadNugget])
+
+  const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = reader.result as string
+      if (file.name.endsWith('.html') || file.name.endsWith('.htm')) {
+        setContent(td.turndown(text))
+      } else {
+        setContent(text)
+      }
+    }
+    reader.readAsText(file, 'UTF-8')
+    e.target.value = ''
+  }
 
   const handleSave = async () => {
     if (!content.trim()) return
@@ -84,7 +111,6 @@ export default function EditPage() {
     return (
       <div className="pt-10">
         <p className="text-sm" style={{ color: 'var(--muted)' }}>Lädt…</p>
-
       </div>
     )
   }
@@ -139,10 +165,27 @@ export default function EditPage() {
 
         {/* Content with Edit / Preview toggle */}
         <div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".md,.txt,.html,.htm"
+            onChange={handleFileLoad}
+            style={{ display: 'none' }}
+          />
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
-              Inhalt *
-            </label>
+            <div className="flex items-center gap-2">
+              <label className="text-xs tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
+                Inhalt *
+              </label>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-xs px-2 py-0.5 rounded-lg"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                ↑ Datei laden
+              </button>
+            </div>
             <div className="flex gap-1">
               <button
                 type="button"
@@ -260,8 +303,6 @@ export default function EditPage() {
           </button>
         </div>
       </div>
-
-
     </>
   )
 }
