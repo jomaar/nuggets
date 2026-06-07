@@ -98,17 +98,26 @@ export default function AllPage() {
             )}
           </div>
           {isOwner ? (
-            <button
-              onClick={async () => {
-                await fetch('/api/auth/logout', { method: 'POST' })
-                setIsOwner(false)
-                setStats(null)
-              }}
-              className="text-xs px-3 py-1 rounded-lg"
-              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-            >
-              Abmelden
-            </button>
+            <div className="flex items-center gap-2">
+              <a
+                href="/admin"
+                className="text-xs px-3 py-1 rounded-lg"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                ⚙️ Prompts
+              </a>
+              <button
+                onClick={async () => {
+                  await fetch('/api/auth/logout', { method: 'POST' })
+                  setIsOwner(false)
+                  setStats(null)
+                }}
+                className="text-xs px-3 py-1 rounded-lg"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                Abmelden
+              </button>
+            </div>
           ) : (
             <a
               href="/login"

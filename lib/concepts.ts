@@ -1,5 +1,6 @@
 import { prisma } from './prisma'
 import { anthropic } from './anthropic'
+import { normalizeToHtml, htmlToPlain } from './content'
 
 const SYSTEM_PROMPT = `You are a knowledge graph assistant for a personal knowledge management app.
 The user writes notes in German, English, or sometimes includes Greek/Hebrew theological terms.
@@ -19,6 +20,19 @@ Rules:
 - Description: one concise language-neutral sentence explaining the concept
 - Labels: detect the language of each term and tag it ("de", "en", "el" for Greek, "he" for Hebrew)`
 
+const REVISION_PROMPT = `
+
+Additionally, revise the note's content and return it as "revisedContent" (Markdown, same language as the note):
+- Eliminate redundancy and conversational artifacts (questions, repetitions) without losing information
+- Restructure for clarity (headings, paragraphs, lists where helpful)
+- Shorten without information loss
+- Preserve technical terms, direct quotes, and source references verbatim`
+
+interface ExtractionOptions {
+  domainId?: string | null
+  reviseContent?: boolean
+}
+
 interface ExistingConceptsArg {
   id: string
   description: string
@@ -30,6 +44,7 @@ interface ClauseResult {
   tags: string[]
   sourceUrl?: string
   sourceLabel?: string
+  revisedContent?: string
   existingConcepts: { id: string; relevance: number }[]
   newConcepts: {
     description: string
@@ -39,21 +54,29 @@ interface ClauseResult {
 }
 
 /**
- * Calls Claude to generate a title, extract concepts, and link them to the nugget.
- * Never throws — failures are logged but do not affect the nugget.
+ * Calls Claude to generate a title, extract concepts, optionally revise the content,
+ * and link concepts to the nugget. Never throws — failures are logged but do not affect the nugget.
  */
-export async function extractAndLinkConcepts(nuggetId: string, text: string): Promise<void> {
+export async function extractAndLinkConcepts(nuggetId: string, text: string, options: ExtractionOptions = {}): Promise<void> {
   if (!process.env.ANTHROPIC_API_KEY) {
     console.warn('[concepts] ANTHROPIC_API_KEY not set — skipping extraction')
     return
   }
   if (!text.trim()) return
 
+  const { domainId, reviseContent } = options
+
   try {
-    const existing = await prisma.concept.findMany({
-      include: { labels: { select: { language: true, term: true } } },
-      orderBy: { createdAt: 'asc' },
-    })
+    const [existing, domain, settings] = await Promise.all([
+      prisma.concept.findMany({
+        include: { labels: { select: { language: true, term: true } } },
+        orderBy: { createdAt: 'asc' },
+      }),
+      domainId
+        ? prisma.domain.findUnique({ where: { id: domainId }, select: { domainPrompt: true } })
+        : Promise.resolve(null),
+      prisma.appSettings.findUnique({ where: { id: 'global' }, select: { globalPromptAddition: true } }),
+    ])
 
     const existingForPrompt: ExistingConceptsArg[] = existing.map(c => ({
       id: c.id,
@@ -65,10 +88,15 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string): Pr
       ? `Existing concepts in the knowledge graph:\n${JSON.stringify(existingForPrompt, null, 2)}\n\nNew note to analyze:\n"${text}"`
       : `No existing concepts yet.\n\nNew note to analyze:\n"${text}"`
 
+    let systemPrompt = SYSTEM_PROMPT
+    if (settings?.globalPromptAddition) systemPrompt += `\n\n${settings.globalPromptAddition}`
+    if (domain?.domainPrompt) systemPrompt += `\n\n${domain.domainPrompt}`
+    if (reviseContent) systemPrompt += REVISION_PROMPT
+
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       tools: [
         {
           name: 'save_concepts',
@@ -92,6 +120,10 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string): Pr
               sourceLabel: {
                 type: 'string',
                 description: 'Short human-readable source name (YouTube, Wikipedia, domain, …)',
+              },
+              revisedContent: {
+                type: 'string',
+                description: 'Revised, restructured Markdown version of the note — only include if content revision was requested in the instructions',
               },
               existingConcepts: {
                 type: 'array',
@@ -165,6 +197,12 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string): Pr
       if (result.sourceUrl && !nugget.sourceUrl) {
         patch.sourceUrl = result.sourceUrl
         if (result.sourceLabel) patch.sourceLabel = result.sourceLabel
+      }
+      if (reviseContent && result.revisedContent?.trim()) {
+        const contentHtml = normalizeToHtml(result.revisedContent)
+        patch.contentMarkdown = result.revisedContent
+        patch.contentHtml     = contentHtml
+        patch.contentPlain    = htmlToPlain(contentHtml)
       }
       if (Object.keys(patch).length > 0)
         await prisma.nugget.update({ where: { id: nuggetId }, data: patch })

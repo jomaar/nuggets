@@ -25,6 +25,9 @@ automatisch. Abrufbar über Spaced Repetition (SM-2).
 | Tracking | Token-/Kosten-Anzeige für Owner auf /all |
 | Security | SSH-Key Auth auf Netcup, Root-Passwort geändert, Session-Cookie-Auth |
 | Import | "↑ Datei laden"-Button in Add + Edit (.md, .txt, .html → Markdown via turndown) |
+| Phase 5a | Content-Überarbeitung durch Claude (`revisedContent` im Tool-Schema, Toggle "✨ KI-Überarbeitung" in Add) |
+| Phase 5b | Domain-spezifische Prompt-Injections (`domainPrompt`-Feld auf Domain, in System-Prompt eingehängt) |
+| Admin | `/admin`-Seite (owner-only): Globaler Prompt-Zusatz + Domain-Prompts live editierbar, persistiert in `AppSettings`/`Domain` |
 
 ### Produktion
 - URL: nuggets.jomaar.de
@@ -55,7 +58,17 @@ wird ein sauber strukturierter, verlustfrei verdichteter Wissensnugget.
 
 ---
 
-### 5a — Content-Überarbeitung durch Claude (hohe Prio)
+### ✅ 5a — Content-Überarbeitung durch Claude (erledigt)
+
+**Umsetzung:** Kein zweistufiger Aufruf — `save_concepts`-Tool um optionales Feld
+`revisedContent` erweitert; System-Prompt bekommt bei aktivem Toggle einen
+Revisions-Zusatz (Redundanz raus, Struktur rein, Kürzung ohne Infoverlust).
+Ergebnis ersetzt `contentMarkdown`/`contentHtml`/`contentPlain`. Toggle
+"✨ KI-Überarbeitung" im Add-Formular, Default: an. Original wird nicht
+separat gespeichert (bewusste Entscheidung — Edit-Formular reicht zum Korrigieren).
+
+<details><summary>Ursprünglicher Entwurf</summary>
+
 
 **Problem:** Rohtexte aus KI-Chats oder Markdown-Exporten sind oft redundant, schlecht
 strukturiert, enthalten Nachfragen, Gesprächsartefakte und Wiederholungen.
@@ -72,9 +85,28 @@ strukturiert, enthalten Nachfragen, Gesprächsartefakte und Wiederholungen.
 - Überarbeiteter Text wird als `contentMarkdown` gespeichert (Original kann optional erhalten bleiben)
 - Toggle im Formular: "KI-Überarbeitung aktivieren" (default: an)
 
+</details>
+
 ---
 
-### 5b — Domain-spezifische Prompt-Injections (hohe Prio)
+### ✅ 5b — Domain-spezifische Prompt-Injections (erledigt)
+
+**Umsetzung:** `domainPrompt String?` auf `Domain` (Migration `add_domain_prompt`),
+in `prisma/seed.ts` mit den vier Entwürfen befüllt, in `extractAndLinkConcepts`
+geladen und an `SYSTEM_PROMPT` angehängt. `/api/domains` liefert `domainPrompt`
+bewusst nicht aus (`select` eingeschränkt — kein Client-Bedarf).
+
+**Erweiterung — Admin-UI (`/admin`, owner-only):**
+Domain-Prompts und ein zusätzlicher *globaler Zusatz* (`AppSettings.globalPromptAddition`,
+Singleton-Tabelle, Migration `add_app_settings`) sind live editierbar über
+`GET/PATCH /api/admin/prompts`. Bewusste Architektur-Entscheidung: Der Code-`SYSTEM_PROMPT`
+bleibt unangetastet (strukturkritisch — Tool-Schema-Vertrag), nur **Zusätze** werden
+admin-editierbar und in dieser Reihenfolge angehängt:
+`SYSTEM_PROMPT + globalPromptAddition + domainPrompt + (REVISION_PROMPT)`.
+Geschützt über `proxy.ts` (Seite) und Cookie-Check in der Route (API).
+
+<details><summary>Ursprünglicher Entwurf</summary>
+
 
 **Problem:** Theologie (NT-Griechisch, Exegese, Konzepte wie ἀγάπη vs. φιλία) braucht
 ganz andere Anweisungen als Business/IoT oder Gesundheit.
@@ -101,6 +133,8 @@ health: "This domain covers health, fitness, and nutrition. Prefer evidence-base
 books: "This domain covers book notes, philosophy, and general knowledge. Capture the 
         author's core argument and key concepts. Note direct quotes explicitly."
 ```
+
+</details>
 
 ---
 

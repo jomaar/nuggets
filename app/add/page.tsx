@@ -22,6 +22,7 @@ export default function AddPage() {
   const [sourceLabel, setSourceLabel] = useState('')
   const [aiChatUrl, setAiChatUrl]     = useState('')
   const [tags, setTags]               = useState('')
+  const [reviseContent, setReviseContent] = useState(true)
   const [saving, setSaving]           = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -66,6 +67,7 @@ export default function AddPage() {
         sourceLabel: sourceLabel || null,
         aiChatUrl:   aiChatUrl   || null,
         tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+        reviseContent,
       }),
     })
     setSaving(false)
@@ -184,6 +186,23 @@ export default function AddPage() {
               dangerouslySetInnerHTML={{ __html: marked(content) as string }}
             />
           )}
+          <div className="flex items-center justify-between mt-2">
+            <span className="text-xs" style={{ color: 'var(--muted)' }}>
+              ✨ KI-Überarbeitung <span style={{ opacity: 0.5 }}>(Struktur, Redundanz, Kürzung)</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setReviseContent(v => !v)}
+              className="text-xs px-3 py-1 rounded-lg transition-all"
+              style={{
+                background: reviseContent ? 'var(--accent)' : 'transparent',
+                color:      reviseContent ? 'white'         : 'var(--muted)',
+                border: `1px solid ${reviseContent ? 'var(--accent)' : 'var(--border)'}`,
+              }}
+            >
+              {reviseContent ? 'An' : 'Aus'}
+            </button>
+          </div>
         </div>
 
         {/* Source */}

@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
 // POST /api/nuggets
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { content, contentMarkdown, sourceUrl, sourceLabel, aiChatUrl, tags, domainId } = body
+  const { content, contentMarkdown, sourceUrl, sourceLabel, aiChatUrl, tags, domainId, reviseContent } = body
 
   const rawContent = contentMarkdown ?? content
   if (!rawContent?.trim()) {
@@ -57,7 +57,10 @@ export async function POST(req: NextRequest) {
     include: { reviews: true, domain: true },
   })
 
-  await extractAndLinkConcepts(nugget.id, nugget.contentMarkdown || nugget.contentPlain)
+  await extractAndLinkConcepts(nugget.id, nugget.contentMarkdown || nugget.contentPlain, {
+    domainId: nugget.domainId,
+    reviseContent: reviseContent !== false,
+  })
 
   return NextResponse.json(nugget, { status: 201 })
 }

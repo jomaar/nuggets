@@ -6,11 +6,21 @@ datasource db {
   provider = "sqlite"
 }
 
+/** Singleton row (id = "global") holding admin-editable additions to the AI system prompt. */
+model AppSettings {
+  id                   String   @id @default("global")
+  globalPromptAddition String?
+  updatedAt            DateTime @updatedAt
+
+  @@map("app_settings")
+}
+
 model Domain {
-  id      String   @id @default(cuid())
-  name    String   @unique
-  slug    String   @unique
-  icon    String?
+  id           String   @id @default(cuid())
+  name         String   @unique
+  slug         String   @unique
+  icon         String?
+  domainPrompt String?
 
   nuggets Nugget[]
 
