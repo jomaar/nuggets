@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-// Sonnet 4.6 pricing (USD per token)
-const PRICE_INPUT  = 3  / 1_000_000
-const PRICE_OUTPUT = 15 / 1_000_000
+// Opus 4.8 pricing (USD per token)
+const PRICE_INPUT  = 5  / 1_000_000
+const PRICE_OUTPUT = 25 / 1_000_000
 
 export async function GET() {
   const agg = await prisma.nugget.aggregate({

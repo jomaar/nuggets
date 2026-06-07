@@ -94,7 +94,7 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
     if (reviseContent) systemPrompt += REVISION_PROMPT
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-opus-4-8',
       max_tokens: 4096,
       system: systemPrompt,
       tools: [
