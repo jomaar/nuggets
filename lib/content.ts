@@ -1,4 +1,13 @@
 import { marked } from 'marked'
+import TurndownService from 'turndown'
+
+const turndown = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' })
+// Highlights (<mark>) are reader annotations, not content. Unwrap them so the
+// derived Markdown — and therefore the AI — never sees highlight markup.
+turndown.addRule('unwrapHighlight', {
+  filter: 'mark',
+  replacement: content => content,
+})
 
 /**
  * Converts Markdown input to sanitized HTML.
@@ -14,6 +23,14 @@ export function normalizeToHtml(input: string): string {
     : marked(trimmed) as string
 
   return sanitizeHtml(html)
+}
+
+/**
+ * Derives Markdown from canonical HTML, stripping highlight marks.
+ * Used as the projection sent to the AI, which works in Markdown.
+ */
+export function htmlToMarkdown(html: string): string {
+  return turndown.turndown(html)
 }
 
 /**

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { normalizeToHtml, htmlToPlain } from '@/lib/content'
+import { normalizeToHtml, htmlToMarkdown, htmlToPlain } from '@/lib/content'
 import { extractAndLinkConcepts } from '@/lib/concepts'
 
 // GET /api/nuggets?search=...&tag=...&domain=<slug>
@@ -32,19 +32,22 @@ export async function GET(req: NextRequest) {
 // POST /api/nuggets
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { content, contentMarkdown, sourceUrl, sourceLabel, aiChatUrl, tags, domainId, reviseContent } = body
+  const { content, contentMarkdown, contentHtml: contentHtmlInput, sourceUrl, sourceLabel, aiChatUrl, tags, domainId, reviseContent } = body
 
-  const rawContent = contentMarkdown ?? content
+  // Canonical content is HTML. Accept HTML (Tiptap) or Markdown/plain (legacy/quick-add);
+  // normalizeToHtml passes HTML through and renders Markdown.
+  const rawContent = contentHtmlInput ?? contentMarkdown ?? content
   if (!rawContent?.trim()) {
     return NextResponse.json({ error: 'content required' }, { status: 400 })
   }
 
-  const contentHtml  = normalizeToHtml(rawContent)
-  const contentPlain = htmlToPlain(contentHtml)
+  const contentHtml     = normalizeToHtml(rawContent)
+  const derivedMarkdown = htmlToMarkdown(contentHtml)
+  const contentPlain    = htmlToPlain(contentHtml)
 
   const nugget = await prisma.nugget.create({
     data: {
-      contentMarkdown: contentMarkdown ?? '',
+      contentMarkdown: derivedMarkdown,
       contentHtml,
       contentPlain,
       sourceUrl:   sourceUrl   || null,

@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.100.1",
     "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@tiptap/extension-highlight": "3.24.0",
     "@tiptap/extension-link": "^3.24.0",
     "@tiptap/extension-placeholder": "^3.24.0",
     "@tiptap/pm": "^3.24.0",

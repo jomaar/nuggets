@@ -11,6 +11,13 @@
   --muted:      #8a8075;
   --surface:    #fdfaf5;
   --border:     #ddd5c8;
+
+  /* Multi-color highlight palette (Kindle-style), tuned to the warm theme */
+  --hl-yellow:  #fff0a8;
+  --hl-blue:    #c7e4f7;
+  --hl-green:   #cfe9bd;
+  --hl-pink:    #f8cdda;
+  --hl-orange:  #fbd6a4;
 }
 
 * { box-sizing: border-box; }
@@ -54,6 +61,64 @@ h1, h2, h3, .serif {
   font-size: 0.88em;
 }
 
+/* Multi-color highlights — <mark data-color="…"> from the Tiptap Highlight mark.
+   Default (no data-color) falls back to yellow. */
+.nugget-content mark {
+  background: var(--hl-yellow);
+  color: inherit;
+  padding: 0.05em 0.1em;
+  border-radius: 3px;
+}
+.nugget-content mark[data-color="yellow"] { background: var(--hl-yellow); }
+.nugget-content mark[data-color="blue"]   { background: var(--hl-blue); }
+.nugget-content mark[data-color="green"]  { background: var(--hl-green); }
+.nugget-content mark[data-color="pink"]   { background: var(--hl-pink); }
+.nugget-content mark[data-color="orange"] { background: var(--hl-orange); }
+
+/* Selection BubbleMenu — colour swatches for highlighting (Schritt 7). */
+.highlight-menu {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.4rem;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e0d8c8);
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+}
+.highlight-swatch {
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.highlight-swatch:hover {
+  transform: scale(1.18);
+}
+.highlight-remove {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-left: 0.15rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--muted, #888);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.highlight-remove:hover {
+  color: var(--ink, #333);
+  background: var(--border, #e0d8c8);
+}
+
 /* Tiptap editor */
 .tiptap-editor .ProseMirror {
   outline: none;
@@ -69,6 +134,12 @@ h1, h2, h3, .serif {
   pointer-events: none;
   float: left;
   height: 0;
+}
+/* Read-only reading view (e.g. in NuggetCard): drop the editor chrome so the
+   content sits flush like the old static render. */
+.tiptap-readonly .ProseMirror {
+  min-height: 0;
+  padding: 0;
 }
 
 /* Scrollbar */

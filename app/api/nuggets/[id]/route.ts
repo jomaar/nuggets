@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { normalizeToHtml, htmlToPlain } from '@/lib/content'
+import { normalizeToHtml, htmlToMarkdown, htmlToPlain } from '@/lib/content'
 
 // GET /api/nuggets/:id
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -21,14 +21,16 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json()
-  const { content, contentMarkdown, title, sourceUrl, sourceLabel, aiChatUrl, tags, domainId } = body
+  const { content, contentMarkdown, contentHtml: contentHtmlInput, title, sourceUrl, sourceLabel, aiChatUrl, tags, domainId } = body
 
   const data: Record<string, unknown> = {}
-  const rawContent = contentMarkdown ?? content
+  // Canonical content is HTML (includes highlight <mark>s); Markdown is derived for the AI.
+  const rawContent = contentHtmlInput ?? contentMarkdown ?? content
   if (rawContent) {
-    data.contentMarkdown = contentMarkdown ?? ''
-    data.contentHtml     = normalizeToHtml(rawContent)
-    data.contentPlain    = htmlToPlain(data.contentHtml as string)
+    const html           = normalizeToHtml(rawContent)
+    data.contentHtml     = html
+    data.contentMarkdown = htmlToMarkdown(html)
+    data.contentPlain    = htmlToPlain(html)
   }
   if (title       !== undefined) data.title       = title
   if (sourceUrl   !== undefined) data.sourceUrl   = sourceUrl

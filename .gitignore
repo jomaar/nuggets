@@ -1,7 +1,8 @@
 node_modules/
-.claude/settings.local.json
+.claude/
 .next/
 .env
 *.db
+*.db.bak.*
 *.db-journal
 *.tsbuildinfo

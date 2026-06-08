@@ -5,19 +5,37 @@ import { normalizeToHtml, htmlToPlain } from './content'
 const SYSTEM_PROMPT = `You are a knowledge graph assistant for a personal knowledge management app.
 The user writes notes in German, English, or sometimes includes Greek/Hebrew theological terms.
 
-Your task: analyze a new note, give it a title, extract concepts, suggest tags, and extract URLs if present.
+Your task: analyze a new note, give it a title, link it to concepts, suggest tags, and extract URLs if present.
 
-Rules:
+THE CORE PRINCIPLE — concepts are ABSTRACT, REUSABLE NODES, not statements about the note:
+- A concept is a single, general, reusable idea that could plausibly recur across MANY unrelated notes.
+- A concept is essentially a noun or named entity: "Logos", "Glaube", "Kreuzestheologie", "Hebräerbrief", "Demut".
+- A concept is NEVER an interpretation, claim, or sentence about this note. It must not contain the note's specific spin.
+  - WRONG (too specific, a statement): "Logos als Sprach- und Ausdrucksfähigkeit", "Glaube als Voraussetzung für Gotteserkenntnis"
+  - RIGHT (abstract node): "Logos", "Glaube"
+- Ask yourself: "Could a completely different note, on a different day, about a different source, legitimately point to this exact same node?" If no, it is too specific — generalize it.
+- What THIS note specifically says about a concept does NOT belong in the concept. It belongs in the connection's "note" field (see below).
+
+NAMED-ENTITY-LINKING — strongly prefer reusing existing concepts:
+- You receive the list of concepts already in the graph. Default to MATCHING an existing concept.
+- Only mint a NEW concept when no existing node genuinely covers the idea. When unsure, match rather than create.
+- Match across languages (ἀγάπη = Liebe = Love = the same concept node).
+- Greek terms ἀγάπη, φιλία, ἔρως are DISTINCT concepts — never merge different Greek words.
+
+The connection "note" field (for both matched and new concepts):
+- One short phrase capturing what THIS note specifically says about the concept — its particular reading, angle, or claim.
+- This is where the specificity goes. Example: concept "Logos" + note "read as the human capacity for speech and self-expression".
+- Same language as the note. Keep it to a clause, not a paragraph.
+
+Other rules:
 - Title: one short line (max 80 chars), in the same language as the note, capturing the core idea
 - Tags: 2–4 short keywords in the note's language (e.g. "Gebet", "Motivation", "Leadership")
 - sourceUrl: extract only if a URL is explicitly present in the note text — otherwise omit
 - sourceLabel: short human-readable name for the source (e.g. "YouTube", "Wikipedia", "Buch", domain name)
-- Only include concepts CENTRAL to the text — not briefly mentioned (minimum relevance: 0.3)
+- Only link concepts CENTRAL to the text — not briefly mentioned (minimum relevance: 0.3)
 - Relevance scale: 1.0 = main topic, 0.7 = important supporting idea, 0.3 = briefly mentioned
-- Match existing concepts even across languages (ἀγάπη = Liebe = Love = same concept)
-- Greek terms ἀγάπη, φιλία, ἔρως are DISTINCT concepts — never merge different Greek words
-- Create new concepts only for ideas genuinely absent from the existing list
-- Description: one concise language-neutral sentence explaining the concept
+- A note covering several distinct topics should link to several distinct abstract concepts, each with its own note
+- Description (new concepts only): one concise, language-neutral sentence defining the concept itself (NOT this note's take) — also disambiguates homonyms
 - Labels: detect the language of each term and tag it ("de", "en", "el" for Greek, "he" for Hebrew)`
 
 const REVISION_PROMPT = `
@@ -45,11 +63,12 @@ interface ClauseResult {
   sourceUrl?: string
   sourceLabel?: string
   revisedContent?: string
-  existingConcepts: { id: string; relevance: number }[]
+  existingConcepts: { id: string; relevance: number; note?: string }[]
   newConcepts: {
     description: string
     labels: { language: string; term: string }[]
     relevance: number
+    note?: string
   }[]
 }
 
@@ -133,6 +152,7 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
                   properties: {
                     id:        { type: 'string', description: 'Exact ID from the existing list' },
                     relevance: { type: 'number', description: '0.3–1.0' },
+                    note:      { type: 'string', description: 'Short phrase: what THIS note specifically says about the concept (same language as note)' },
                   },
                   required: ['id', 'relevance'],
                 },
@@ -156,6 +176,7 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
                       },
                     },
                     relevance: { type: 'number', description: '0.3–1.0' },
+                    note:      { type: 'string', description: 'Short phrase: what THIS note specifically says about the concept (same language as note)' },
                   },
                   required: ['description', 'labels', 'relevance'],
                 },
@@ -209,12 +230,12 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
     }
 
     // Link existing concepts
-    for (const { id, relevance } of result.existingConcepts ?? []) {
+    for (const { id, relevance, note } of result.existingConcepts ?? []) {
       if (!existing.find(c => c.id === id)) continue
       await prisma.nuggetConcept.upsert({
         where: { nuggetId_conceptId: { nuggetId, conceptId: id } },
-        update: { relevance },
-        create: { nuggetId, conceptId: id, relevance },
+        update: { relevance, note: note ?? null },
+        create: { nuggetId, conceptId: id, relevance, note: note ?? null },
       })
     }
 
@@ -229,7 +250,7 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
         },
       })
       await prisma.nuggetConcept.create({
-        data: { nuggetId, conceptId: concept.id, relevance: nc.relevance },
+        data: { nuggetId, conceptId: concept.id, relevance: nc.relevance, note: nc.note ?? null },
       })
     }
 

@@ -20,7 +20,8 @@ lib/prisma.ts · sm2.ts · content.ts
 - No raw SQL — Prisma only
 - Colors via CSS vars (globals.css), not Tailwind colors
 - Tags: stored as JSON string → always `JSON.parse(n.tags)`
-- Content: always sanitized via lib/content.ts
+- Content: always sanitized via lib/content.ts. Canonical format = `contentHtml` (Tiptap, may contain highlight `<mark data-color>`). `contentMarkdown` is a DERIVED projection for the AI (via `htmlToMarkdown`, strips `<mark>`); `contentPlain` for search. Editor: `components/NuggetEditor.tsx` (Tiptap). Highlights roadmap: PLAN.md Phase 6.
+- Concepts (lib/concepts.ts): nodes are ABSTRACT & reusable ("Logos", not "Logos as expression"); the nugget's specific reading lives on the edge in `NuggetConcept.note`. Extractor uses Named-Entity-Linking (prefer matching existing concepts). Concept model = `claude-opus-4-8`.
 - Code + comments in English
 
 ## Commands

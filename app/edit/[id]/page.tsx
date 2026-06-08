@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { marked } from 'marked'
-import TurndownService from 'turndown'
+import NuggetEditor from '@/components/NuggetEditor'
 
 interface Domain {
   id: string
@@ -12,15 +12,12 @@ interface Domain {
   icon: string | null
 }
 
-const td = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' })
-
 export default function EditPage() {
   const router = useRouter()
   const { id } = useParams<{ id: string }>()
 
   const [title, setTitle]             = useState('')
-  const [content, setContent]         = useState('')
-  const [preview, setPreview]         = useState(false)
+  const [content, setContent]         = useState('')  // canonical HTML
   const [domains, setDomains]         = useState<Domain[]>([])
   const [domainId, setDomainId]       = useState<string>('')
   const [sourceUrl, setSourceUrl]     = useState('')
@@ -41,11 +38,11 @@ export default function EditPage() {
 
     setDomains(domList)
     setTitle(nugget.title || '')
-    // Prefer contentMarkdown; for old nuggets without it, convert contentHtml to Markdown
-    if (nugget.contentMarkdown) {
-      setContent(nugget.contentMarkdown)
-    } else if (nugget.contentHtml) {
-      setContent(td.turndown(nugget.contentHtml))
+    // Canonical content is HTML; fall back to rendering Markdown for legacy nuggets.
+    if (nugget.contentHtml) {
+      setContent(nugget.contentHtml)
+    } else if (nugget.contentMarkdown) {
+      setContent(marked(nugget.contentMarkdown) as string)
     } else {
       setContent(nugget.contentPlain || '')
     }
@@ -65,10 +62,11 @@ export default function EditPage() {
     const reader = new FileReader()
     reader.onload = () => {
       const text = reader.result as string
+      // Editor works in HTML: keep HTML as-is, render Markdown/plain to HTML.
       if (file.name.endsWith('.html') || file.name.endsWith('.htm')) {
-        setContent(td.turndown(text))
-      } else {
         setContent(text)
+      } else {
+        setContent(marked(text) as string)
       }
     }
     reader.readAsText(file, 'UTF-8')
@@ -83,7 +81,7 @@ export default function EditPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title:       title,
-        contentMarkdown: content,
+        contentHtml: content,
         domainId:    domainId    || null,
         sourceUrl:   sourceUrl   || null,
         sourceLabel: sourceLabel || null,
@@ -172,61 +170,22 @@ export default function EditPage() {
             onChange={handleFileLoad}
             style={{ display: 'none' }}
           />
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <label className="text-xs tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
-                Inhalt *
-              </label>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="text-xs px-2 py-0.5 rounded-lg"
-                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-              >
-                ↑ Datei laden
-              </button>
-            </div>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => setPreview(false)}
-                className="text-xs px-3 py-1 rounded-lg transition-all"
-                style={{
-                  background: !preview ? 'var(--accent)' : 'transparent',
-                  color:      !preview ? 'white'         : 'var(--muted)',
-                  border: `1px solid ${!preview ? 'var(--accent)' : 'var(--border)'}`,
-                }}
-              >
-                Schreiben
-              </button>
-              <button
-                type="button"
-                onClick={() => setPreview(true)}
-                className="text-xs px-3 py-1 rounded-lg transition-all"
-                style={{
-                  background: preview ? 'var(--accent)' : 'transparent',
-                  color:      preview ? 'white'         : 'var(--muted)',
-                  border: `1px solid ${preview ? 'var(--accent)' : 'var(--border)'}`,
-                }}
-              >
-                Vorschau
-              </button>
-            </div>
+          <div className="flex items-center gap-2 mb-2">
+            <label className="text-xs tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
+              Inhalt *
+            </label>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="text-xs px-2 py-0.5 rounded-lg"
+              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+            >
+              ↑ Datei laden
+            </button>
           </div>
-          {!preview ? (
-            <textarea
-              value={content}
-              onChange={e => setContent(e.target.value)}
-              rows={8}
-              style={{ ...inputStyle, resize: 'vertical', lineHeight: '1.6' }}
-            />
-          ) : (
-            <div
-              className="nugget-content"
-              style={{ ...inputStyle, minHeight: '12rem' }}
-              dangerouslySetInnerHTML={{ __html: marked(content) as string }}
-            />
-          )}
+          <div style={{ ...inputStyle, padding: 0 }}>
+            <NuggetEditor value={content} onChange={setContent} />
+          </div>
         </div>
 
         {/* Source */}
