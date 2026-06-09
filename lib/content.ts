@@ -34,6 +34,35 @@ export function htmlToMarkdown(html: string): string {
 }
 
 /**
+ * Removes ChatGPT-Exporter chrome from imported HTML before it becomes a nugget.
+ *
+ * The "ChatGPT Exporter" browser extension wraps a conversation in boilerplate:
+ *   - a metadata header paragraph (User / Created / Updated / Exported / Link)
+ *   - "Prompt:" / "Response:" section headers with a timestamp line each
+ *   - a "Powered by ChatGPT Exporter" footer
+ * None of that is knowledge worth keeping. We only touch documents that are
+ * recognisably exporter output (footer URL or the metadata header present), so
+ * ordinary HTML imports pass through untouched — in particular the broad
+ * timestamp-paragraph rule never fires on non-exporter content.
+ */
+export function stripImportBallast(html: string): string {
+  const isChatGptExport =
+    /chatgptexporter\.com/i.test(html) || /<p><strong>User:<\/strong>/i.test(html)
+  if (!isChatGptExport) return html
+
+  return html
+    // Metadata header: <p><strong>User:</strong> … <strong>Link:</strong> …</p>
+    .replace(/<p><strong>User:<\/strong>[\s\S]*?<\/p>\s*/i, '')
+    // Footer: optional <hr> then "Powered by <a …chatgptexporter.com…>…</a>"
+    .replace(/(?:<hr\s*\/?>\s*)?<p>\s*Powered by\s*<a [^>]*chatgptexporter\.com[^>]*>[\s\S]*?<\/a>\s*<\/p>\s*/i, '')
+    // Q&A scaffolding headers
+    .replace(/<h2>\s*(?:Prompt|Response):\s*<\/h2>\s*/gi, '')
+    // Timestamp-only paragraphs, e.g. <p>5/4/2026, 4:58:10 PM</p>
+    .replace(/<p>\s*\d{1,2}\/\d{1,2}\/\d{4},?\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?\s*<\/p>\s*/gi, '')
+    .trim()
+}
+
+/**
  * Strips all HTML tags to get plain text for search indexing.
  */
 export function htmlToPlain(html: string): string {

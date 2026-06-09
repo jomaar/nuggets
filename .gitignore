@@ -6,3 +6,11 @@ node_modules/
 *.db.bak.*
 *.db-journal
 *.tsbuildinfo
+
+# Personal local-only dev notes (may contain server IP / secrets)
+DEV_TIPS.md
+
+# Syncthing per-device config
+.stignore
+.stfolder/
+.stversions/

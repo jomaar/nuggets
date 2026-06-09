@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { marked } from 'marked'
 import TurndownService from 'turndown'
+import { stripImportBallast } from '@/lib/content'
 
 interface Domain {
   id: string
@@ -45,7 +46,7 @@ export default function AddPage() {
       const text = reader.result as string
       if (file.name.endsWith('.html') || file.name.endsWith('.htm')) {
         const td = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' })
-        setContent(td.turndown(text))
+        setContent(td.turndown(stripImportBallast(text)))
       } else {
         setContent(text)
       }

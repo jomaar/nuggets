@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { marked } from 'marked'
 import NuggetEditor from '@/components/NuggetEditor'
+import { stripImportBallast } from '@/lib/content'
 
 interface Domain {
   id: string
@@ -64,7 +65,7 @@ export default function EditPage() {
       const text = reader.result as string
       // Editor works in HTML: keep HTML as-is, render Markdown/plain to HTML.
       if (file.name.endsWith('.html') || file.name.endsWith('.htm')) {
-        setContent(text)
+        setContent(stripImportBallast(text))
       } else {
         setContent(marked(text) as string)
       }

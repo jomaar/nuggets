@@ -349,9 +349,12 @@ auf `NuggetEditor` optional.
 
 ## Referenz — Server-Befehle
 
+> `$SERVER_IP` ist ein Platzhalter (Repo ist public). Die echte IP steht lokal in
+> `DEV_TIPS.md` (gitignored). Entweder `export SERVER_IP=…` setzen oder inline ersetzen.
+
 ### DB neu aufsetzen (Testdaten löschen)
 ```bash
-ssh root@37.120.184.77
+ssh root@$SERVER_IP
 rm ~/nuggets.jomaar.de/prisma/prod.db
 cd ~/nuggets.jomaar.de
 export $(grep -v '^#' .env | xargs)
@@ -361,18 +364,18 @@ npx prisma db seed
 
 ### .env geändert (neuer API-Key, neues Secret)
 ```bash
-ssh root@37.120.184.77
+ssh root@$SERVER_IP
 cd ~/nuggets.jomaar.de && bash scripts/reload.sh
 ```
 
 ### Logs prüfen
 ```bash
-ssh root@37.120.184.77 "pm2 logs nuggets --lines 30 --nostream"
+ssh root@$SERVER_IP "pm2 logs nuggets --lines 30 --nostream"
 ```
 
 ### DB abfragen
 ```bash
-ssh root@37.120.184.77 "sqlite3 ~/nuggets.jomaar.de/prisma/prod.db 'SELECT id, title, tags FROM nuggets ORDER BY createdAt DESC LIMIT 5;'"
+ssh root@$SERVER_IP "sqlite3 ~/nuggets.jomaar.de/prisma/prod.db 'SELECT id, title, tags FROM nuggets ORDER BY createdAt DESC LIMIT 5;'"
 ```
 
 ---
