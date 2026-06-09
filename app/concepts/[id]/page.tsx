@@ -75,7 +75,7 @@ export default function ConceptPage() {
           ← Zurück
         </button>
 
-        <h1 className="text-3xl mb-2" style={{ fontFamily: 'Playfair Display, serif' }}>
+        <h1 className="text-3xl mb-2">
           {primaryTerm}
         </h1>
         <p className="text-sm mb-4" style={{ color: 'var(--muted)', lineHeight: '1.6' }}>

@@ -3,16 +3,22 @@
 @tailwind utilities;
 
 :root {
-  --ink:        #1a1714;
-  --parchment:  #f5f0e8;
-  --warm:       #e8dfd0;
-  --accent:     #8b4513;
-  --accent-light: #c4742a;
-  --muted:      #8a8075;
-  --surface:    #fdfaf5;
-  --border:     #ddd5c8;
+  /* Apple-HIG-inspired light theme, accent derived from the smise logo (#3F4DA2). */
+  --ink:          #1C1C1E;  /* primary label */
+  --parchment:    #F2F2F7;  /* page background (name kept for back-compat) */
+  --bg:           #F2F2F7;  /* grouped background */
+  --warm:         #E9E9EE;  /* subtle fills: inline code, scrollbar track */
+  --accent:       #3F4DA2;  /* logo indigo */
+  --accent-light: #5B6AD0;  /* lighter indigo: links */
+  --accent-strong:#2F3A82;  /* pressed / active indigo */
+  --accent-tint:  #ECEDF7;  /* selected-pill wash */
+  --muted:        #8A8A8E;  /* secondary label */
+  --surface:      #FFFFFF;  /* cards */
+  --border:       #E5E5EA;  /* hairline separators */
 
-  /* Multi-color highlight palette (Kindle-style), tuned to the warm theme */
+  --text-base:    17px;     /* iOS body size; hook for a later size switcher */
+
+  /* Multi-color highlight palette (Kindle-style) */
   --hl-yellow:  #fff0a8;
   --hl-blue:    #c7e4f7;
   --hl-green:   #cfe9bd;
@@ -23,36 +29,55 @@
 * { box-sizing: border-box; }
 
 body {
-  background: var(--parchment);
+  background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-dm-sans), sans-serif;
-  font-weight: 300;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, var(--font-dm-sans), sans-serif;
+  font-weight: 400;
+  font-size: var(--text-base);
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   min-height: 100dvh;
 }
 
 h1, h2, h3, .serif {
-  font-family: var(--font-playfair), Georgia, serif;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, var(--font-dm-sans), sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Fixed, slim action bar that sits above the BottomNav (e.g. floating review
+   buttons in the Heute tab). Respects the iOS home-indicator safe area. */
+.action-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  z-index: 40;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem max(0.75rem, env(safe-area-inset-left)) 0.5rem max(0.75rem, env(safe-area-inset-right));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
 }
 
 /* Nugget content rendering */
 .nugget-content h1, .nugget-content h2, .nugget-content h3 {
-  font-family: var(--font-playfair), serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--ink);
-  margin: 0.75em 0 0.4em;
+  margin: 0.6em 0 0.3em;
 }
-.nugget-content p  { margin: 0.6em 0; line-height: 1.7; }
-.nugget-content ul { padding-left: 1.4em; margin: 0.5em 0; }
-.nugget-content li { margin: 0.3em 0; }
+.nugget-content p  { margin: 0.45em 0; line-height: 1.55; }
+.nugget-content ul { padding-left: 1.3em; margin: 0.4em 0; }
+.nugget-content li { margin: 0.2em 0; }
 .nugget-content strong { font-weight: 500; color: var(--accent); }
 .nugget-content a  { color: var(--accent-light); text-decoration: underline; }
 .nugget-content blockquote {
   border-left: 3px solid var(--accent);
   padding-left: 1em;
-  margin: 1em 0;
+  margin: 0.8em 0;
   color: var(--muted);
   font-style: italic;
-  font-family: var(--font-playfair), serif;
 }
 .nugget-content code {
   background: var(--warm);

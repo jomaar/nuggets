@@ -67,7 +67,7 @@ export default function AdminPage() {
   return (
     <>
       <header className="pt-10 pb-6">
-        <h1 className="text-3xl" style={{ fontFamily: 'Playfair Display, serif' }}>
+        <h1 className="text-3xl">
           KI-Prompts
         </h1>
         <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>

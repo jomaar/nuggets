@@ -90,7 +90,7 @@ export default function AddPage() {
   return (
     <>
       <header className="pt-10 pb-6">
-        <h1 className="text-3xl" style={{ fontFamily: 'Playfair Display, serif' }}>
+        <h1 className="text-3xl">
           Neuer Nugget
         </h1>
       </header>

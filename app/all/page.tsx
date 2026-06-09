@@ -88,7 +88,7 @@ export default function AllPage() {
       <header className="pt-10 pb-4">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-3xl" style={{ fontFamily: 'Playfair Display, serif' }}>
+            <h1 className="text-3xl">
               Alle Nuggets
             </h1>
             {isOwner && stats && (

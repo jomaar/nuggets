@@ -1,7 +1,7 @@
 export default function ImpressumPage() {
   return (
     <main className="pt-10 pb-24 max-w-lg">
-      <h1 className="text-3xl mb-8" style={{ fontFamily: 'Playfair Display, serif' }}>
+      <h1 className="text-3xl mb-8">
         Impressum
       </h1>
 

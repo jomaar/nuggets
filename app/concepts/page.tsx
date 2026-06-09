@@ -62,7 +62,7 @@ export default function ConceptsPage() {
   return (
     <>
       <header className="pt-10 pb-6">
-        <h1 className="text-3xl mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>
+        <h1 className="text-3xl mb-1">
           Konzept-Graph
         </h1>
         <p className="text-sm mb-5" style={{ color: 'var(--muted)' }}>

@@ -1,15 +1,7 @@
 import type { Metadata, Viewport } from 'next'
-import { Playfair_Display, DM_Sans } from 'next/font/google'
+import { DM_Sans } from 'next/font/google'
 import BottomNav from '@/components/BottomNav'
 import './globals.css'
-
-const playfair = Playfair_Display({
-  subsets: ['latin'],
-  weight: ['400', '600'],
-  style: ['normal', 'italic'],
-  variable: '--font-playfair',
-  display: 'swap',
-})
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
@@ -30,16 +22,17 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#f5f0e8',
+  themeColor: '#FFFFFF',
   width: 'device-width',
   initialScale: 1,
+  viewportFit: 'cover',
 }
 
 const buildVersion = process.env.NEXT_PUBLIC_BUILD_VERSION ?? 'dev'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="de" className={`${playfair.variable} ${dmSans.variable}`}>
+    <html lang="de" className={dmSans.variable}>
       <head>
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>

@@ -117,7 +117,7 @@ export default function EditPage() {
   return (
     <>
       <header className="pt-10 pb-6">
-        <h1 className="text-3xl" style={{ fontFamily: 'Playfair Display, serif' }}>
+        <h1 className="text-3xl">
           Nugget bearbeiten
         </h1>
       </header>

@@ -56,7 +56,7 @@ export default function TodayPage() {
         <p className="text-xs tracking-widest uppercase mb-1" style={{ color: 'var(--muted)' }}>
           {new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}
         </p>
-        <h1 className="text-3xl" style={{ fontFamily: 'Playfair Display, serif' }}>
+        <h1 className="text-3xl">
           Heute fällig
         </h1>
       </header>
