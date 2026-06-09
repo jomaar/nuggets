@@ -116,10 +116,35 @@ export default function EditPage() {
 
   return (
     <>
-      <header className="pt-10 pb-6">
-        <h1 className="text-3xl">
-          Nugget bearbeiten
+      {/* Sticky action bar — Abbrechen / Speichern stay reachable while scrolling
+          a long nugget, instead of sitting far below the content. */}
+      <header
+        className="sticky top-0 z-30 -mx-4 px-4 pt-10 pb-3 flex items-center justify-between gap-3"
+        style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
+      >
+        <h1 className="text-xl" style={{ color: 'var(--ink)' }}>
+          Bearbeiten
         </h1>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => router.push('/all')}
+            className="text-xs px-3 py-1.5 rounded-lg"
+            style={{ background: 'var(--surface)', color: 'var(--muted)', border: '1px solid var(--border)' }}
+          >
+            Abbrechen
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !content.trim()}
+            className="text-xs px-3 py-1.5 rounded-lg transition-all active:scale-95"
+            style={{
+              background: content.trim() ? 'var(--accent)' : 'var(--border)',
+              color:      content.trim() ? 'white'         : 'var(--muted)',
+            }}
+          >
+            {saving ? 'Speichert…' : 'Speichern'}
+          </button>
+        </div>
       </header>
 
       <div className="flex flex-col gap-4">
@@ -239,28 +264,6 @@ export default function EditPage() {
             placeholder="Philosophie, Lernen…"
             style={inputStyle}
           />
-        </div>
-
-        {/* Buttons */}
-        <div className="flex gap-3 mt-2">
-          <button
-            onClick={() => router.push('/all')}
-            className="flex-1 py-4 rounded-2xl text-base font-medium"
-            style={{ background: 'var(--surface)', color: 'var(--muted)', border: '1px solid var(--border)' }}
-          >
-            Abbrechen
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !content.trim()}
-            className="flex-1 py-4 rounded-2xl text-base font-medium transition-all active:scale-95"
-            style={{
-              background: content.trim() ? 'var(--accent)' : 'var(--border)',
-              color:      content.trim() ? 'white'         : 'var(--muted)',
-            }}
-          >
-            {saving ? 'Speichert…' : 'Änderungen speichern'}
-          </button>
         </div>
       </div>
     </>

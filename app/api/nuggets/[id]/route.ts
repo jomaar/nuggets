@@ -10,7 +10,14 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     include: {
       reviews: { orderBy: { createdAt: 'desc' }, take: 1 },
       domain: true,
-      concepts: { include: { concept: { include: { labels: true } } }, orderBy: { relevance: 'desc' } },
+      concepts: {
+        include: {
+          // _count.nuggets = how many other nuggets share this concept; the
+          // single view sorts concepts by it (most-connected first).
+          concept: { include: { labels: true, _count: { select: { nuggets: true } } } },
+        },
+        orderBy: { relevance: 'desc' },
+      },
     },
   })
   if (!nugget) return NextResponse.json({ error: 'not found' }, { status: 404 })

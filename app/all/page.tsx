@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import NuggetCard from '@/components/NuggetCard'
+import Link from 'next/link'
 
 interface Domain {
   id: string
@@ -10,22 +10,18 @@ interface Domain {
   icon: string | null
 }
 
-interface NuggetConceptEntry {
-  relevance: number
-  concept: { id: string; description: string; labels: { language: string; term: string }[] }
-}
-
 interface Nugget {
   id: string
   title: string
   contentHtml: string
-  sourceUrl: string | null
-  sourceLabel: string | null
-  aiChatUrl: string | null
-  tags: string
   domain: Domain | null
-  concepts: NuggetConceptEntry[]
-  createdAt: string
+}
+
+/** Derives a fallback title from raw HTML when no title is stored. */
+function fallbackTitle(contentHtml: string): string {
+  const plain = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+  const sentence = plain.split(/[.!?]/)[0].trim()
+  return sentence.length > 80 ? sentence.substring(0, 77) + '…' : sentence
 }
 
 interface Stats {
@@ -183,20 +179,33 @@ export default function AllPage() {
         </p>
       )}
 
-      {nuggets.map(n => (
-        <NuggetCard
-          key={n.id}
-          {...n}
-          tags={JSON.parse(n.tags || '[]')}
-          title={n.title}
-          domain={n.domain}
-          concepts={n.concepts}
-          defaultExpanded={false}
-          onDelete={isOwner ? id => setNuggets(prev => prev.filter(x => x.id !== id)) : undefined}
-        />
-      ))}
-
-
+      {/* Title-only list — tap a row to open the single view */}
+      <div className="flex flex-col gap-2">
+        {nuggets.map(n => (
+          <Link
+            key={n.id}
+            href={`/nugget/${n.id}`}
+            className="flex items-center gap-2 px-5 py-4 rounded-2xl border transition-all active:scale-[0.99]"
+            style={{
+              background: 'var(--surface)',
+              borderColor: 'var(--border)',
+              boxShadow: '0 2px 12px rgba(26,23,20,0.06)',
+            }}
+          >
+            {n.domain && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
+                style={{ background: 'var(--warm)', color: 'var(--muted)' }}
+              >
+                {n.domain.icon}
+              </span>
+            )}
+            <span className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>
+              {n.title || fallbackTitle(n.contentHtml)}
+            </span>
+          </Link>
+        ))}
+      </div>
     </>
   )
 }
