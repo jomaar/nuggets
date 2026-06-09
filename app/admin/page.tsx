@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import DomainIcon from '@/components/DomainIcon'
 
 interface DomainPrompt {
   id: string
@@ -94,8 +95,9 @@ export default function AdminPage() {
         {/* Per-domain prompts */}
         {domains.map(d => (
           <div key={d.id}>
-            <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
-              {d.icon} {d.name}
+            <label className="inline-flex items-center gap-1.5 text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--muted)' }}>
+              <DomainIcon slug={d.slug} size={13} />
+              {d.name}
             </label>
             <textarea
               value={domainPrompts[d.id] ?? ''}

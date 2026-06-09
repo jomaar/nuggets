@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { marked } from 'marked'
 import TurndownService from 'turndown'
 import { stripImportBallast } from '@/lib/content'
+import DomainIcon from '@/components/DomainIcon'
 
 interface Domain {
   id: string
@@ -115,7 +116,10 @@ export default function AddPage() {
                     border: `1px solid ${domainId === d.id ? 'var(--accent)' : 'var(--border)'}`,
                   }}
                 >
-                  {d.icon} {d.name}
+                  <span className="inline-flex items-center gap-1.5">
+                    <DomainIcon slug={d.slug} size={14} />
+                    {d.name}
+                  </span>
                 </button>
               ))}
             </div>

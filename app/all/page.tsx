@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import DomainIcon from '@/components/DomainIcon'
 
 interface Domain {
   id: string
@@ -150,7 +151,10 @@ export default function AllPage() {
                   border: `1px solid ${activeDomain === d.slug ? 'var(--accent)' : 'var(--border)'}`,
                 }}
               >
-                {d.icon} {d.name}
+                <span className="inline-flex items-center gap-1.5">
+                  <DomainIcon slug={d.slug} size={14} />
+                  {d.name}
+                </span>
               </button>
             ))}
           </div>
@@ -185,7 +189,7 @@ export default function AllPage() {
           <Link
             key={n.id}
             href={`/nugget/${n.id}`}
-            className="flex items-center gap-2 px-5 py-4 rounded-2xl border transition-all active:scale-[0.99]"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl border transition-all active:scale-[0.99]"
             style={{
               background: 'var(--surface)',
               borderColor: 'var(--border)',
@@ -194,10 +198,10 @@ export default function AllPage() {
           >
             {n.domain && (
               <span
-                className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
+                className="inline-flex items-center text-xs px-2 py-1 rounded-full flex-shrink-0"
                 style={{ background: 'var(--warm)', color: 'var(--muted)' }}
               >
-                {n.domain.icon}
+                <DomainIcon slug={n.domain.slug} size={13} />
               </span>
             )}
             <span className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>

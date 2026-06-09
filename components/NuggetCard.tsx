@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import NuggetEditor from './NuggetEditor'
 import { useHighlightSave } from './useHighlightSave'
+import DomainIcon from './DomainIcon'
 
 interface Domain {
   id: string
@@ -107,10 +108,10 @@ export default function NuggetCard({
         <div className="flex items-center gap-2 min-w-0">
           {domain && (
             <span
-              className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
+              className="inline-flex items-center text-xs px-2 py-1 rounded-full flex-shrink-0"
               style={{ background: 'var(--warm)', color: 'var(--muted)' }}
             >
-              {domain.icon}
+              <DomainIcon slug={domain.slug} size={13} />
             </span>
           )}
           <span

@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import NuggetEditor from '@/components/NuggetEditor'
 import { useHighlightSave } from '@/components/useHighlightSave'
+import DomainIcon from '@/components/DomainIcon'
+import { Info } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -93,6 +95,9 @@ export default function NuggetDetailPage() {
   const [isOwner, setIsOwner] = useState(false)
   const [infoOpen, setInfoOpen]       = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // Wraps the reading content; used to record how far into it the user scrolled
+  // so the edit view can restore the same position (see SCROLL_KEY).
+  const contentRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
     try {
@@ -118,6 +123,20 @@ export default function NuggetDetailPage() {
     if (!confirmDelete) { setConfirmDelete(true); return }
     await fetch(`/api/nuggets/${id}`, { method: 'DELETE' })
     router.push('/all')
+  }
+
+  /**
+   * Open the editor, remembering the current scroll depth *within the content*
+   * (not the absolute page offset, since the edit page has different chrome
+   * above the text). The edit view reads this back and scrolls to the same spot.
+   */
+  const goEdit = () => {
+    const content = contentRef.current
+    if (content) {
+      const contentTop = content.getBoundingClientRect().top + window.scrollY
+      sessionStorage.setItem(`nugget-edit-scroll-${id}`, String(window.scrollY - contentTop))
+    }
+    router.push(`/edit/${id}`)
   }
 
   if (loading) {
@@ -146,9 +165,12 @@ export default function NuggetDetailPage() {
 
   return (
     <>
-      {/* Top action bar — back + edit/delete reachable without scrolling */}
-      <header className="pt-10 pb-4">
-        <div className="flex items-center justify-between mb-4">
+      {/* Sticky action bar — back / info / edit / delete reachable at any
+          scroll position, so editing a long nugget never means scrolling up. */}
+      <div
+        className="sticky top-0 z-30 -mx-4 px-4 pt-10 pb-3 flex items-center justify-between gap-3"
+        style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
+      >
           <button
             onClick={() => router.back()}
             className="text-sm px-3 py-1 rounded-lg"
@@ -156,16 +178,31 @@ export default function NuggetDetailPage() {
           >
             ← Zurück
           </button>
+
+          {/* Info toggle — opens the details/concepts panel below the bar */}
+          <button
+            onClick={() => setInfoOpen(o => !o)}
+            aria-label="Details & Konzepte"
+            className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+            style={{
+              color:      infoOpen ? 'white'        : 'var(--muted)',
+              background: infoOpen ? 'var(--accent)' : 'transparent',
+              border: `1px solid ${infoOpen ? 'var(--accent)' : 'var(--border)'}`,
+            }}
+          >
+            <Info size={16} />
+          </button>
+
           {isOwner && (
             <div className="flex items-center gap-2">
               {!confirmDelete && (
-                <Link
-                  href={`/edit/${nugget.id}`}
+                <button
+                  onClick={goEdit}
                   className="text-xs px-3 py-1 rounded-lg"
                   style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
                 >
                   Bearbeiten
-                </Link>
+                </button>
               )}
               <button
                 onClick={handleDelete}
@@ -191,13 +228,15 @@ export default function NuggetDetailPage() {
           )}
         </div>
 
+      <header className="pt-4 pb-2">
         <div className="flex items-center gap-2">
           {nugget.domain && (
             <span
-              className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
+              className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full flex-shrink-0"
               style={{ background: 'var(--warm)', color: 'var(--muted)' }}
             >
-              {nugget.domain.icon} {nugget.domain.name}
+              <DomainIcon slug={nugget.domain.slug} size={13} />
+              {nugget.domain.name}
             </span>
           )}
         </div>
@@ -208,30 +247,13 @@ export default function NuggetDetailPage() {
         )}
       </header>
 
-      {/* Content in focus */}
-      <NuggetReader id={nugget.id} contentHtml={nugget.contentHtml} />
-
-      {/* Collapsible info box — status, links & concepts hidden by default */}
-      <div className="mt-6">
-        <button
-          onClick={() => setInfoOpen(o => !o)}
-          className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm"
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+      {/* Collapsible info panel — toggled from the top bar, rendered above the
+          content so it stays visible without scrolling a long nugget. */}
+      {infoOpen && (
+        <div
+          className="mb-6 px-4 py-4 rounded-xl flex flex-col gap-5"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
         >
-          <span>Details &amp; Konzepte</span>
-          <span
-            className="text-xs transition-transform"
-            style={{ transform: infoOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
-          >
-            ▾
-          </span>
-        </button>
-
-        {infoOpen && (
-          <div
-            className="mt-2 px-4 py-4 rounded-xl flex flex-col gap-5"
-            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-          >
             {/* Status */}
             <div>
               <h2 className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--muted)' }}>
@@ -319,8 +341,12 @@ export default function NuggetDetailPage() {
                 </div>
               </div>
             )}
-          </div>
-        )}
+        </div>
+      )}
+
+      {/* Content in focus */}
+      <div ref={contentRef}>
+        <NuggetReader id={nugget.id} contentHtml={nugget.contentHtml} />
       </div>
     </>
   )

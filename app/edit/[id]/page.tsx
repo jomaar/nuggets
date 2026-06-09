@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { marked } from 'marked'
 import NuggetEditor from '@/components/NuggetEditor'
+import DomainIcon from '@/components/DomainIcon'
 import { stripImportBallast } from '@/lib/content'
 
 interface Domain {
@@ -28,6 +29,7 @@ export default function EditPage() {
   const [loading, setLoading]         = useState(true)
   const [saving, setSaving]           = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const editorBoxRef = useRef<HTMLDivElement>(null)
 
   const loadNugget = useCallback(async () => {
     const [nuggetRes, domainsRes] = await Promise.all([
@@ -56,6 +58,35 @@ export default function EditPage() {
   }, [id])
 
   useEffect(() => { loadNugget() }, [loadNugget])
+
+  /**
+   * Restore the reading scroll position: if the single view stashed how far the
+   * user had scrolled into the content, scroll the editor box to the same depth.
+   * The Tiptap editor renders asynchronously and grows the page height, so we
+   * keep re-applying the target for a short window until the layout settles.
+   */
+  useEffect(() => {
+    if (loading) return
+    const raw = sessionStorage.getItem(`nugget-edit-scroll-${id}`)
+    if (raw === null) return
+    sessionStorage.removeItem(`nugget-edit-scroll-${id}`)
+    const offset = Number(raw)
+    if (Number.isNaN(offset)) return
+
+    let cancelled = false
+    const start = performance.now()
+    const tick = () => {
+      if (cancelled) return
+      const box = editorBoxRef.current
+      if (box) {
+        const editorTop = box.getBoundingClientRect().top + window.scrollY
+        window.scrollTo({ top: Math.max(0, editorTop + offset) })
+      }
+      if (performance.now() - start < 600) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+    return () => { cancelled = true }
+  }, [loading, id])
 
   const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -180,7 +211,10 @@ export default function EditPage() {
                     border: `1px solid ${domainId === d.id ? 'var(--accent)' : 'var(--border)'}`,
                   }}
                 >
-                  {d.icon} {d.name}
+                  <span className="inline-flex items-center gap-1.5">
+                    <DomainIcon slug={d.slug} size={14} />
+                    {d.name}
+                  </span>
                 </button>
               ))}
             </div>
@@ -209,7 +243,7 @@ export default function EditPage() {
               ↑ Datei laden
             </button>
           </div>
-          <div style={{ ...inputStyle, padding: 0 }}>
+          <div ref={editorBoxRef} style={{ ...inputStyle, padding: 0 }}>
             <NuggetEditor value={content} onChange={setContent} />
           </div>
         </div>
