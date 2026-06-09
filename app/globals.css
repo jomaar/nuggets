@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 :root {
   /* Apple-HIG-inspired light theme, accent derived from the smise logo (#3F4DA2). */
