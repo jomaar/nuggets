@@ -6,7 +6,7 @@ import Link from 'next/link'
 import NuggetEditor from '@/components/NuggetEditor'
 import { useHighlightSave } from '@/components/useHighlightSave'
 import DomainIcon from '@/components/DomainIcon'
-import { Info } from 'lucide-react'
+import { Info, Highlighter, X } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -62,6 +62,15 @@ function primaryLabel(labels: ConceptLabel[]): string {
   )
 }
 
+/** Maps a highlight's data-color to its CSS palette variable (default yellow). */
+const HIGHLIGHT_VARS: Record<string, string> = {
+  yellow: '--hl-yellow',
+  blue:   '--hl-blue',
+  green:  '--hl-green',
+  pink:   '--hl-pink',
+  orange: '--hl-orange',
+}
+
 /** Formats an ISO date as a short German date (e.g. 9. Juni 2026). */
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('de-DE', {
@@ -95,8 +104,10 @@ export default function NuggetDetailPage() {
   const [isOwner, setIsOwner] = useState(false)
   const [infoOpen, setInfoOpen]       = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [marksOpen, setMarksOpen]     = useState(false)
+  const [marks, setMarks]             = useState<{ text: string; color: string }[]>([])
   // Wraps the reading content; used to record how far into it the user scrolled
-  // so the edit view can restore the same position (see SCROLL_KEY).
+  // so the edit view can restore the same position, and to locate highlight marks.
   const contentRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
@@ -139,6 +150,27 @@ export default function NuggetDetailPage() {
     router.push(`/edit/${id}`)
   }
 
+  /**
+   * Collect all highlight marks from the rendered content in document order and
+   * open the popup. Reading straight from the live DOM keeps the list indices
+   * aligned with the actual <mark> elements we later scroll to.
+   */
+  const openMarks = () => {
+    const nodes = contentRef.current?.querySelectorAll('mark') ?? []
+    setMarks(Array.from(nodes).map(el => ({
+      text:  (el.textContent ?? '').replace(/\s+/g, ' ').trim(),
+      color: el.getAttribute('data-color') ?? 'yellow',
+    })))
+    setMarksOpen(true)
+  }
+
+  /** Scroll the n-th highlight into view (clear of the sticky bar) and close the popup. */
+  const scrollToMark = (index: number) => {
+    const el = contentRef.current?.querySelectorAll('mark')[index]
+    setMarksOpen(false)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
   if (loading) {
     return (
       <div className="pt-10">
@@ -179,19 +211,29 @@ export default function NuggetDetailPage() {
             ← Zurück
           </button>
 
-          {/* Info toggle — opens the details/concepts panel below the bar */}
-          <button
-            onClick={() => setInfoOpen(o => !o)}
-            aria-label="Details & Konzepte"
-            className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
-            style={{
-              color:      infoOpen ? 'white'        : 'var(--muted)',
-              background: infoOpen ? 'var(--accent)' : 'transparent',
-              border: `1px solid ${infoOpen ? 'var(--accent)' : 'var(--border)'}`,
-            }}
-          >
-            <Info size={16} />
-          </button>
+          {/* Highlights list + info toggle */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={openMarks}
+              aria-label="Markierungen"
+              className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+            >
+              <Highlighter size={16} />
+            </button>
+            <button
+              onClick={() => setInfoOpen(o => !o)}
+              aria-label="Details & Konzepte"
+              className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+              style={{
+                color:      infoOpen ? 'white'        : 'var(--muted)',
+                background: infoOpen ? 'var(--accent)' : 'transparent',
+                border: `1px solid ${infoOpen ? 'var(--accent)' : 'var(--border)'}`,
+              }}
+            >
+              <Info size={16} />
+            </button>
+          </div>
 
           {isOwner && (
             <div className="flex items-center gap-2">
@@ -348,6 +390,53 @@ export default function NuggetDetailPage() {
       <div ref={contentRef}>
         <NuggetReader id={nugget.id} contentHtml={nugget.contentHtml} />
       </div>
+
+      {/* Highlights popup — lists every mark in reading order; tap a row to jump
+          to it (closes the popup), or dismiss via × / backdrop. */}
+      {marksOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(28,28,30,0.4)' }}
+          onClick={() => setMarksOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
+            style={{ background: 'var(--surface)', maxHeight: '70vh', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+              style={{ borderBottom: '1px solid var(--border)' }}
+            >
+              <h2 className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                Markierungen
+              </h2>
+              <button onClick={() => setMarksOpen(false)} aria-label="Schließen" style={{ color: 'var(--muted)' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto px-3 py-3 flex flex-col gap-2">
+              {marks.length === 0 ? (
+                <p className="text-sm text-center py-6" style={{ color: 'var(--muted)' }}>
+                  Keine Markierungen in diesem Nugget.
+                </p>
+              ) : (
+                marks.map((m, i) => (
+                  <button
+                    key={i}
+                    onClick={() => scrollToMark(i)}
+                    className="w-full text-left text-sm px-3 py-2 rounded-lg truncate transition-all active:scale-[0.99]"
+                    style={{ background: `var(${HIGHLIGHT_VARS[m.color] ?? '--hl-yellow'})`, color: 'var(--ink)' }}
+                  >
+                    {m.text || '—'}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
