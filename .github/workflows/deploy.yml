@@ -21,7 +21,11 @@ jobs:
             nvm use 22
             cd ~/nuggets.jomaar.de
             [ -f .env ] || echo "DATABASE_URL=file:$(pwd)/nuggets.db" > .env
-            git pull origin main
+            # Hard-reset instead of pull: the build regenerates tracked files
+            # (e.g. next-env.d.ts) on the server, which makes `git pull` abort on
+            # a dirty merge. DB (*.db) and .env are gitignored, so reset is safe.
+            git fetch origin main
+            git reset --hard origin/main
             npm ci
             set -a; source .env; set +a
             npx prisma generate
