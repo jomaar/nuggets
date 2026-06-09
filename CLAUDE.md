@@ -21,6 +21,7 @@ lib/prisma.ts · sm2.ts · content.ts
 - Colors via CSS vars (globals.css), not Tailwind colors
 - Tags: stored as JSON string → always `JSON.parse(n.tags)`
 - Content: always sanitized via lib/content.ts. Canonical format = `contentHtml` (Tiptap, may contain highlight `<mark data-color>`). `contentMarkdown` is a DERIVED projection for the AI (via `htmlToMarkdown`, strips `<mark>`); `contentPlain` for search. Editor: `components/NuggetEditor.tsx` (Tiptap). Highlights roadmap: PLAN.md Phase 6.
+- HTML file import (`app/add` + `app/edit`): run raw `.html` through `stripImportBallast()` (lib/content.ts) — strips ChatGPT-Exporter chrome (metadata header, "Powered by" footer, Prompt/Response scaffolding); no-op on non-exporter HTML.
 - Concepts (lib/concepts.ts): nodes are ABSTRACT & reusable ("Logos", not "Logos as expression"); the nugget's specific reading lives on the edge in `NuggetConcept.note`. Extractor uses Named-Entity-Linking (prefer matching existing concepts). Concept model = `claude-opus-4-8`.
 - Code + comments in English
 
@@ -34,6 +35,7 @@ git push origin main   # triggers deploy
 
 ## Development Plan
 See `PLAN.md` for the full roadmap (Markdown editor, Concept Graph, Claude API, related nuggets).
+`DEV_TIPS.md` (local-only, gitignored) holds dev cheatsheet + real server IP. Server commands in PLAN.md use a `$SERVER_IP` placeholder (public repo).
 
 ## Open TODOs
 1. Push Notifications (iOS, 3×/day)
