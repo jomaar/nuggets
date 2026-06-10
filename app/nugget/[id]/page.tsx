@@ -139,11 +139,17 @@ function clearSearchHighlights(): void {
   reg?.delete('search-current')
 }
 
-/** Smooth-scroll a range roughly to the vertical centre of the viewport. */
-function scrollRangeIntoView(range: Range): void {
+/**
+ * Smooth-scroll a range into view. By default it lands roughly at the vertical
+ * centre; pass `topOffset` (a viewport-relative y in px) to instead align the
+ * range's top edge to that offset — used by the bookmark jump so the line
+ * reappears just below the sticky bar, exactly where it was when captured.
+ */
+function scrollRangeIntoView(range: Range, topOffset?: number): void {
   const rect = range.getBoundingClientRect()
   if (rect.height === 0 && rect.width === 0) return
-  const top = window.scrollY + rect.top - window.innerHeight / 2
+  const anchor = topOffset ?? window.innerHeight / 2
+  const top = window.scrollY + rect.top - anchor
   window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
 }
 
@@ -512,7 +518,13 @@ export default function NuggetDetailPage() {
     const tryJump = () => {
       const root = contentRef.current
       const range = root ? resolveAnchor(root, target!.quote, target!.prefix, target!.suffix) : null
-      if (range) { scrollRangeIntoView(range); return }
+      if (range) {
+        // Align to the bookmarked line to the top of the reading area (just
+        // below the sticky bar), matching where addBookmark() sampled it.
+        const stickyBottom = stickyRef.current?.getBoundingClientRect().bottom ?? 0
+        scrollRangeIntoView(range, stickyBottom)
+        return
+      }
       if (attempts++ >= 40) return
       raf = requestAnimationFrame(tryJump)
     }
