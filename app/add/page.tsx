@@ -59,7 +59,7 @@ export default function AddPage() {
   const handleSave = async () => {
     if (!content.trim()) return
     setSaving(true)
-    await fetch('/api/nuggets', {
+    const res = await fetch('/api/nuggets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -73,6 +73,16 @@ export default function AddPage() {
       }),
     })
     setSaving(false)
+    // Stay on the freshly created nugget's read view so the user can see how
+    // the AI revised the content (and adjust it if needed), instead of bouncing
+    // to the «alle» list. Fall back to the list if the response lacks an id.
+    if (res.ok) {
+      const created = await res.json()
+      if (created?.id) {
+        router.push(`/nugget/${created.id}`)
+        return
+      }
+    }
     router.push('/all')
   }
 
