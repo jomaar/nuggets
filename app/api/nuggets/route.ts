@@ -10,6 +10,13 @@ export async function GET(req: NextRequest) {
   const tag        = searchParams.get('tag')?.trim()
   const domainSlug = searchParams.get('domain')?.trim()
 
+  // The list view (app/all) renders title-only rows, so we only select the
+  // fields it actually uses. This avoids shipping the heavy content blobs
+  // (contentMarkdown/contentPlain) and the 3-level concepts→labels join for
+  // every nugget. `take` caps the payload as a safety valve at scale; beyond
+  // 500 ungefiltered nuggets the search is the intended tool. The `where`
+  // filter runs in SQL first, so search/filter still cover the whole table —
+  // `take` only limits how many matches are returned.
   const nuggets = await prisma.nugget.findMany({
     where: {
       AND: [
@@ -18,12 +25,14 @@ export async function GET(req: NextRequest) {
         domainSlug ? { domain: { slug: domainSlug } }        : {},
       ],
     },
-    include: {
-      reviews: { orderBy: { createdAt: 'desc' }, take: 1 },
-      domain: true,
-      concepts: { include: { concept: { include: { labels: true } } }, orderBy: { relevance: 'desc' } },
+    select: {
+      id:          true,
+      title:       true,
+      contentHtml: true, // needed for the client-side fallback title
+      domain:      { select: { id: true, name: true, slug: true, icon: true } },
     },
     orderBy: { createdAt: 'desc' },
+    take: 500,
   })
 
   return NextResponse.json(nuggets)
