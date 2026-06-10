@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
 // POST /api/nuggets
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { content, contentMarkdown, contentHtml: contentHtmlInput, sourceUrl, sourceLabel, aiChatUrl, tags, domainId, reviseContent } = body
+  const { content, contentMarkdown, contentHtml: contentHtmlInput, sourceUrl, sourceLabel, aiChatUrl, tags, domainId, reviseContent, aiHint } = body
 
   // Canonical content is HTML. Accept HTML (Tiptap) or Markdown/plain (legacy/quick-add);
   // normalizeToHtml passes HTML through and renders Markdown.
@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
   await extractAndLinkConcepts(nugget.id, nugget.contentMarkdown || nugget.contentPlain, {
     domainId: nugget.domainId,
     reviseContent: reviseContent !== false,
+    aiHint: typeof aiHint === 'string' ? aiHint : undefined,
   })
 
   return NextResponse.json(nugget, { status: 201 })

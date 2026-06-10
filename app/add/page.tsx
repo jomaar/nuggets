@@ -25,6 +25,8 @@ export default function AddPage() {
   const [aiChatUrl, setAiChatUrl]     = useState('')
   const [tags, setTags]               = useState('')
   const [reviseContent, setReviseContent] = useState(true)
+  const [aiHint, setAiHint]           = useState('')
+  const [showConfirm, setShowConfirm] = useState(false)
   const [saving, setSaving]           = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -70,6 +72,7 @@ export default function AddPage() {
         aiChatUrl:   aiChatUrl   || null,
         tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
         reviseContent,
+        aiHint: aiHint.trim() || null,
       }),
     })
     setSaving(false)
@@ -276,26 +279,109 @@ export default function AddPage() {
         <div className="flex gap-3 mt-2">
           <button
             onClick={() => router.back()}
-            className="flex-1 py-4 rounded-2xl text-base font-medium"
+            className="flex-1 py-3 rounded-xl text-base font-medium"
             style={{ background: 'var(--surface)', color: 'var(--muted)', border: '1px solid var(--border)' }}
           >
             Abbrechen
           </button>
           <button
-            onClick={handleSave}
+            onClick={() => setShowConfirm(true)}
             disabled={saving || !content.trim()}
-            className="flex-1 py-4 rounded-2xl text-base font-medium transition-all active:scale-95"
+            className="flex-1 py-3 rounded-xl text-base font-medium transition-all active:scale-95"
             style={{
               background: content.trim() ? 'var(--accent)' : 'var(--border)',
               color:      content.trim() ? 'white'         : 'var(--muted)',
             }}
           >
-            {saving ? 'Speichert…' : 'Nugget speichern'}
+            Nugget speichern
           </button>
         </div>
       </div>
 
+      {/* Pre-save confirmation dialog: forces a deliberate domain choice (easy to
+          miss in the form above) and offers an optional per-note AI instruction
+          (Phase 5c — steers how the content gets revised/condensed/filtered). */}
+      {showConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.45)' }}
+          onClick={() => !saving && setShowConfirm(false)}
+        >
+          <div
+            className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-6 flex flex-col gap-5"
+            style={{ background: 'var(--bg)', border: '1px solid var(--border)', maxHeight: '90vh', overflowY: 'auto' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h2 className="text-xl">Vor dem Speichern</h2>
 
+            {/* Domain — deliberate confirmation */}
+            <div>
+              <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
+                Domain
+              </label>
+              <div className="flex gap-2 flex-wrap">
+                {domains.map(d => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => setDomainId(d.id)}
+                    className="px-3 py-1.5 rounded-full text-sm transition-all"
+                    style={{
+                      background: domainId === d.id ? 'var(--accent)' : 'var(--surface)',
+                      color:      domainId === d.id ? 'white'         : 'var(--muted)',
+                      border: `1px solid ${domainId === d.id ? 'var(--accent)' : 'var(--border)'}`,
+                    }}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <DomainIcon slug={d.slug} size={14} />
+                      {d.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Per-note AI instruction (Phase 5c) */}
+            <div>
+              <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
+                Hinweis an die KI <span style={{ textTransform: 'none', letterSpacing: 0, opacity: 0.6 }}>(optional)</span>
+              </label>
+              <textarea
+                value={aiHint}
+                onChange={e => setAiHint(e.target.value)}
+                placeholder={'z. B. „Auf 200 Wörter kürzen", „Nur die Kernargumente, Anekdoten weglassen"…'}
+                rows={3}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: '1.6' }}
+              />
+              <p className="text-xs mt-1.5" style={{ color: 'var(--muted)', opacity: reviseContent ? 0.7 : 1 }}>
+                {reviseContent
+                  ? 'Steuert, wie die ✨ KI-Überarbeitung formatiert / filtert. Wird nicht gespeichert.'
+                  : '⚠️ Wirkt nur mit ✨ KI-Überarbeitung — die ist gerade aus.'}
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 mt-1">
+              <button
+                onClick={() => setShowConfirm(false)}
+                disabled={saving}
+                className="flex-1 py-3 rounded-xl text-base font-medium"
+                style={{ background: 'var(--surface)', color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                Zurück
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 py-3 rounded-xl text-base font-medium transition-all active:scale-95"
+                style={{ background: 'var(--accent)', color: 'white' }}
+              >
+                {saving ? 'Speichert…' : 'Jetzt speichern'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

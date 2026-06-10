@@ -49,6 +49,12 @@ Additionally, revise the note's content and return it as "revisedContent" (Markd
 interface ExtractionOptions {
   domainId?: string | null
   reviseContent?: boolean
+  /**
+   * Optional per-note instruction from the user (Phase 5c). Steers how Claude
+   * revises/condenses/filters THIS note (e.g. length limits, keep only certain
+   * points). Passed as a high-priority system-prompt addition, never stored.
+   */
+  aiHint?: string
 }
 
 interface ExistingConceptsArg {
@@ -83,7 +89,7 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
   }
   if (!text.trim()) return
 
-  const { domainId, reviseContent } = options
+  const { domainId, reviseContent, aiHint } = options
 
   try {
     const [existing, domain, settings] = await Promise.all([
@@ -111,6 +117,10 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
     if (settings?.globalPromptAddition) systemPrompt += `\n\n${settings.globalPromptAddition}`
     if (domain?.domainPrompt) systemPrompt += `\n\n${domain.domainPrompt}`
     if (reviseContent) systemPrompt += REVISION_PROMPT
+    // Per-note user instruction (Phase 5c) — appended last so it takes precedence
+    // over the generic revision rules above (length caps, "keep only X", filtering …).
+    if (aiHint?.trim())
+      systemPrompt += `\n\nADDITIONAL INSTRUCTION FROM THE USER for THIS specific note (high priority — apply it when revising, condensing or filtering the content, and honor any length or content limits it states): ${aiHint.trim()}`
 
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-8',

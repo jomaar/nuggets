@@ -193,19 +193,24 @@ falsche Verbindungen (verwechselt „stand im selben Text" mit „gehört zusamm
 
 ### Offen
 
-#### 5c — Per-Nugget Prompt-Ergänzung (mittlere Prio)
+#### ✅ 5c — Per-Nugget Prompt-Ergänzung (erledigt 2026-06-10)
 
 **Problem:** Manchmal will man Claude für einen bestimmten Nugget auf etwas Besonderes
-hinweisen (z.B. "Fokus auf den Unterschied zwischen Paulus und Johannes").
+hinweisen (z.B. "Fokus auf den Unterschied zwischen Paulus und Johannes", "auf 200 Wörter
+kürzen", "nur die Kernargumente, Anekdoten weglassen").
 
-**Lösung:** Optionales Textfeld im Formular "Hinweis an KI" — wird als zusätzlicher
-Kontext an Claude übergeben, aber nicht gespeichert.
+**Umsetzung:** Optionales „Hinweis an die KI"-Feld in einem neuen **Pre-Save-Dialog** in
+`app/add/page.tsx`. Der Dialog erzwingt beim Speichern zugleich eine bewusste
+**Domain-Bestätigung** (vorher leicht zu übersehen). `aiHint` wird im POST-Body
+mitgeschickt → `app/api/nuggets/route.ts` reicht es an `extractAndLinkConcepts` weiter →
+dort wird es **nach** `REVISION_PROMPT` als hochpriore System-Prompt-Ergänzung angehängt
+(hat Vorrang vor den generischen Revisionsregeln: Längen-Caps, „nur X", Filtern). Nicht in
+der DB gespeichert (einmaliger Hinweis). Der Dialog-Hinweistext zeigt an, ob die
+✨ KI-Überarbeitung an ist — bei „aus" wirkt der Hinweis nicht.
 
-**Umsetzung:**
-- State `aiHint` in `app/add/page.tsx` und `app/edit/[id]/page.tsx`
-- Wird im API-Body mitgeschickt: `{ contentMarkdown, aiHint, ... }`
-- In `extractAndLinkConcepts`: als zusätzliche User-Message oder System-Prompt-Ergänzung
-- Nicht in der DB gespeichert (einmaliger Hinweis)
+**Bewusst NICHT auf `app/edit`:** PATCH revidiert nicht mit der KI (Phase-6-Entscheidung,
+schützt Highlights — s. TODO 4 / Stufe C). Ein `aiHint`-Feld dort wäre wirkungslos, also
+weggelassen. Die Edit-Seite bleibt unangetastet.
 
 #### 5d — URL-Import: Webseite → Nugget (mittlere Prio)
 
@@ -300,9 +305,9 @@ zusammengefasst/gefiltert werden; die URL wird als Quelle am Nugget gespeichert.
     `normalizeToHtml()` (lib/content.ts) in kanonisches `contentHtml`.
 - **Frontend** (`app/add/page.tsx`): URL-State + Lade-Button + Lade-/Fehlerzustand,
   Ergebnis in den vorhandenen Editor schreiben (gleicher Pfad wie „Datei laden").
-- **KI-Hinweis:** baut direkt auf **5c** (`aiHint`) + **5a** (✨ KI-Überarbeitung) auf —
-  der Hinweis wird beim Überarbeitungs-/Extraktions-Flow als Zusatzkontext mitgeschickt.
-  → 5c idealerweise gemeinsam oder vorher umsetzen.
+- **KI-Hinweis:** baut direkt auf **5c** (`aiHint`, ✅ erledigt) + **5a** (✨ KI-Überarbeitung)
+  auf — der Hinweis wird beim Überarbeitungs-/Extraktions-Flow als Zusatzkontext mitgeschickt.
+  Der `aiHint`-Durchstich (Frontend `app/add` → POST → `extractAndLinkConcepts`) steht bereits.
 
 **Einschränkungen / Edge-Cases:**
 - Videos ohne Transkript / mit deaktivierten Untertiteln → klare Fehlermeldung.
