@@ -45,5 +45,10 @@ See `PLAN.md` for the full roadmap (Markdown editor, Concept Graph, Claude API, 
 ## Open TODOs
 1. Push Notifications (iOS, 3×/day)
 2. iOS Shortcut → Share Sheet quick-add
-3. icon-192.png / icon-512.png
+3. Favicon + PWA/iOS home-screen icon — **wiring already done**: `app/layout.tsx`
+   references `apple-touch-icon → /icon-192.png` and `manifest.json` lists
+   `/icon-192.png` + `/icon-512.png` (neither file exists yet). Plan: user supplies
+   a square logo → rasterize to `public/icon-192.png`, `public/icon-512.png`,
+   apple-touch-icon + `app/favicon.ico` via `sharp` (installed). iOS icon needs an
+   opaque bg (no transparency); brand accent indigo `#3F4DA2` (globals.css `--accent`).
 4. pm2 setup on Netcup
