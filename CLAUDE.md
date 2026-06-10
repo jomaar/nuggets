@@ -45,10 +45,9 @@ See `PLAN.md` for the full roadmap (Markdown editor, Concept Graph, Claude API, 
 ## Open TODOs
 1. Push Notifications (iOS, 3×/day)
 2. iOS Shortcut → Share Sheet quick-add
-3. Favicon + PWA/iOS home-screen icon — **wiring already done**: `app/layout.tsx`
-   references `apple-touch-icon → /icon-192.png` and `manifest.json` lists
-   `/icon-192.png` + `/icon-512.png` (neither file exists yet). Plan: user supplies
-   a square logo → rasterize to `public/icon-192.png`, `public/icon-512.png`,
-   apple-touch-icon + `app/favicon.ico` via `sharp` (installed). iOS icon needs an
-   opaque bg (no transparency); brand accent indigo `#3F4DA2` (globals.css `--accent`).
+3. ✅ Favicon + PWA/iOS home-screen icon — **done 2026-06-10**. `scripts/generate-icons.mjs`
+   rasterizes `assets/nuggets-logo.svg` via `sharp` → `public/icon-192.png` + `public/icon-512.png`
+   (opaque white bg, iOS-safe) + `app/favicon.ico` (16/32/48 px, PNG-embedded). Logo is
+   trimmed of its baked-in whitespace + centred (`LOGO_SCALE` 0.82). Re-run with
+   `node scripts/generate-icons.mjs`. Wiring in `app/layout.tsx` + `public/manifest.json`.
 4. pm2 setup on Netcup

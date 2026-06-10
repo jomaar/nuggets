@@ -14,3 +14,4 @@ DEV_TIPS.md
 .stignore
 .stfolder/
 .stversions/
+.DS_Store
