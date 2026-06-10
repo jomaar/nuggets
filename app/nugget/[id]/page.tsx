@@ -272,11 +272,11 @@ export default function NuggetDetailPage() {
   }
 
   /**
-   * Re-run the in-text search for the given query: rebuild match ranges, paint
-   * them, and jump to the first hit. Called on every keystroke.
+   * Rebuild match ranges for `q`, paint them, and jump to the first hit.
+   * Returns whether any match was found. Shared by the live search box and the
+   * auto-search seeded from the all-list (`?q=`).
    */
-  const runSearch = (q: string) => {
-    setQuery(q)
+  const applySearch = (q: string): boolean => {
     const root = contentRef.current
     const ranges = root ? findRanges(root, q.trim()) : []
     matchRanges.current = ranges
@@ -285,6 +285,13 @@ export default function NuggetDetailPage() {
     setCurrentMatch(idx)
     setSearchHighlights(ranges, idx)
     if (idx >= 0) scrollRangeIntoView(ranges[idx])
+    return ranges.length > 0
+  }
+
+  /** Re-run the in-text search on every keystroke. */
+  const runSearch = (q: string) => {
+    setQuery(q)
+    applySearch(q)
   }
 
   /** Move to the next (dir=1) or previous (dir=-1) match, wrapping around. */
@@ -309,6 +316,33 @@ export default function NuggetDetailPage() {
 
   // Drop any lingering search highlights when leaving the page.
   useEffect(() => clearSearchHighlights, [])
+
+  // Guards the one-shot auto-search seeded from the all-list (`?q=`).
+  const didInitSearch = useRef(false)
+
+  /**
+   * If the page was opened from the all-list search (`?q=`), pre-fill the
+   * in-text search and jump to the first hit. The Tiptap reader renders its
+   * content asynchronously, so retry across animation frames until the content
+   * DOM is populated (or give up, leaving the bar open at 0/0).
+   */
+  useEffect(() => {
+    if (!nugget || didInitSearch.current) return
+    const q = new URLSearchParams(window.location.search).get('q')?.trim()
+    if (!q) return
+    didInitSearch.current = true
+    setSearchOpen(true)
+    setQuery(q)
+
+    let attempts = 0
+    let raf = 0
+    const tryRun = () => {
+      if (applySearch(q) || attempts++ >= 30) return
+      raf = requestAnimationFrame(tryRun)
+    }
+    raf = requestAnimationFrame(tryRun)
+    return () => cancelAnimationFrame(raf)
+  }, [nugget])
 
   if (loading) {
     return (

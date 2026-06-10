@@ -188,7 +188,7 @@ export default function AllPage() {
         {nuggets.map(n => (
           <Link
             key={n.id}
-            href={`/nugget/${n.id}`}
+            href={search ? `/nugget/${n.id}?q=${encodeURIComponent(search)}` : `/nugget/${n.id}`}
             className="flex items-center gap-2 px-5 py-2.5 rounded-2xl border transition-all active:scale-[0.99]"
             style={{
               background: 'var(--surface)',
