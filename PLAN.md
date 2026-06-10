@@ -390,6 +390,34 @@ auf `NuggetEditor` optional.
 
 ---
 
+## Phase 7 — GUI / Einzelansicht (`app/nugget/[id]`)
+
+Dedizierte Lese-Einzelansicht mit Sticky-Action-Bar (Zurück · Suche · Markierungen ·
+Info · Bearbeiten/Löschen), eingeklapptem Info-Panel (Status/Links/Tags/Konzepte) und
+Highlights-Popup (alle `<mark>` in Lesereihenfolge, Tap → Scroll).
+
+#### ✅ In-Nugget-Textsuche (erledigt 2026-06-10)
+
+**Problem:** Lange Nuggets → kein Weg, im geöffneten Text nach einem Begriff zu suchen.
+
+**Lösung:** Lupen-Button in der Sticky-Bar (neben Markierungen/Info) blendet eine Suchzeile
+ein: Eingabe + Trefferzähler (`3/12`) + ‹/›-Stepper + ✕. Treffer werden gelb markiert, der
+aktuelle indigo; beim Steppen wird zentriert hingescrollt (Wrap-around). Tastatur:
+`Enter` = nächster, `Shift+Enter` = vorheriger, `Esc` = schließen.
+
+**Technik (wichtig):** Markierung via **CSS Custom Highlight API** (`::highlight(search-all)`
+/ `::highlight(search-current)` in `globals.css`) — markiert per `Range`-Objekten, **ohne das
+Tiptap-DOM zu verändern**. Direktes Wrappen in `<span>` hätte `onUpdate` → `useHighlightSave`
+ausgelöst und Such-Spans als `contentHtml` persistiert. `findRanges()` läuft per `TreeWalker`
+über die Text-Nodes (Matches innerhalb *eines* Text-Nodes; Element-Grenzen-übergreifende
+Treffer bewusst ignoriert). Ranges liegen in einem `useRef` (Steppen ohne Re-Render der
+Leseansicht). Cleanup beim Unmount.
+
+⚠️ **Browser-Support:** CSS Custom Highlight API braucht **iOS Safari 17.2+**. Älter →
+Suche/Zähler/Scroll funktionieren, nur die farbige Markierung bleibt aus (sauberes Fallback).
+
+---
+
 ## Referenz — Server-Befehle
 
 > `$SERVER_IP` ist ein Platzhalter (Repo ist public). Die echte IP steht lokal in

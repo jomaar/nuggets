@@ -98,6 +98,17 @@ h1, h2, h3, .serif {
 .nugget-content mark[data-color="pink"]   { background: var(--hl-pink); }
 .nugget-content mark[data-color="orange"] { background: var(--hl-orange); }
 
+/* In-nugget text search (CSS Custom Highlight API) — paints ranges without
+   touching the Tiptap DOM. "current" sits on top of "all" via priority. */
+::highlight(search-all) {
+  background: var(--hl-yellow);
+  color: var(--ink);
+}
+::highlight(search-current) {
+  background: var(--accent);
+  color: #fff;
+}
+
 /* Selection BubbleMenu — colour swatches for highlighting (Schritt 7). */
 .highlight-menu {
   display: flex;

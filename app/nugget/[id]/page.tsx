@@ -6,7 +6,7 @@ import Link from 'next/link'
 import NuggetEditor from '@/components/NuggetEditor'
 import { useHighlightSave } from '@/components/useHighlightSave'
 import DomainIcon from '@/components/DomainIcon'
-import { Info, Highlighter, X } from 'lucide-react'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -79,6 +79,75 @@ function formatDate(iso: string): string {
 }
 
 /**
+ * Walk the reading content and build a Range for every case-insensitive
+ * occurrence of `query` within a single text node. Matches that straddle
+ * element boundaries are intentionally ignored (rare for search terms).
+ */
+function findRanges(root: HTMLElement, query: string): Range[] {
+  const ranges: Range[] = []
+  if (!query) return ranges
+  const needle = query.toLowerCase()
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let node: Node | null
+  while ((node = walker.nextNode())) {
+    const hay = (node.nodeValue ?? '').toLowerCase()
+    let idx = hay.indexOf(needle)
+    while (idx !== -1) {
+      const range = document.createRange()
+      range.setStart(node, idx)
+      range.setEnd(node, idx + needle.length)
+      ranges.push(range)
+      idx = hay.indexOf(needle, idx + needle.length)
+    }
+  }
+  return ranges
+}
+
+/** The CSS Custom Highlight registry, or null where unsupported (e.g. old iOS). */
+function highlightRegistry(): Map<string, unknown> | null {
+  return typeof CSS !== 'undefined' && 'highlights' in CSS
+    ? (CSS as unknown as { highlights: Map<string, unknown> }).highlights
+    : null
+}
+
+/**
+ * Paint search matches via the CSS Custom Highlight API — no DOM mutation, so
+ * the Tiptap reader (and its highlight-save baseline) stays untouched. The
+ * current match is registered separately at higher priority to sit on top.
+ */
+function setSearchHighlights(ranges: Range[], current: number): void {
+  const reg = highlightRegistry()
+  const HighlightCtor = (globalThis as unknown as { Highlight?: new (...r: Range[]) => { priority: number } }).Highlight
+  if (!reg || !HighlightCtor) return
+  reg.delete('search-all')
+  reg.delete('search-current')
+  if (ranges.length === 0) return
+  const all = new HighlightCtor(...ranges.filter((_, i) => i !== current))
+  all.priority = 0
+  reg.set('search-all', all)
+  if (current >= 0 && ranges[current]) {
+    const cur = new HighlightCtor(ranges[current])
+    cur.priority = 1
+    reg.set('search-current', cur)
+  }
+}
+
+/** Remove both search highlight layers. */
+function clearSearchHighlights(): void {
+  const reg = highlightRegistry()
+  reg?.delete('search-all')
+  reg?.delete('search-current')
+}
+
+/** Smooth-scroll a range roughly to the vertical centre of the viewport. */
+function scrollRangeIntoView(range: Range): void {
+  const rect = range.getBoundingClientRect()
+  if (rect.height === 0 && rect.width === 0) return
+  const top = window.scrollY + rect.top - window.innerHeight / 2
+  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+}
+
+/**
  * Read-only Tiptap reading view with debounced highlight persistence.
  * Mounted only once the nugget is loaded so the highlight hook is seeded with
  * the real initial HTML (its baseline is captured at first render).
@@ -106,9 +175,16 @@ export default function NuggetDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [marksOpen, setMarksOpen]     = useState(false)
   const [marks, setMarks]             = useState<{ text: string; color: string }[]>([])
+  const [searchOpen, setSearchOpen]   = useState(false)
+  const [query, setQuery]             = useState('')
+  const [matchCount, setMatchCount]   = useState(0)
+  const [currentMatch, setCurrentMatch] = useState(-1)
   // Wraps the reading content; used to record how far into it the user scrolled
   // so the edit view can restore the same position, and to locate highlight marks.
   const contentRef = useRef<HTMLDivElement>(null)
+  // Live Range objects for the current query, kept out of state so stepping
+  // through matches doesn't trigger a re-render of the whole reading view.
+  const matchRanges = useRef<Range[]>([])
 
   const load = useCallback(async () => {
     try {
@@ -171,6 +247,45 @@ export default function NuggetDetailPage() {
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
+  /**
+   * Re-run the in-text search for the given query: rebuild match ranges, paint
+   * them, and jump to the first hit. Called on every keystroke.
+   */
+  const runSearch = (q: string) => {
+    setQuery(q)
+    const root = contentRef.current
+    const ranges = root ? findRanges(root, q.trim()) : []
+    matchRanges.current = ranges
+    setMatchCount(ranges.length)
+    const idx = ranges.length ? 0 : -1
+    setCurrentMatch(idx)
+    setSearchHighlights(ranges, idx)
+    if (idx >= 0) scrollRangeIntoView(ranges[idx])
+  }
+
+  /** Move to the next (dir=1) or previous (dir=-1) match, wrapping around. */
+  const stepMatch = (dir: 1 | -1) => {
+    const ranges = matchRanges.current
+    if (!ranges.length) return
+    const next = (currentMatch + dir + ranges.length) % ranges.length
+    setCurrentMatch(next)
+    setSearchHighlights(ranges, next)
+    scrollRangeIntoView(ranges[next])
+  }
+
+  /** Close the search bar and clear its state and highlights. */
+  const closeSearch = () => {
+    setSearchOpen(false)
+    setQuery('')
+    matchRanges.current = []
+    setMatchCount(0)
+    setCurrentMatch(-1)
+    clearSearchHighlights()
+  }
+
+  // Drop any lingering search highlights when leaving the page.
+  useEffect(() => clearSearchHighlights, [])
+
   if (loading) {
     return (
       <div className="pt-10">
@@ -200,9 +315,10 @@ export default function NuggetDetailPage() {
       {/* Sticky action bar — back / info / edit / delete reachable at any
           scroll position, so editing a long nugget never means scrolling up. */}
       <div
-        className="sticky top-0 z-30 -mx-4 px-4 pt-10 pb-3 flex items-center justify-between gap-3"
+        className="sticky top-0 z-30 -mx-4 px-4 pt-10 pb-3"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
+        <div className="flex items-center justify-between gap-3">
           <button
             onClick={() => router.back()}
             className="text-sm px-3 py-1 rounded-lg"
@@ -211,8 +327,20 @@ export default function NuggetDetailPage() {
             ← Zurück
           </button>
 
-          {/* Highlights list + info toggle */}
+          {/* Search · highlights list · info toggle */}
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+              aria-label="Im Text suchen"
+              className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+              style={{
+                color:      searchOpen ? 'white'        : 'var(--muted)',
+                background: searchOpen ? 'var(--accent)' : 'transparent',
+                border: `1px solid ${searchOpen ? 'var(--accent)' : 'var(--border)'}`,
+              }}
+            >
+              <Search size={16} />
+            </button>
             <button
               onClick={openMarks}
               aria-label="Markierungen"
@@ -269,6 +397,58 @@ export default function NuggetDetailPage() {
             </div>
           )}
         </div>
+
+        {/* In-text search bar — kept inside the sticky bar so it (and the match
+            counter) stays reachable while stepping through a long nugget. */}
+        {searchOpen && (
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              autoFocus
+              value={query}
+              onChange={e => runSearch(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter')  { e.preventDefault(); stepMatch(e.shiftKey ? -1 : 1) }
+                if (e.key === 'Escape') closeSearch()
+              }}
+              placeholder="Im Nugget suchen…"
+              className="flex-1 text-sm px-3 py-1.5 rounded-lg outline-none"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+            />
+            <span
+              className="text-xs tabular-nums whitespace-nowrap min-w-[2.5rem] text-center"
+              style={{ color: 'var(--muted)' }}
+            >
+              {query ? `${matchCount ? currentMatch + 1 : 0}/${matchCount}` : ''}
+            </span>
+            <button
+              onClick={() => stepMatch(-1)}
+              disabled={!matchCount}
+              aria-label="Vorheriger Treffer"
+              className="flex items-center justify-center p-1.5 rounded-lg disabled:opacity-40"
+              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+            >
+              <ChevronUp size={16} />
+            </button>
+            <button
+              onClick={() => stepMatch(1)}
+              disabled={!matchCount}
+              aria-label="Nächster Treffer"
+              className="flex items-center justify-center p-1.5 rounded-lg disabled:opacity-40"
+              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+            >
+              <ChevronDown size={16} />
+            </button>
+            <button
+              onClick={closeSearch}
+              aria-label="Suche schließen"
+              className="flex items-center justify-center p-1.5 rounded-lg"
+              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+      </div>
 
       <header className="pt-4 pb-2">
         <div className="flex items-center gap-2">
