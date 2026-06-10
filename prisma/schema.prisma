@@ -46,8 +46,30 @@ model Nugget {
   domain          Domain?        @relation(fields: [domainId], references: [id])
   reviews         Review[]
   concepts        NuggetConcept[]
+  bookmarks       Bookmark[]
 
   @@map("nuggets")
+}
+
+/**
+ * A reading bookmark: a saved spot inside a nugget the user wants to jump back to.
+ * The position is stored as a text-quote anchor (W3C Web Annotation style) rather
+ * than a scroll offset or document index, so it survives reflow and edits elsewhere
+ * and resolves the right spot even when the quoted text occurs multiple times.
+ */
+model Bookmark {
+  id        String   @id @default(cuid())
+  nuggetId  String
+  quote     String   // exact anchor text (the caret text node), used for matching
+  prefix    String   // ~30 chars immediately before the quote (disambiguating context)
+  suffix    String   // ~30 chars immediately after the quote (disambiguating context)
+  lineText  String   // the surrounding block's text, shown in the bookmark list
+  createdAt DateTime @default(now())
+
+  nugget    Nugget   @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
+
+  @@index([nuggetId])
+  @@map("bookmarks")
 }
 
 model Concept {

@@ -416,6 +416,37 @@ Leseansicht). Cleanup beim Unmount.
 ⚠️ **Browser-Support:** CSS Custom Highlight API braucht **iOS Safari 17.2+**. Älter →
 Suche/Zähler/Scroll funktionieren, nur die farbige Markierung bleibt aus (sauberes Fallback).
 
+#### ✅ Lesezeichen statt „Heute"-Tab (erledigt 2026-06-10)
+
+**Idee:** Der SM-2-„Heute"-Tab wurde inaktiv gesetzt (nach `app/today/page.tsx` geparkt,
+Code erhalten, aus der BottomNav entfernt) und durch eine **Bookmark-Funktion** ersetzt.
+Ziel: beim Lesen schnell „die Stelle, an der ich gerade arbeite" merken (~10–20 zuletzt) und
+aus einer Liste blitzschnell zurückspringen. Bewusst **keine Suche** in den Bookmarks.
+
+**User-Flow:**
+- Single-View: 🔖-Button in der Sticky-Bar (owner-only) merkt die oberste sichtbare Zeile.
+- Start-Tab `/` (= `app/page.tsx`): Liste neueste-zuerst, je Zeile **Nugget-Titel + gemerkte
+  Zeile**, antippbar (springt zurück), entfernbar. Leerer Zustand + Hinweis.
+
+**Technik — Text-Quote-Anker (W3C Web Annotation / Hypothes.is-Stil):**
+- Gespeichert wird **kein** Scroll-Offset und **kein** Dokument-Index (beide driften bei
+  Edits), sondern `quote` (exakter Zeilentext) + `prefix`/`suffix` (je ~30 Zeichen Kontext)
+  + `lineText` (Block-Text für die Anzeige). Duplikat-sicher über den lokalen Kontext,
+  breiten-/reflow-unabhängig, übersteht Markieren (kein Textänderung) und Edits anderswo.
+- **Bewusst gegen** die schwerere „echter unsichtbarer Anker im `contentHtml`"-Variante
+  entschieden — Bookmarks bleiben reine Metadaten, kein Eingriff in die Content-Pipeline.
+- **Merken:** `caretRangeFromPoint`/`caretPositionFromPoint` am Punkt unter der Sticky-Bar →
+  Text-Knoten → `quote`/`prefix`/`suffix`/`lineText`. **Sprung:** `findRanges()` +
+  Prefix/Suffix-Scoring → bester Kandidat → `scrollRangeIntoView()` (beide aus der In-Nugget-
+  Suche wiederverwendet), mit rAF-Retry bis Tiptap gerendert hat. Anker-Übergabe von der Liste
+  an die Single-View via `sessionStorage` (`nugget-bookmark-jump`).
+- **DB:** Modell `Bookmark` (`quote/prefix/suffix/lineText`, `onDelete: Cascade` auf Nugget),
+  Migration `add_bookmarks`. API `app/api/bookmarks/` (GET Liste mit Titel-Join + POST) und
+  `[id]` (DELETE) — Schreibschutz über das bestehende `proxy.ts` (Session-Cookie).
+
+⚠️ **Restrisiko:** Der Anker bricht, wenn genau die **Nachbarschaft dieser Zeile** umgeschrieben
+wird — für kurzlebige Arbeitsmarken akzeptiert.
+
 ---
 
 ## Referenz — Server-Befehle

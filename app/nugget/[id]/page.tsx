@@ -6,7 +6,7 @@ import Link from 'next/link'
 import NuggetEditor from '@/components/NuggetEditor'
 import { useHighlightSave } from '@/components/useHighlightSave'
 import DomainIcon from '@/components/DomainIcon'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X } from 'lucide-react'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -147,6 +147,114 @@ function scrollRangeIntoView(range: Range): void {
   window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
 }
 
+// --- Bookmark text-quote anchors (W3C Web Annotation style) -----------------
+// A bookmark stores the quoted line plus a little surrounding context so it can
+// be re-located later by *meaning* rather than by a fragile scroll offset or
+// document index — and resolved to the right spot even when the quote repeats.
+
+/** How many characters of context to keep on each side of the quote. */
+const ANCHOR_CONTEXT_LEN = 30
+/** Max length of the human-readable line shown in the bookmark list. */
+const ANCHOR_LINE_LEN = 120
+/** Block-level tags whose text forms one readable "line" for the list display. */
+const BLOCK_TAGS = new Set(['P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'PRE', 'TD', 'TH', 'FIGCAPTION'])
+
+/** Collapse any run of whitespace to a single space. */
+function squashWhitespace(text: string): string {
+  return text.replace(/\s+/g, ' ')
+}
+
+/** The text node at a viewport point, across the standard and WebKit caret APIs. */
+function caretTextNodeAtPoint(x: number, y: number): Text | null {
+  const doc = document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node } | null
+    caretRangeFromPoint?: (x: number, y: number) => Range | null
+  }
+  let node: Node | null = null
+  if (typeof doc.caretPositionFromPoint === 'function') {
+    node = doc.caretPositionFromPoint(x, y)?.offsetNode ?? null
+  }
+  if (!node && typeof doc.caretRangeFromPoint === 'function') {
+    node = doc.caretRangeFromPoint(x, y)?.startContainer ?? null
+  }
+  if (!node) return null
+  if (node.nodeType === Node.TEXT_NODE) return node as Text
+  // Landed on an element — descend to its first text node with real content.
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
+  let t = walker.nextNode() as Text | null
+  while (t && (t.nodeValue ?? '').trim() === '') t = walker.nextNode() as Text | null
+  return t
+}
+
+/** Text of the nearest block ancestor (the readable "line"), for list display. */
+function nearestBlockText(node: Node, root: HTMLElement): string {
+  let el: Node | null = node
+  while (el && el !== root) {
+    if (el.nodeType === Node.ELEMENT_NODE && BLOCK_TAGS.has((el as Element).tagName)) {
+      return squashWhitespace(el.textContent ?? '').trim().slice(0, ANCHOR_LINE_LEN)
+    }
+    el = el.parentNode
+  }
+  return squashWhitespace(node.textContent ?? '').trim().slice(0, ANCHOR_LINE_LEN)
+}
+
+/** Capture-time context: the text immediately before/after a whole text node. */
+function nodeAnchorContext(root: HTMLElement, node: Text): { prefix: string; suffix: string } {
+  const before = document.createRange()
+  before.setStart(root, 0)
+  before.setEndBefore(node)
+  const after = document.createRange()
+  after.setStartAfter(node)
+  after.setEnd(root, root.childNodes.length)
+  return {
+    prefix: squashWhitespace(before.toString()).slice(-ANCHOR_CONTEXT_LEN),
+    suffix: squashWhitespace(after.toString()).slice(0, ANCHOR_CONTEXT_LEN),
+  }
+}
+
+/** Length of the longest common suffix of `a` and `b`. */
+function commonSuffixLen(a: string, b: string): number {
+  let i = 0
+  while (i < a.length && i < b.length && a[a.length - 1 - i] === b[b.length - 1 - i]) i++
+  return i
+}
+
+/** Length of the longest common prefix of `a` and `b`. */
+function commonPrefixLen(a: string, b: string): number {
+  let i = 0
+  while (i < a.length && i < b.length && a[i] === b[i]) i++
+  return i
+}
+
+/**
+ * Re-locate a bookmark anchor in the rendered content. Finds every occurrence of
+ * the quote, then — when several exist — picks the one whose surrounding text best
+ * matches the stored prefix/suffix, so duplicate lines resolve to the right spot.
+ */
+function resolveAnchor(root: HTMLElement, quote: string, prefix: string, suffix: string): Range | null {
+  const ranges = findRanges(root, quote)
+  if (ranges.length <= 1) return ranges[0] ?? null
+
+  let best = ranges[0]
+  let bestScore = -1
+  for (const range of ranges) {
+    const before = document.createRange()
+    before.setStart(root, 0)
+    before.setEnd(range.startContainer, range.startOffset)
+    const after = document.createRange()
+    after.setStart(range.endContainer, range.endOffset)
+    after.setEnd(root, root.childNodes.length)
+    const score =
+      commonSuffixLen(squashWhitespace(before.toString()), prefix) +
+      commonPrefixLen(squashWhitespace(after.toString()), suffix)
+    if (score > bestScore) { bestScore = score; best = range }
+  }
+  return best
+}
+
+/** sessionStorage key carrying a bookmark target across navigation to the nugget. */
+const BOOKMARK_JUMP_KEY = 'nugget-bookmark-jump'
+
 /**
  * Read-only Tiptap reading view with debounced highlight persistence.
  * Mounted only once the nugget is loaded so the highlight hook is seeded with
@@ -182,6 +290,11 @@ export default function NuggetDetailPage() {
   // Wraps the reading content; used to record how far into it the user scrolled
   // so the edit view can restore the same position, and to locate highlight marks.
   const contentRef = useRef<HTMLDivElement>(null)
+  // The sticky action bar; its bottom edge marks where the visible reading area
+  // starts, i.e. the point a bookmark samples as the user's current line.
+  const stickyRef = useRef<HTMLDivElement>(null)
+  // Brief confirmation that a bookmark was saved (icon flips to a check).
+  const [bookmarkSaved, setBookmarkSaved] = useState(false)
   // Live Range objects for the current query, kept out of state so stepping
   // through matches doesn't trigger a re-render of the whole reading view.
   const matchRanges = useRef<Range[]>([])
@@ -272,6 +385,38 @@ export default function NuggetDetailPage() {
   }
 
   /**
+   * Bookmark the line currently at the top of the reading area. We sample the
+   * text just below the sticky bar (nudging downward past any inter-line gap)
+   * and store it as a text-quote anchor — the quote plus a little surrounding
+   * context — so it survives reflow/edits and resolves the right spot on return.
+   */
+  const addBookmark = async () => {
+    const root = contentRef.current
+    if (!root) return
+    const contentLeft  = root.getBoundingClientRect().left + 24
+    const stickyBottom = stickyRef.current?.getBoundingClientRect().bottom ?? 0
+
+    let node: Text | null = null
+    for (const dy of [8, 28, 48, 80, 120]) {
+      const hit = caretTextNodeAtPoint(contentLeft, stickyBottom + dy)
+      if (hit && (hit.nodeValue ?? '').trim().length >= 2) { node = hit; break }
+    }
+    if (!node) return
+
+    const quote = (node.nodeValue ?? '').trim()
+    const { prefix, suffix } = nodeAnchorContext(root, node)
+    const lineText = nearestBlockText(node, root)
+
+    await fetch('/api/bookmarks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nuggetId: id, quote, prefix, suffix, lineText }),
+    })
+    setBookmarkSaved(true)
+    setTimeout(() => setBookmarkSaved(false), 1200)
+  }
+
+  /**
    * Rebuild match ranges for `q`, paint them, and jump to the first hit.
    * Returns whether any match was found. Shared by the live search box and the
    * auto-search seeded from the all-list (`?q=`).
@@ -344,6 +489,37 @@ export default function NuggetDetailPage() {
     return () => cancelAnimationFrame(raf)
   }, [nugget])
 
+  // Guards the one-shot bookmark jump handed over from the bookmark list.
+  const didJumpToBookmark = useRef(false)
+
+  /**
+   * If the page was opened from the bookmark list, the target anchor was stashed
+   * in sessionStorage. Resolve it against the rendered content and scroll there,
+   * retrying across animation frames until Tiptap has populated the DOM.
+   */
+  useEffect(() => {
+    if (!nugget || didJumpToBookmark.current) return
+    const raw = sessionStorage.getItem(BOOKMARK_JUMP_KEY)
+    if (!raw) return
+    let target: { id: string; quote: string; prefix: string; suffix: string } | null = null
+    try { target = JSON.parse(raw) } catch { target = null }
+    if (!target || target.id !== id) return
+    didJumpToBookmark.current = true
+    sessionStorage.removeItem(BOOKMARK_JUMP_KEY)
+
+    let attempts = 0
+    let raf = 0
+    const tryJump = () => {
+      const root = contentRef.current
+      const range = root ? resolveAnchor(root, target!.quote, target!.prefix, target!.suffix) : null
+      if (range) { scrollRangeIntoView(range); return }
+      if (attempts++ >= 40) return
+      raf = requestAnimationFrame(tryJump)
+    }
+    raf = requestAnimationFrame(tryJump)
+    return () => cancelAnimationFrame(raf)
+  }, [nugget, id])
+
   if (loading) {
     return (
       <div className="pt-10">
@@ -373,6 +549,7 @@ export default function NuggetDetailPage() {
       {/* Sticky action bar — back / info / edit / delete reachable at any
           scroll position, so editing a long nugget never means scrolling up. */}
       <div
+        ref={stickyRef}
         className="sticky top-0 z-30 -mx-4 px-4 pt-10 pb-3"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
@@ -385,8 +562,22 @@ export default function NuggetDetailPage() {
             ← Zurück
           </button>
 
-          {/* Search · highlights list · info toggle */}
+          {/* Bookmark current line · search · highlights list · info toggle */}
           <div className="flex items-center gap-2">
+            {isOwner && (
+              <button
+                onClick={addBookmark}
+                aria-label="Lesezeichen setzen"
+                className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+                style={{
+                  color:      bookmarkSaved ? 'white'        : 'var(--muted)',
+                  background:  bookmarkSaved ? 'var(--accent)' : 'transparent',
+                  border: `1px solid ${bookmarkSaved ? 'var(--accent)' : 'var(--border)'}`,
+                }}
+              >
+                {bookmarkSaved ? <Check size={16} /> : <Bookmark size={16} />}
+              </button>
+            )}
             <button
               onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
               aria-label="Im Text suchen"

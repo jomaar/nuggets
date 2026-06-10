@@ -1,95 +1,107 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import NuggetCard from '@/components/NuggetCard'
+import { useRouter } from 'next/navigation'
+import { Trash2 } from 'lucide-react'
 
-interface Domain {
+interface Bookmark {
   id: string
-  name: string
-  slug: string
-  icon: string | null
+  quote: string
+  prefix: string
+  suffix: string
+  lineText: string
+  createdAt: string
+  nugget: { id: string; title: string }
 }
 
-interface NuggetConceptEntry {
-  relevance: number
-  concept: { id: string; description: string; labels: { language: string; term: string }[] }
-}
+/** sessionStorage key handing the jump target over to the nugget view. */
+const BOOKMARK_JUMP_KEY = 'nugget-bookmark-jump'
 
-interface Nugget {
-  id: string
-  title: string
-  contentHtml: string
-  sourceUrl: string | null
-  sourceLabel: string | null
-  aiChatUrl: string | null
-  tags: string
-  domain: Domain | null
-  concepts: NuggetConceptEntry[]
-}
-
-export default function TodayPage() {
-  const [nuggets, setNuggets] = useState<Nugget[]>([])
+/**
+ * Bookmarks landing page (the app's home tab). Lists saved reading spots newest
+ * first — each row shows its nugget's title and the bookmarked line. Tapping a
+ * row opens the nugget and scrolls to the spot; the trash icon removes it.
+ * Deliberately no search: the list is meant to stay short (the last ~10–20 spots).
+ */
+export default function BookmarksPage() {
+  const router = useRouter()
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [loading, setLoading] = useState(true)
-  const [isOwner, setIsOwner] = useState(false)
 
   useEffect(() => {
-    fetch('/api/due')
+    fetch('/api/bookmarks')
       .then(r => r.json())
-      .then(data => { setNuggets(data); setLoading(false) })
-    fetch('/api/auth/me')
-      .then(r => r.json())
-      .then((d: { isOwner: boolean }) => setIsOwner(d.isOwner))
-      .catch(() => {})
+      .then((data: Bookmark[]) => { setBookmarks(data); setLoading(false) })
+      .catch(() => setLoading(false))
   }, [])
 
-  const handleReview = async (id: string, rating: 'again' | 'hard' | 'easy') => {
-    await fetch(`/api/nuggets/${id}/review`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rating }),
-    })
+  /** Stash the anchor for the nugget view to resolve, then navigate there. */
+  const openBookmark = (b: Bookmark) => {
+    sessionStorage.setItem(
+      BOOKMARK_JUMP_KEY,
+      JSON.stringify({ id: b.nugget.id, quote: b.quote, prefix: b.prefix, suffix: b.suffix }),
+    )
+    router.push(`/nugget/${b.nugget.id}`)
+  }
+
+  /** Remove a bookmark and drop it from the list. */
+  const removeBookmark = async (id: string) => {
+    await fetch(`/api/bookmarks/${id}`, { method: 'DELETE' })
+    setBookmarks(prev => prev.filter(b => b.id !== id))
   }
 
   return (
     <>
       <header className="pt-10 pb-6">
         <p className="text-xs tracking-widest uppercase mb-1" style={{ color: 'var(--muted)' }}>
-          {new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}
+          Gemerkte Stellen
         </p>
-        <h1 className="text-3xl">
-          Heute fällig
-        </h1>
+        <h1 className="text-3xl">Lesezeichen</h1>
       </header>
 
       {loading && (
         <p style={{ color: 'var(--muted)' }} className="text-sm">Lädt…</p>
       )}
 
-      {!loading && nuggets.length === 0 && (
+      {!loading && bookmarks.length === 0 && (
         <div className="text-center py-16">
           <p className="text-4xl mb-3">✦</p>
-          <p className="serif text-xl mb-2">Alles erledigt.</p>
+          <p className="serif text-xl mb-2">Noch keine Lesezeichen.</p>
           <p className="text-sm" style={{ color: 'var(--muted)' }}>
-            Keine fälligen Nuggets heute.
+            Tippe beim Lesen oben auf das Lesezeichen-Symbol, um eine Stelle zu merken.
           </p>
         </div>
       )}
 
-      {nuggets.map(n => (
-        <NuggetCard
-          key={n.id}
-          {...n}
-          tags={JSON.parse(n.tags || '[]')}
-          title={n.title}
-          domain={n.domain}
-          concepts={n.concepts}
-          defaultExpanded={true}
-          onReview={isOwner ? handleReview : undefined}
-          showReviewButtons={isOwner}
-        />
-      ))}
-
-
+      <div className="flex flex-col gap-2">
+        {bookmarks.map(b => (
+          <div
+            key={b.id}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+          >
+            <button
+              onClick={() => openBookmark(b)}
+              className="flex-1 min-w-0 text-left transition-all active:scale-[0.99]"
+            >
+              <p className="text-xs truncate" style={{ color: 'var(--muted)' }}>
+                {b.nugget.title || 'Ohne Titel'}
+              </p>
+              <p className="text-sm truncate mt-0.5" style={{ color: 'var(--ink)' }}>
+                {b.lineText || b.quote || '—'}
+              </p>
+            </button>
+            <button
+              onClick={() => removeBookmark(b.id)}
+              aria-label="Lesezeichen entfernen"
+              className="flex-shrink-0 flex items-center justify-center p-2 rounded-lg transition-colors"
+              style={{ color: 'var(--muted)' }}
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
+      </div>
     </>
   )
 }

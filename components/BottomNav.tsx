@@ -1,10 +1,10 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Sparkles, Plus, List, Network, type LucideIcon } from 'lucide-react'
+import { Bookmark, Plus, List, Network, type LucideIcon } from 'lucide-react'
 
 const links: { href: string; label: string; Icon: LucideIcon }[] = [
-  { href: '/',         label: 'Heute', Icon: Sparkles },
+  { href: '/',         label: 'Lesezeichen', Icon: Bookmark },
   { href: '/add',      label: 'Neu',   Icon: Plus },
   { href: '/all',      label: 'Alle',  Icon: List },
   { href: '/concepts', label: 'Graph', Icon: Network },
