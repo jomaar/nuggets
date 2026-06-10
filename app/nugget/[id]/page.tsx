@@ -174,7 +174,7 @@ export default function NuggetDetailPage() {
   const [infoOpen, setInfoOpen]       = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [marksOpen, setMarksOpen]     = useState(false)
-  const [marks, setMarks]             = useState<{ text: string; color: string }[]>([])
+  const [marks, setMarks]             = useState<{ text: string; color: string; markIndex: number }[]>([])
   const [searchOpen, setSearchOpen]   = useState(false)
   const [query, setQuery]             = useState('')
   const [matchCount, setMatchCount]   = useState(0)
@@ -227,22 +227,46 @@ export default function NuggetDetailPage() {
   }
 
   /**
-   * Collect all highlight marks from the rendered content in document order and
-   * open the popup. Reading straight from the live DOM keeps the list indices
-   * aligned with the actual <mark> elements we later scroll to.
+   * Collect highlight marks from the rendered content and open the popup.
+   * A single block selection spanning several paragraphs becomes one <mark>
+   * per paragraph (ProseMirror can't span block boundaries), so we merge
+   * consecutive marks of the same colour that are only separated by
+   * whitespace/block boundaries into one list entry. `markIndex` keeps each
+   * entry pointing at its first <mark> for scroll-to.
    */
   const openMarks = () => {
-    const nodes = contentRef.current?.querySelectorAll('mark') ?? []
-    setMarks(Array.from(nodes).map(el => ({
-      text:  (el.textContent ?? '').replace(/\s+/g, ' ').trim(),
-      color: el.getAttribute('data-color') ?? 'yellow',
-    })))
+    const nodes = Array.from(contentRef.current?.querySelectorAll('mark') ?? [])
+    const groups: { text: string; color: string; markIndex: number; lastEl: Element }[] = []
+
+    nodes.forEach((el, i) => {
+      const color = el.getAttribute('data-color') ?? 'yellow'
+      const text  = (el.textContent ?? '').replace(/\s+/g, ' ').trim()
+      const prev  = groups[groups.length - 1]
+
+      let contiguous = false
+      if (prev && prev.color === color) {
+        const between = document.createRange()
+        between.setStartAfter(prev.lastEl)
+        between.setEndBefore(el)
+        // Only whitespace between the two marks → same continuous selection.
+        contiguous = between.toString().replace(/\s+/g, '') === ''
+      }
+
+      if (prev && contiguous) {
+        prev.text   = `${prev.text} ${text}`.trim()
+        prev.lastEl = el
+      } else {
+        groups.push({ text, color, markIndex: i, lastEl: el })
+      }
+    })
+
+    setMarks(groups.map(({ text, color, markIndex }) => ({ text, color, markIndex })))
     setMarksOpen(true)
   }
 
-  /** Scroll the n-th highlight into view (clear of the sticky bar) and close the popup. */
-  const scrollToMark = (index: number) => {
-    const el = contentRef.current?.querySelectorAll('mark')[index]
+  /** Scroll the highlight at the given <mark> index into view and close the popup. */
+  const scrollToMark = (markIndex: number) => {
+    const el = contentRef.current?.querySelectorAll('mark')[markIndex]
     setMarksOpen(false)
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
@@ -596,7 +620,10 @@ export default function NuggetDetailPage() {
               </button>
             </div>
 
-            <div className="overflow-y-auto px-3 py-3 flex flex-col gap-2">
+            <div
+              className="overflow-y-auto px-3 py-3 flex flex-col gap-2"
+              style={{ overscrollBehavior: 'contain' }}
+            >
               {marks.length === 0 ? (
                 <p className="text-sm text-center py-6" style={{ color: 'var(--muted)' }}>
                   Keine Markierungen in diesem Nugget.
@@ -605,8 +632,8 @@ export default function NuggetDetailPage() {
                 marks.map((m, i) => (
                   <button
                     key={i}
-                    onClick={() => scrollToMark(i)}
-                    className="w-full text-left text-sm px-3 py-2 rounded-lg truncate transition-all active:scale-[0.99]"
+                    onClick={() => scrollToMark(m.markIndex)}
+                    className="w-full text-left text-sm px-3 py-2 rounded-lg truncate flex-shrink-0 transition-all active:scale-[0.99]"
                     style={{ background: `var(${HIGHLIGHT_VARS[m.color] ?? '--hl-yellow'})`, color: 'var(--ink)' }}
                   >
                     {m.text || '—'}
