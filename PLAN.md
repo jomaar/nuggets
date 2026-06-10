@@ -71,6 +71,7 @@ Aufgaben, die **nicht** Teil einer laufenden Phase sind, plus Querverweise auf d
 | 10 | icon-192.png / icon-512.png | niedrig | PWA-Icons fehlen noch |
 | ~~11~~ | ~~Save-on-Expand vermeiden~~ | ✅ | **Erledigt 2026-06-08.** `NuggetCard` führt den zuletzt gespeicherten Stand in `lastSavedHtml` mit; die erste `onChange`-Emission (Mount-Re-Normalisierung) setzt nur die Baseline, no-op-PATCHes unterdrückt. `NuggetEditor` liefert `onReady` als Backstop-Baseline (onCreate kann wg. `immediatelyRender:false` *nach* dem ersten onUpdate feuern → reines onReady-Seeding war Race). Browser-verifiziert: Aufklappen → kein PATCH, Highlight → ein PATCH 200 |
 | 12 | ChatGPT-Exporter-Ballast bei `.html`-Import | mittel | **Import-Pfad gefixt 2026-06-09** (Commit `33711d7`). **Befund:** Die ursprünglich vermutete JSON-Doppelkodierung existiert in **Prod nicht** (war die inzwischen geleerte Dev-DB). Realer Müll = ChatGPT-Exporter-Chrome in 5 `.html`-importierten Nuggets (Meta-Header `User:/Created:/Link:`, Footer `Powered by ChatGPT Exporter`, `Prompt:/Response:`-Gerüst + Timestamps). Neue `stripImportBallast()` in `lib/content.ts` entfernt das beim Import in `app/add` + `app/edit` (greift nur bei erkanntem Exporter-HTML). **Offen:** Bereinigung der 5 bestehenden Prod-Nuggets — macht der User selbst (Funktion ist wiederverwendbar: `contentHtml` durchschicken, dann `contentMarkdown`/`contentPlain` neu ableiten). |
+| 13 | YouTube-Transkript → Nugget | hoch | **★ Nächster Schritt (geplant für 2026-06-10).** Details s. **Phase 5h**. Aufwand: mittel, in einer Session machbar. |
 
 ---
 
@@ -269,6 +270,48 @@ nur als Chips am Ende.
 - Für jeden verknüpften Begriff: ersten Treffer im Text durch Markdown-Link ersetzen
 - Nur erste Erwähnung verlinken (wie Wikipedia)
 - Nur wenn der Begriff exakt im Text vorkommt (kein Fuzzy-Match)
+
+#### 5h — YouTube-Transkript → Nugget (hohe Prio) ★ Nächster Schritt
+
+**Idee:** Beim Anlegen eines Nuggets eine YouTube-URL angeben → Transkript wird geladen,
+landet als editierbarer Text im Editor, kann mit einem optionalen KI-Hinweis
+zusammengefasst/gefiltert werden; die URL wird als Quelle am Nugget gespeichert.
+
+**User-Flow (`app/add`):**
+1. Feld „YouTube-URL" + Button „Transkript laden".
+2. Transkript erscheint im Tiptap-Editor (HTML/Markdown) → frei editierbar.
+3. Optionales „Hinweis an KI"-Feld: wie soll zusammengefasst werden / welche Inhalte
+   übernehmen (z. B. „nur die Kernargumente, keine Anekdoten").
+4. Speichern wie gewohnt → `sourceUrl` = YouTube-URL, `sourceLabel` = „YouTube".
+
+**Umsetzung:**
+- **Server-Route** `POST /api/youtube-transcript { url }` (server-seitig wg. CORS &
+  weil die Transkript-Endpunkte nicht für Browser-Requests gedacht sind).
+  - Video-ID aus diversen URL-Formen parsen (`watch?v=`, `youtu.be/`, `/shorts/`, mit Zeit-/Playlist-Params).
+  - Transkript via **`youtube-transcript@^1.3.1`** (installiert 2026-06-09) ziehen:
+    `import { fetchTranscript } from 'youtube-transcript'` → `fetchTranscript(url|id)` liefert
+    Segmente `{ text, duration, offset }[]`. Typisierte Fehlerklassen sind exportiert
+    (`YoutubeTranscriptDisabledError`, `...NotAvailableError`, `...VideoUnavailableError`,
+    `...TooManyRequestError`) → direkt auf die Edge-Cases unten mappen.
+    ⚠️ **Erster Schritt morgen:** an einem echten Video *live* testen, ob die Lib aktuell
+    durchgeht (YT ändert interne Endpunkte; Import/API ist bestätigt, der Netz-Fetch noch nicht).
+  - Segmente zu sauberem Text/Markdown zusammenfügen (Zeitstempel droppen; die Lib wandelt
+    NICHT selbst nach Markdown — das machen wir aus `segment.text`), dann durch
+    `normalizeToHtml()` (lib/content.ts) in kanonisches `contentHtml`.
+- **Frontend** (`app/add/page.tsx`): URL-State + Lade-Button + Lade-/Fehlerzustand,
+  Ergebnis in den vorhandenen Editor schreiben (gleicher Pfad wie „Datei laden").
+- **KI-Hinweis:** baut direkt auf **5c** (`aiHint`) + **5a** (✨ KI-Überarbeitung) auf —
+  der Hinweis wird beim Überarbeitungs-/Extraktions-Flow als Zusatzkontext mitgeschickt.
+  → 5c idealerweise gemeinsam oder vorher umsetzen.
+
+**Einschränkungen / Edge-Cases:**
+- Videos ohne Transkript / mit deaktivierten Untertiteln → klare Fehlermeldung.
+- Auto-generierte vs. manuelle Captions (Qualität, Sprache) — ggf. Sprachwahl später.
+- Sehr lange Transkripte: Token-Kosten bei KI-Überarbeitung im Blick behalten.
+- Age-restricted / private Videos liefern kein Transkript.
+
+**Aufwand:** mittel — Hauptarbeit = passende Lib auswählen/verifizieren + Server-Route +
+URL-Parsing. UI und Speicher-Pfad existieren bereits. In einer fokussierten Session machbar.
 
 ---
 
