@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import NuggetCard from '@/components/NuggetCard'
+import Link from 'next/link'
+import DomainIcon from '@/components/DomainIcon'
 
 interface Label {
   language: string
@@ -11,12 +12,20 @@ interface Label {
 
 interface Nugget {
   id: string
+  title: string
   contentHtml: string
   sourceUrl: string | null
   sourceLabel: string | null
   aiChatUrl: string | null
   tags: string
   domain: { id: string; name: string; slug: string; icon: string | null } | null
+}
+
+/** Derives a fallback title from raw HTML when no title is stored. */
+function fallbackTitle(contentHtml: string): string {
+  const plain = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+  const sentence = plain.split(/[.!?]/)[0].trim()
+  return sentence.length > 80 ? sentence.substring(0, 77) + '…' : sentence
 }
 
 interface ConceptDetail {
@@ -103,16 +112,33 @@ export default function ConceptPage() {
         {concept.nuggets.length} {concept.nuggets.length === 1 ? 'Nugget' : 'Nuggets'}
       </p>
 
-      {concept.nuggets.map(({ nugget }) => (
-        <NuggetCard
-          key={nugget.id}
-          {...nugget}
-          tags={JSON.parse(nugget.tags || '[]')}
-          domain={nugget.domain}
-        />
-      ))}
-
-
+      {/* Title-only list — tap a row to open the single view */}
+      <div className="flex flex-col gap-2">
+        {concept.nuggets.map(({ nugget }) => (
+          <Link
+            key={nugget.id}
+            href={`/nugget/${nugget.id}`}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl border transition-all active:scale-[0.99]"
+            style={{
+              background: 'var(--surface)',
+              borderColor: 'var(--border)',
+              boxShadow: '0 2px 12px rgba(26,23,20,0.06)',
+            }}
+          >
+            {nugget.domain && (
+              <span
+                className="inline-flex items-center text-xs px-2 py-1 rounded-full flex-shrink-0"
+                style={{ background: 'var(--warm)', color: 'var(--muted)' }}
+              >
+                <DomainIcon slug={nugget.domain.slug} size={13} />
+              </span>
+            )}
+            <span className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>
+              {nugget.title || fallbackTitle(nugget.contentHtml)}
+            </span>
+          </Link>
+        ))}
+      </div>
     </>
   )
 }
