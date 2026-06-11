@@ -50,7 +50,19 @@ See `PLAN.md` for the full roadmap (Markdown editor, Concept Graph, Claude API, 
 
 ## Open TODOs
 1. Push Notifications (iOS, 3×/day)
-2. iOS Shortcut → Share Sheet quick-add
+2. ✅ iOS Shortcut → Share Sheet quick-add — **done 2026-06-11**. `app/add` pre-fills
+   from query params: `?q=…` (smart single param — http(s) value → treated as link/source,
+   anything else → text; this keeps the Shortcut branch-free), plus explicit `?url=` / `?text=`
+   for back-compat. Read via `window.location` (NOT `useSearchParams`, avoids the App-Router
+   Suspense requirement). The deliberate domain + AI-hint pre-save dialog stays intact.
+   NOTE: iOS does NOT let a home-screen PWA register as a Share-Sheet target (no Web Share
+   Target API in Safari) — the Shortcut is the bridge; it opens the URL in **Safari**, not the
+   standalone PWA. Shortcut build (4 actions): Empfange Eingabe (Share Sheet, accept URLs+Text)
+   → **URL codieren** (input = nur `Kurzbefehl-Eingabe`, NICHT die Basis-URL) → **Text**
+   = `https://nuggets.jomaar.de/add?q=` + `[Codierte URL]` (the literal `?q=` is typed here, must
+   stay un-encoded) → **URLs öffnen** ← `[Text]`. Separate Text action is needed because «URLs
+   öffnen» on some iOS versions takes only a variable, no mixed text. Pitfall: encoding the whole
+   URL turns `?`/`=` into `%3F`/`%3D` → server sees no query param.
 3. ✅ Favicon + PWA/iOS home-screen icon — **done 2026-06-10**. `scripts/generate-icons.mjs`
    rasterizes `assets/nuggets-logo.svg` via `sharp` → `public/icon-192.png` + `public/icon-512.png`
    (opaque white bg, iOS-safe) + `app/favicon.ico` (16/32/48 px, PNG-embedded). Logo is
