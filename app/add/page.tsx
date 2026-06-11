@@ -54,6 +54,29 @@ export default function AddPage() {
       .catch(() => {})
   }, [])
 
+  // Quick-add via iOS Shortcut / Share Sheet: the shortcut opens
+  // /add?url=… and/or /add?text=…. We pre-fill the content field so the
+  // user lands in the form ready to review & save (the deliberate
+  // domain + AI-hint dialog stays intact). Precedence:
+  //   • shared text wins as the content body; an accompanying url then
+  //     pre-fills the source field as a convenience.
+  //   • a lone url drops into the content field so «Text aus Link» can
+  //     resolve it (and seeds the source field too).
+  // Read from window.location rather than useSearchParams() to avoid the
+  // App-Router Suspense-boundary requirement on this client page.
+  useEffect(() => {
+    const params     = new URLSearchParams(window.location.search)
+    const sharedText = params.get('text')?.trim()
+    const sharedUrl  = params.get('url')?.trim()
+    if (sharedText) {
+      setContent(sharedText)
+      if (sharedUrl) setSourceUrl(sharedUrl)
+    } else if (sharedUrl) {
+      setContent(sharedUrl)
+      setSourceUrl(sharedUrl)
+    }
+  }, [])
+
   const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
