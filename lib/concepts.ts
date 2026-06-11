@@ -117,10 +117,15 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
     if (settings?.globalPromptAddition) systemPrompt += `\n\n${settings.globalPromptAddition}`
     if (domain?.domainPrompt) systemPrompt += `\n\n${domain.domainPrompt}`
     if (reviseContent) systemPrompt += REVISION_PROMPT
-    // Per-note user instruction (Phase 5c) — appended last so it takes precedence
-    // over the generic revision rules above (length caps, "keep only X", filtering …).
+    // Per-note user instruction (Phase 5c) — appended last and framed as the
+    // top-priority directive. Models otherwise tend to treat it as just one
+    // more hint among the revision/domain/global rules and under-apply it, so
+    // we state the override explicitly. The one thing it must NOT override is
+    // the structural output contract (the save_concepts tool + its required
+    // fields) — that interface has to stay stable regardless of what the user
+    // writes, otherwise the response can't be parsed.
     if (aiHint?.trim())
-      systemPrompt += `\n\nADDITIONAL INSTRUCTION FROM THE USER for THIS specific note (high priority — apply it when revising, condensing or filtering the content, and honor any length or content limits it states): ${aiHint.trim()}`
+      systemPrompt += `\n\nADDITIONAL INSTRUCTION FROM THE USER for THIS specific note. This instruction has the HIGHEST PRIORITY: it OVERRIDES every other content instruction above (the revision rules, the domain prompt and the global addition) wherever they conflict. Treat it as the primary directive when revising, condensing or filtering the content, and strictly honor any length or content limits it states — even if that contradicts the generic rules. The ONLY thing it may NOT change is the structural output contract: you must still return your result through the save_concepts tool with all of its required fields. User instruction: ${aiHint.trim()}`
 
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-8',

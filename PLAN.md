@@ -72,6 +72,7 @@ Aufgaben, die **nicht** Teil einer laufenden Phase sind, plus Querverweise auf d
 | ~~11~~ | ~~Save-on-Expand vermeiden~~ | ✅ | **Erledigt 2026-06-08.** `NuggetCard` führt den zuletzt gespeicherten Stand in `lastSavedHtml` mit; die erste `onChange`-Emission (Mount-Re-Normalisierung) setzt nur die Baseline, no-op-PATCHes unterdrückt. `NuggetEditor` liefert `onReady` als Backstop-Baseline (onCreate kann wg. `immediatelyRender:false` *nach* dem ersten onUpdate feuern → reines onReady-Seeding war Race). Browser-verifiziert: Aufklappen → kein PATCH, Highlight → ein PATCH 200 |
 | 12 | ChatGPT-Exporter-Ballast bei `.html`-Import | mittel | **Import-Pfad gefixt 2026-06-09** (Commit `33711d7`). **Befund:** Die ursprünglich vermutete JSON-Doppelkodierung existiert in **Prod nicht** (war die inzwischen geleerte Dev-DB). Realer Müll = ChatGPT-Exporter-Chrome in 5 `.html`-importierten Nuggets (Meta-Header `User:/Created:/Link:`, Footer `Powered by ChatGPT Exporter`, `Prompt:/Response:`-Gerüst + Timestamps). Neue `stripImportBallast()` in `lib/content.ts` entfernt das beim Import in `app/add` + `app/edit` (greift nur bei erkanntem Exporter-HTML). **Offen:** Bereinigung der 5 bestehenden Prod-Nuggets — macht der User selbst (Funktion ist wiederverwendbar: `contentHtml` durchschicken, dann `contentMarkdown`/`contentPlain` neu ableiten). |
 | 13 | YouTube-Transkript → Nugget | hoch | **★ Nächster Schritt (geplant für 2026-06-10).** Details s. **Phase 5h**. Aufwand: mittel, in einer Session machbar. |
+| 14 | 💭 Bilder zu Nuggets (Konzept offen) | offen | **Erst diskutieren, ob sinnvoll.** Idee: Nugget-Text bleibt bewusst bildfrei; separates Bild-Verzeichnis in der Persistenz, Nugget verlinkt nur darauf. Offene Frage: verwässert das den Text-Fokus? Details s. **Phase 5i**. |
 
 ---
 
@@ -317,6 +318,27 @@ zusammengefasst/gefiltert werden; die URL wird als Quelle am Nugget gespeichert.
 
 **Aufwand:** mittel — Hauptarbeit = passende Lib auswählen/verifizieren + Server-Route +
 URL-Parsing. UI und Speicher-Pfad existieren bereits. In einer fokussierten Session machbar.
+
+#### 5i — Bilder zu Nuggets (Konzept offen, erst diskutieren) 💭
+
+**Idee (vom User angestoßen):** Nuggets sollen evtl. Bilder unterstützen — aber so, dass der
+**Nugget-Inhalt selbst bildfrei bleibt** (Text-Fokus bewahren). Stattdessen ein **separates
+Bild-Verzeichnis in der Persistenz**, auf das ein Nugget nur **verlinkt**.
+
+**Offene Grundsatzfrage (vor jeder Implementierung klären):**
+- Verwässert das die Kern-Idee von Nuggets (kurze, fokussierte Text-Häppchen + Konzept-Graph)?
+- Welchen echten Mehrwert bringen Bilder, der den Mehraufwand + die Aufweichung rechtfertigt?
+- Falls ja: nur als loser Anhang ("Galerie" am Nugget) oder doch inline-referenzierbar?
+
+**Skizze, falls wir es machen (nicht entschieden):**
+- Eigenes Prisma-Modell `Image` (z. B. `id`, `path/url`, `caption`, optional `nuggetId` als
+  lose Zuordnung) — bewusst **getrennt** vom `contentHtml`, analog zur Bookmark-Entscheidung
+  (Metadaten neben dem Content, kein Eingriff in die Content-/KI-Pipeline).
+- Speicherung: lokales Verzeichnis auf dem Netcup-Server vs. eingebettet — offen.
+- KI sieht die Bilder **nicht** (Content-Markdown bleibt Text), konsistent mit dem bisherigen
+  "Markdown rein, Markdown raus"-Vertrag.
+
+**Status:** reine Diskussions-Idee, kein Commitment. Pro/Contra zuerst.
 
 ---
 

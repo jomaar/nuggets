@@ -5,7 +5,9 @@ import { useRouter, useParams } from 'next/navigation'
 import { marked } from 'marked'
 import NuggetEditor from '@/components/NuggetEditor'
 import DomainIcon from '@/components/DomainIcon'
+import TextStatsBar from '@/components/TextStatsBar'
 import { stripImportBallast } from '@/lib/content'
+import { countHtml } from '@/lib/textStats'
 
 interface Domain {
   id: string
@@ -243,6 +245,8 @@ export default function EditPage() {
               ↑ Datei laden
             </button>
           </div>
+          {/* Live length meter — updates as the editor content changes. */}
+          <TextStatsBar stats={countHtml(content)} className="mb-1.5" />
           <div ref={editorBoxRef} style={{ ...inputStyle, padding: 0 }}>
             <NuggetEditor value={content} onChange={setContent} />
           </div>

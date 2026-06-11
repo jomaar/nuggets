@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation'
 import { marked } from 'marked'
 import TurndownService from 'turndown'
 import { stripImportBallast } from '@/lib/content'
-import DomainIcon from '@/components/DomainIcon'
+import { countPlainText } from '@/lib/textStats'
+import DomainChips from '@/components/DomainChips'
+import TextStatsBar from '@/components/TextStatsBar'
 
 interface Domain {
   id: string
@@ -13,6 +15,13 @@ interface Domain {
   slug: string
   icon: string | null
 }
+
+/**
+ * Soft warning threshold (characters). Above this the content is long enough
+ * that the AI revision gets noticeably slower and more expensive — we nudge
+ * the user but never block. The hard cap lives server-side (/api/extract).
+ */
+const WARN_CHARS = 20_000
 
 export default function AddPage() {
   const router = useRouter()
@@ -28,6 +37,9 @@ export default function AddPage() {
   const [aiHint, setAiHint]           = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
   const [saving, setSaving]           = useState(false)
+  const [extracting, setExtracting]   = useState(false)
+  const [extractError, setExtractError] = useState('')
+  const [saveError, setSaveError]     = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -58,35 +70,84 @@ export default function AddPage() {
     e.target.value = ''
   }
 
+  // Treat the content field as a link and replace it with the resolved text.
+  // The fetch runs server-side (/api/extract) so it has real network access;
+  // for now only YouTube transcripts are supported. On success we also
+  // pre-fill the source fields (if still empty) as a convenience.
+  const handleExtractFromLink = async () => {
+    const url = content.trim()
+    if (!url) {
+      setExtractError('Erst einen Link ins Inhalt-Feld einfügen.')
+      return
+    }
+    setExtracting(true)
+    setExtractError('')
+    try {
+      const res = await fetch('/api/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setExtractError(data?.error || 'Konnte den Text nicht laden.')
+        return
+      }
+      setContent(data.text)
+      if (!sourceUrl) setSourceUrl(url)
+      if (!sourceLabel && data.source === 'youtube') setSourceLabel('YouTube')
+      if (data.truncated) {
+        setExtractError('Der Text war sehr lang und wurde gekürzt. Bitte prüfen.')
+      }
+    } catch {
+      setExtractError('Netzwerkfehler — bitte erneut versuchen.')
+    } finally {
+      setExtracting(false)
+    }
+  }
+
   const handleSave = async () => {
     if (!content.trim()) return
     setSaving(true)
-    const res = await fetch('/api/nuggets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contentMarkdown: content,
-        domainId:    domainId    || null,
-        sourceUrl:   sourceUrl   || null,
-        sourceLabel: sourceLabel || null,
-        aiChatUrl:   aiChatUrl   || null,
-        tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-        reviseContent,
-        aiHint: aiHint.trim() || null,
-      }),
-    })
-    setSaving(false)
-    // Stay on the freshly created nugget's read view so the user can see how
-    // the AI revised the content (and adjust it if needed), instead of bouncing
-    // to the «alle» list. Fall back to the list if the response lacks an id.
-    if (res.ok) {
-      const created = await res.json()
-      if (created?.id) {
-        router.push(`/nugget/${created.id}`)
+    setSaveError('')
+    try {
+      const res = await fetch('/api/nuggets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contentMarkdown: content,
+          domainId:    domainId    || null,
+          sourceUrl:   sourceUrl   || null,
+          sourceLabel: sourceLabel || null,
+          aiChatUrl:   aiChatUrl   || null,
+          tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+          reviseContent,
+          aiHint: aiHint.trim() || null,
+        }),
+      })
+      // Stay on the freshly created nugget's read view so the user can see how
+      // the AI revised the content (and adjust it if needed), instead of bouncing
+      // to the «alle» list. Fall back to the list if the response lacks an id.
+      if (res.ok) {
+        const created = await res.json()
+        if (created?.id) {
+          router.push(`/nugget/${created.id}`)
+          return
+        }
+        router.push('/all')
         return
       }
+      setSaveError('Speichern fehlgeschlagen — bitte erneut versuchen.')
+    } catch {
+      // Without this, any thrown fetch (timeout, network drop, aborted request
+      // on a long AI revision) would leave the dialog stuck on «Speichert…»
+      // forever with no feedback.
+      setSaveError('Netzwerkfehler beim Speichern — bitte erneut versuchen.')
+    } finally {
+      // Always reset so the button never sticks; navigation has already
+      // returned above on success, so this only runs on error/stay.
+      setSaving(false)
     }
-    router.push('/all')
   }
 
   const inputStyle = {
@@ -101,6 +162,9 @@ export default function AddPage() {
     outline: 'none',
   }
 
+  const stats = countPlainText(content)
+  const tooLong = stats.chars > WARN_CHARS
+
   return (
     <>
       <header className="pt-10 pb-6">
@@ -110,32 +174,13 @@ export default function AddPage() {
       </header>
 
       <div className="flex flex-col gap-4">
-        {/* Domain selector */}
+        {/* Domain selector — adaptive chips (icon-only → +short → +full name) */}
         {domains.length > 0 && (
           <div>
             <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
               Domain
             </label>
-            <div className="flex gap-2 flex-wrap">
-              {domains.map(d => (
-                <button
-                  key={d.id}
-                  type="button"
-                  onClick={() => setDomainId(d.id)}
-                  className="px-3 py-1.5 rounded-full text-sm transition-all"
-                  style={{
-                    background: domainId === d.id ? 'var(--accent)' : 'var(--surface)',
-                    color:      domainId === d.id ? 'white'         : 'var(--muted)',
-                    border: `1px solid ${domainId === d.id ? 'var(--accent)' : 'var(--border)'}`,
-                  }}
-                >
-                  <span className="inline-flex items-center gap-1.5">
-                    <DomainIcon slug={d.slug} size={14} />
-                    {d.name}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <DomainChips domains={domains} selectedId={domainId} onSelect={setDomainId} />
           </div>
         )}
 
@@ -160,6 +205,15 @@ export default function AddPage() {
                 style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
               >
                 ↑ Datei laden
+              </button>
+              <button
+                type="button"
+                onClick={handleExtractFromLink}
+                disabled={extracting}
+                className="text-xs px-2 py-0.5 rounded-lg transition-all"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)', opacity: extracting ? 0.6 : 1 }}
+              >
+                {extracting ? '⏳ Lädt…' : '⥥ Text aus Link'}
               </button>
             </div>
             <div className="flex gap-1">
@@ -189,6 +243,9 @@ export default function AddPage() {
               </button>
             </div>
           </div>
+          {/* Live length meter above the field — turns accent once the soft
+              threshold is exceeded. */}
+          <TextStatsBar stats={stats} warn={tooLong} className="mb-1.5" />
           {!preview ? (
             <textarea
               value={content}
@@ -203,6 +260,17 @@ export default function AddPage() {
               style={{ ...inputStyle, minHeight: '12rem' }}
               dangerouslySetInnerHTML={{ __html: marked(content) as string }}
             />
+          )}
+          {extractError && (
+            <p className="text-xs mt-2" style={{ color: 'var(--accent)' }}>
+              {extractError}
+            </p>
+          )}
+          {tooLong && !extractError && (
+            <p className="text-xs mt-2" style={{ color: 'var(--accent)' }}>
+              ⚠️ Sehr langer Inhalt — die ✨ KI-Überarbeitung wird langsamer und teurer.
+              Erwäge, vorab zu kürzen oder im KI-Hinweis ein Wortlimit zu setzen.
+            </p>
           )}
           <div className="flex items-center justify-between mt-2">
             <span className="text-xs" style={{ color: 'var(--muted)' }}>
@@ -275,11 +343,12 @@ export default function AddPage() {
           />
         </div>
 
-        {/* Buttons */}
-        <div className="flex gap-3 mt-2">
+        {/* Buttons — kept compact (same scale as the Schreiben/Vorschau toggles
+            above) and right-aligned, rather than full-width blocks. */}
+        <div className="flex gap-2 justify-end mt-2">
           <button
             onClick={() => router.back()}
-            className="flex-1 py-3 rounded-xl text-base font-medium"
+            className="text-xs px-3 py-1.5 rounded-lg transition-all"
             style={{ background: 'var(--surface)', color: 'var(--muted)', border: '1px solid var(--border)' }}
           >
             Abbrechen
@@ -287,7 +356,7 @@ export default function AddPage() {
           <button
             onClick={() => setShowConfirm(true)}
             disabled={saving || !content.trim()}
-            className="flex-1 py-3 rounded-xl text-base font-medium transition-all active:scale-95"
+            className="text-xs px-3 py-1.5 rounded-lg transition-all active:scale-95"
             style={{
               background: content.trim() ? 'var(--accent)' : 'var(--border)',
               color:      content.trim() ? 'white'         : 'var(--muted)',
@@ -314,31 +383,12 @@ export default function AddPage() {
           >
             <h2 className="text-xl">Vor dem Speichern</h2>
 
-            {/* Domain — deliberate confirmation */}
+            {/* Domain — deliberate confirmation, names always shown */}
             <div>
               <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
                 Domain
               </label>
-              <div className="flex gap-2 flex-wrap">
-                {domains.map(d => (
-                  <button
-                    key={d.id}
-                    type="button"
-                    onClick={() => setDomainId(d.id)}
-                    className="px-3 py-1.5 rounded-full text-sm transition-all"
-                    style={{
-                      background: domainId === d.id ? 'var(--accent)' : 'var(--surface)',
-                      color:      domainId === d.id ? 'white'         : 'var(--muted)',
-                      border: `1px solid ${domainId === d.id ? 'var(--accent)' : 'var(--border)'}`,
-                    }}
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <DomainIcon slug={d.slug} size={14} />
-                      {d.name}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              <DomainChips domains={domains} selectedId={domainId} onSelect={setDomainId} variant="full" />
             </div>
 
             {/* Per-note AI instruction (Phase 5c) */}
@@ -359,6 +409,12 @@ export default function AddPage() {
                   : '⚠️ Wirkt nur mit ✨ KI-Überarbeitung — die ist gerade aus.'}
               </p>
             </div>
+
+            {saveError && (
+              <p className="text-xs" style={{ color: 'var(--accent)' }}>
+                {saveError}
+              </p>
+            )}
 
             {/* Actions */}
             <div className="flex gap-3 mt-1">

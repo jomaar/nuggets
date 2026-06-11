@@ -6,6 +6,8 @@ import Link from 'next/link'
 import NuggetEditor from '@/components/NuggetEditor'
 import { useHighlightSave } from '@/components/useHighlightSave'
 import DomainIcon from '@/components/DomainIcon'
+import TextStatsBar from '@/components/TextStatsBar'
+import { countHtml } from '@/lib/textStats'
 import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check } from 'lucide-react'
 
 interface Domain {
@@ -826,6 +828,9 @@ export default function NuggetDetailPage() {
             )}
         </div>
       )}
+
+      {/* Length read-out above the text — characters · words · paragraphs. */}
+      <TextStatsBar stats={countHtml(nugget.contentHtml)} className="pb-3" />
 
       {/* Content in focus */}
       <div ref={contentRef}>
