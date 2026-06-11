@@ -3,7 +3,6 @@
 import { useEditor, EditorContent } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
-import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useEffect } from 'react'
 import CssVarHighlight from './CssVarHighlight'
@@ -58,8 +57,14 @@ export default function NuggetEditor({
     immediatelyRender: false,
     editable,
     extensions: [
-      StarterKit,
-      Link.configure({ openOnClick: false }),
+      // StarterKit (v3) already bundles the Link extension — configure it here
+      // instead of adding a second one (that caused a "duplicate extension" warn
+      // and made link behaviour ambiguous). openOnClick is off so the reading
+      // view can intercept clicks itself; linkOnPaste/autolink turn a pasted
+      // bookmark/highlight deep-link URL into a clickable <a>.
+      StarterKit.configure({
+        link: { openOnClick: false, linkOnPaste: true, autolink: true },
+      }),
       CssVarHighlight.configure({ multicolor: true }),
       Placeholder.configure({ placeholder: placeholder ?? 'Schreibe dein Nugget…' }),
     ],

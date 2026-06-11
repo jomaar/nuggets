@@ -8,7 +8,8 @@ import { useHighlightSave } from '@/components/useHighlightSave'
 import DomainIcon from '@/components/DomainIcon'
 import TextStatsBar from '@/components/TextStatsBar'
 import { countHtml } from '@/lib/textStats'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check } from 'lucide-react'
+import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, type AnchorToken } from '@/lib/bookmarkLink'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2 } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -221,6 +222,25 @@ function nodeAnchorContext(root: HTMLElement, node: Text): { prefix: string; suf
   }
 }
 
+/**
+ * Build a portable text-quote anchor for a highlight `<mark>` element so it can
+ * be deep-linked from another nugget. The marked text is itself the quote; the
+ * surrounding text gives the prefix/suffix context that disambiguates repeats.
+ */
+function anchorForMark(root: HTMLElement, mark: Element): AnchorToken {
+  const before = document.createRange()
+  before.setStart(root, 0)
+  before.setEndBefore(mark)
+  const after = document.createRange()
+  after.setStartAfter(mark)
+  after.setEnd(root, root.childNodes.length)
+  return {
+    quote:  squashWhitespace(mark.textContent ?? '').trim(),
+    prefix: squashWhitespace(before.toString()).slice(-ANCHOR_CONTEXT_LEN),
+    suffix: squashWhitespace(after.toString()).slice(0, ANCHOR_CONTEXT_LEN),
+  }
+}
+
 /** Length of the longest common suffix of `a` and `b`. */
 function commonSuffixLen(a: string, b: string): number {
   let i = 0
@@ -292,6 +312,8 @@ export default function NuggetDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [marksOpen, setMarksOpen]     = useState(false)
   const [marks, setMarks]             = useState<{ text: string; color: string; markIndex: number }[]>([])
+  // Mark index whose deep-link was just copied (flips that row's icon to a check).
+  const [copiedMarkIndex, setCopiedMarkIndex] = useState<number | null>(null)
   const [searchOpen, setSearchOpen]   = useState(false)
   const [query, setQuery]             = useState('')
   const [matchCount, setMatchCount]   = useState(0)
@@ -391,6 +413,26 @@ export default function NuggetDetailPage() {
     const el = contentRef.current?.querySelectorAll('mark')[markIndex]
     setMarksOpen(false)
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
+  /**
+   * Copy a deep link to a highlight. The marked text becomes a `?bm=` anchor;
+   * pasted into another nugget's text it turns into a clickable cross-reference
+   * that branches straight to this highlighted spot. The popup stays open so the
+   * row's check-mark confirmation is visible.
+   */
+  const copyMarkLink = async (markIndex: number) => {
+    const root = contentRef.current
+    const mark = root?.querySelectorAll('mark')[markIndex]
+    if (!root || !mark) return
+    const anchor = anchorForMark(root, mark)
+    // Site-relative path so the stored link survives a domain/server move.
+    const path = `/nugget/${id}?bm=${encodeAnchorToken(anchor)}`
+    // Visible link text = the highlighted text itself; URL stays hidden in href.
+    if (await copyDeepLink(path, anchor.quote)) {
+      setCopiedMarkIndex(markIndex)
+      setTimeout(() => setCopiedMarkIndex(null), 1200)
+    }
   }
 
   /**
@@ -498,32 +540,24 @@ export default function NuggetDetailPage() {
     return () => cancelAnimationFrame(raf)
   }, [nugget])
 
-  // Guards the one-shot bookmark jump handed over from the bookmark list.
+  // Guards the one-shot bookmark jump handed over on first load.
   const didJumpToBookmark = useRef(false)
 
   /**
-   * If the page was opened from the bookmark list, the target anchor was stashed
-   * in sessionStorage. Resolve it against the rendered content and scroll there,
-   * retrying across animation frames until Tiptap has populated the DOM.
+   * Resolve a text-quote anchor against the rendered content and scroll to it,
+   * retrying across animation frames until Tiptap has populated the DOM. Returns
+   * a canceller for the pending frame. Shared by the on-load jump and the
+   * cross-nugget link handler.
    */
-  useEffect(() => {
-    if (!nugget || didJumpToBookmark.current) return
-    const raw = sessionStorage.getItem(BOOKMARK_JUMP_KEY)
-    if (!raw) return
-    let target: { id: string; quote: string; prefix: string; suffix: string } | null = null
-    try { target = JSON.parse(raw) } catch { target = null }
-    if (!target || target.id !== id) return
-    didJumpToBookmark.current = true
-    sessionStorage.removeItem(BOOKMARK_JUMP_KEY)
-
+  const jumpToAnchor = useCallback((target: { quote: string; prefix: string; suffix: string }) => {
     let attempts = 0
     let raf = 0
     const tryJump = () => {
       const root = contentRef.current
-      const range = root ? resolveAnchor(root, target!.quote, target!.prefix, target!.suffix) : null
+      const range = root ? resolveAnchor(root, target.quote, target.prefix, target.suffix) : null
       if (range) {
-        // Align to the bookmarked line to the top of the reading area (just
-        // below the sticky bar), matching where addBookmark() sampled it.
+        // Align the anchored line to the top of the reading area (just below the
+        // sticky bar), matching where addBookmark() sampled it.
         const stickyBottom = stickyRef.current?.getBoundingClientRect().bottom ?? 0
         scrollRangeIntoView(range, stickyBottom)
         return
@@ -533,7 +567,70 @@ export default function NuggetDetailPage() {
     }
     raf = requestAnimationFrame(tryJump)
     return () => cancelAnimationFrame(raf)
-  }, [nugget, id])
+  }, [])
+
+  /**
+   * On first load, jump to a target spot if one was handed over. Two sources:
+   * a `?bm=` deep-link token in the URL (a cross-nugget link that was clicked or
+   * shared) or an anchor stashed in sessionStorage by the bookmark list. The URL
+   * token wins when both are present.
+   */
+  useEffect(() => {
+    if (!nugget || didJumpToBookmark.current) return
+
+    let target: { quote: string; prefix: string; suffix: string } | null = null
+
+    const token = new URLSearchParams(window.location.search).get('bm')
+    if (token) target = decodeAnchorToken(token)
+
+    if (!target) {
+      const raw = sessionStorage.getItem(BOOKMARK_JUMP_KEY)
+      if (raw) {
+        try {
+          const stashed = JSON.parse(raw)
+          if (stashed?.id === id) {
+            target = { quote: stashed.quote, prefix: stashed.prefix, suffix: stashed.suffix }
+          }
+        } catch { /* ignore malformed stash */ }
+      }
+    }
+    if (!target) return
+
+    didJumpToBookmark.current = true
+    sessionStorage.removeItem(BOOKMARK_JUMP_KEY)
+    return jumpToAnchor(target)
+  }, [nugget, id, jumpToAnchor])
+
+  /**
+   * Intercept clicks on cross-nugget deep-links inside the reading content.
+   * Tiptap renders pasted links as plain `<a>` (openOnClick is off), so the DOM
+   * click bubbles up here. A same-origin `/nugget/<id>?bm=…` link is handled in
+   * app: a link to another nugget navigates (the target view resolves `?bm=`),
+   * a link within THIS nugget jumps directly — no remount would re-run the
+   * load-jump effect. Everything else (external links) is left to the browser.
+   */
+  const handleContentClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const anchor = (event.target as HTMLElement).closest('a')
+    const href = anchor?.getAttribute('href')
+    if (!href) return
+
+    let url: URL
+    try { url = new URL(href, window.location.origin) } catch { return }
+    if (url.origin !== window.location.origin) return
+
+    const match = url.pathname.match(/^\/nugget\/([^/]+)\/?$/)
+    if (!match) return
+
+    event.preventDefault()
+    const targetId = match[1]
+    if (targetId === id) {
+      const token = url.searchParams.get('bm')
+      const target = token ? decodeAnchorToken(token) : null
+      if (target) jumpToAnchor(target)
+      return
+    }
+    router.push(url.pathname + url.search)
+  }
 
   if (loading) {
     return (
@@ -834,7 +931,7 @@ export default function NuggetDetailPage() {
       <TextStatsBar stats={countHtml(nugget.contentHtml)} className="pb-3" />
 
       {/* Content in focus */}
-      <div ref={contentRef}>
+      <div ref={contentRef} onClick={handleContentClick}>
         <NuggetReader id={nugget.id} contentHtml={nugget.contentHtml} />
       </div>
 
@@ -873,14 +970,27 @@ export default function NuggetDetailPage() {
                 </p>
               ) : (
                 marks.map((m, i) => (
-                  <button
+                  <div
                     key={i}
-                    onClick={() => scrollToMark(m.markIndex)}
-                    className="w-full text-left text-sm px-3 py-2 rounded-lg truncate flex-shrink-0 transition-all active:scale-[0.99]"
-                    style={{ background: `var(${HIGHLIGHT_VARS[m.color] ?? '--hl-yellow'})`, color: 'var(--ink)' }}
+                    className="flex items-center gap-1 rounded-lg flex-shrink-0 overflow-hidden"
+                    style={{ background: `var(${HIGHLIGHT_VARS[m.color] ?? '--hl-yellow'})` }}
                   >
-                    {m.text || '—'}
-                  </button>
+                    <button
+                      onClick={() => scrollToMark(m.markIndex)}
+                      className="flex-1 min-w-0 text-left text-sm px-3 py-2 truncate transition-all active:scale-[0.99]"
+                      style={{ color: 'var(--ink)' }}
+                    >
+                      {m.text || '—'}
+                    </button>
+                    <button
+                      onClick={() => copyMarkLink(m.markIndex)}
+                      aria-label="Link zur Markierung kopieren"
+                      className="flex-shrink-0 flex items-center justify-center p-2 mr-1 rounded-lg transition-transform active:scale-95"
+                      style={{ color: 'var(--ink)' }}
+                    >
+                      {copiedMarkIndex === m.markIndex ? <Check size={15} /> : <Link2 size={15} />}
+                    </button>
+                  </div>
                 ))
               )}
             </div>

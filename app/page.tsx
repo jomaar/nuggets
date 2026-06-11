@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Trash2 } from 'lucide-react'
+import { Trash2, Link2, Check } from 'lucide-react'
+import { encodeAnchorToken, copyDeepLink } from '@/lib/bookmarkLink'
 
 interface Bookmark {
   id: string
@@ -27,6 +28,8 @@ export default function BookmarksPage() {
   const router = useRouter()
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [loading, setLoading] = useState(true)
+  // Id of the bookmark whose link was just copied (flips the icon to a check).
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/bookmarks')
@@ -42,6 +45,22 @@ export default function BookmarksPage() {
       JSON.stringify({ id: b.nugget.id, quote: b.quote, prefix: b.prefix, suffix: b.suffix }),
     )
     router.push(`/nugget/${b.nugget.id}`)
+  }
+
+  /**
+   * Copy a deep link to this reading spot. The anchor travels in a `?bm=` token;
+   * pasted into another nugget's text it becomes a clickable cross-reference that
+   * jumps straight to the spot. The nugget id lives in the path.
+   */
+  const copyBookmarkLink = async (b: Bookmark) => {
+    const token = encodeAnchorToken({ quote: b.quote, prefix: b.prefix, suffix: b.suffix })
+    // Site-relative path so the stored link survives a domain/server move.
+    const path = `/nugget/${b.nugget.id}?bm=${token}`
+    // Visible link text = the bookmarked line; URL stays hidden in the href.
+    if (await copyDeepLink(path, b.lineText || b.quote)) {
+      setCopiedId(b.id)
+      setTimeout(() => setCopiedId(null), 1200)
+    }
   }
 
   /** Remove a bookmark and drop it from the list. */
@@ -90,6 +109,14 @@ export default function BookmarksPage() {
               <p className="text-sm truncate mt-0.5" style={{ color: 'var(--ink)' }}>
                 {b.lineText || b.quote || '—'}
               </p>
+            </button>
+            <button
+              onClick={() => copyBookmarkLink(b)}
+              aria-label="Link zur Stelle kopieren"
+              className="flex-shrink-0 flex items-center justify-center p-2 rounded-lg transition-colors"
+              style={{ color: copiedId === b.id ? 'var(--accent)' : 'var(--muted)' }}
+            >
+              {copiedId === b.id ? <Check size={16} /> : <Link2 size={16} />}
             </button>
             <button
               onClick={() => removeBookmark(b.id)}
