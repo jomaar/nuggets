@@ -66,8 +66,13 @@ h1, h2, h3, .serif {
   margin: 0.6em 0 0.3em;
 }
 .nugget-content p  { margin: 0.45em 0; line-height: 1.55; }
-.nugget-content ul { padding-left: 1.3em; margin: 0.4em 0; }
+/* Tailwind v4's preflight resets `list-style: none` on every ul/ol, so the
+   bullets/numbers vanish even though the Tiptap BulletList/OrderedList nodes
+   exist. Re-assert the markers explicitly (both lists, not just ul). */
+.nugget-content ul { list-style: disc;    padding-left: 1.3em; margin: 0.4em 0; }
+.nugget-content ol { list-style: decimal; padding-left: 1.3em; margin: 0.4em 0; }
 .nugget-content li { margin: 0.2em 0; }
+.nugget-content li::marker { color: var(--muted); }
 .nugget-content strong { font-weight: 500; color: var(--accent); }
 .nugget-content a  { color: var(--accent-light); text-decoration: underline; }
 .nugget-content blockquote {
