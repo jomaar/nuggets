@@ -11,6 +11,7 @@ interface Domain {
   name: string
   slug: string
   icon: string | null
+  color: string | null
 }
 
 interface ConceptLabel {
@@ -111,7 +112,7 @@ export default function NuggetCard({
               className="inline-flex items-center text-xs px-2 py-1 rounded-full flex-shrink-0"
               style={{ background: 'var(--warm)', color: 'var(--muted)' }}
             >
-              <DomainIcon slug={domain.slug} size={13} />
+              <DomainIcon slug={domain.slug} icon={domain.icon} color={domain.color} size={13} colored />
             </span>
           )}
           <span

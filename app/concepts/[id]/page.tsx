@@ -18,7 +18,7 @@ interface Nugget {
   sourceLabel: string | null
   aiChatUrl: string | null
   tags: string
-  domain: { id: string; name: string; slug: string; icon: string | null } | null
+  domain: { id: string; name: string; slug: string; icon: string | null; color: string | null } | null
 }
 
 /** Derives a fallback title from raw HTML when no title is stored. */
@@ -130,7 +130,7 @@ export default function ConceptPage() {
                 className="inline-flex items-center text-xs px-2 py-1 rounded-full flex-shrink-0"
                 style={{ background: 'var(--warm)', color: 'var(--muted)' }}
               >
-                <DomainIcon slug={nugget.domain.slug} size={13} />
+                <DomainIcon slug={nugget.domain.slug} icon={nugget.domain.icon} color={nugget.domain.color} size={13} colored />
               </span>
             )}
             <span className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>

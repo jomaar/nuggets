@@ -3,12 +3,15 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import DomainIcon from '@/components/DomainIcon'
+import { shortName } from '@/components/DomainChips'
+import { Settings } from 'lucide-react'
 
 interface Domain {
   id: string
   name: string
   slug: string
   icon: string | null
+  color: string | null
 }
 
 interface Nugget {
@@ -98,10 +101,11 @@ export default function AllPage() {
             <div className="flex items-center gap-2">
               <a
                 href="/admin"
-                className="text-xs px-3 py-1 rounded-lg"
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-lg whitespace-nowrap"
                 style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
               >
-                ⚙️ Prompts
+                <Settings size={13} strokeWidth={1.75} />
+                Prompts
               </a>
               <button
                 onClick={async () => {
@@ -152,8 +156,9 @@ export default function AllPage() {
                 }}
               >
                 <span className="inline-flex items-center gap-1.5">
-                  <DomainIcon slug={d.slug} size={14} />
-                  {d.name}
+                  <DomainIcon slug={d.slug} icon={d.icon} color={d.color} size={14} colored={activeDomain !== d.slug} />
+                  <span className="hidden sm:inline lg:hidden">{shortName(d.name)}</span>
+                  <span className="hidden lg:inline">{d.name}</span>
                 </span>
               </button>
             ))}
@@ -201,7 +206,7 @@ export default function AllPage() {
                 className="inline-flex items-center text-xs px-2 py-1 rounded-full flex-shrink-0"
                 style={{ background: 'var(--warm)', color: 'var(--muted)' }}
               >
-                <DomainIcon slug={n.domain.slug} size={13} />
+                <DomainIcon slug={n.domain.slug} icon={n.domain.icon} color={n.domain.color} size={13} colored />
               </span>
             )}
             <span className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>

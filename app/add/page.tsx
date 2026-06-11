@@ -14,6 +14,7 @@ interface Domain {
   name: string
   slug: string
   icon: string | null
+  color: string | null
 }
 
 /**

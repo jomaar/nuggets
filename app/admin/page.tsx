@@ -8,6 +8,7 @@ interface DomainPrompt {
   name: string
   slug: string
   icon: string | null
+  color: string | null
   domainPrompt: string | null
 }
 
@@ -96,7 +97,7 @@ export default function AdminPage() {
         {domains.map(d => (
           <div key={d.id}>
             <label className="inline-flex items-center gap-1.5 text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--muted)' }}>
-              <DomainIcon slug={d.slug} size={13} />
+              <DomainIcon slug={d.slug} icon={d.icon} color={d.color} size={13} colored />
               {d.name}
             </label>
             <textarea

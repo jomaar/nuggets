@@ -15,6 +15,7 @@ interface Domain {
   name: string
   slug: string
   icon: string | null
+  color: string | null
 }
 
 interface ConceptLabel {
@@ -720,7 +721,7 @@ export default function NuggetDetailPage() {
               className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full flex-shrink-0"
               style={{ background: 'var(--warm)', color: 'var(--muted)' }}
             >
-              <DomainIcon slug={nugget.domain.slug} size={13} />
+              <DomainIcon slug={nugget.domain.slug} icon={nugget.domain.icon} color={nugget.domain.color} size={13} colored />
               {nugget.domain.name}
             </span>
           )}

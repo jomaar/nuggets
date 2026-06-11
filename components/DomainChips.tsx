@@ -5,13 +5,14 @@ interface Domain {
   name: string
   slug: string
   icon: string | null
+  color: string | null
 }
 
 /**
  * Short label for tighter layouts: the part before " & " (e.g.
  * "Business & Technik" → "Business"), falling back to the full name.
  */
-function shortName(name: string): string {
+export function shortName(name: string): string {
   return (name.split(/\s*&\s*/)[0] || name).trim()
 }
 
@@ -58,7 +59,7 @@ export default function DomainChips({
               border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
             }}
           >
-            <DomainIcon slug={d.slug} size={full ? 14 : 15} colored={!selected} />
+            <DomainIcon slug={d.slug} icon={d.icon} color={d.color} size={full ? 14 : 15} colored={!selected} />
             {full ? (
               <span>{d.name}</span>
             ) : (

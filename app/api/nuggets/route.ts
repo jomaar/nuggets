@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
       id:          true,
       title:       true,
       contentHtml: true, // needed for the client-side fallback title
-      domain:      { select: { id: true, name: true, slug: true, icon: true } },
+      domain:      { select: { id: true, name: true, slug: true, icon: true, color: true } },
     },
     orderBy: { createdAt: 'desc' },
     take: 500,

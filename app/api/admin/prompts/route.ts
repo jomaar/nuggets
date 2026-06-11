@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const [settings, domains] = await Promise.all([
     prisma.appSettings.findUnique({ where: { id: 'global' }, select: { globalPromptAddition: true } }),
     prisma.domain.findMany({
-      select: { id: true, name: true, slug: true, icon: true, domainPrompt: true },
+      select: { id: true, name: true, slug: true, icon: true, color: true, domainPrompt: true },
       orderBy: { name: 'asc' },
     }),
   ])

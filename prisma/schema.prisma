@@ -6,7 +6,9 @@ datasource db {
   provider = "sqlite"
 }
 
-/** Singleton row (id = "global") holding admin-editable additions to the AI system prompt. */
+/**
+ * Singleton row (id = "global") holding admin-editable additions to the AI system prompt.
+ */
 model AppSettings {
   id                   String   @id @default("global")
   globalPromptAddition String?
@@ -16,10 +18,11 @@ model AppSettings {
 }
 
 model Domain {
-  id           String   @id @default(cuid())
-  name         String   @unique
-  slug         String   @unique
-  icon         String?
+  id           String  @id @default(cuid())
+  name         String  @unique
+  slug         String  @unique
+  icon         String? // Lucide icon key (e.g. "Cross"), source of truth for app-wide icon rendering
+  color        String? // accent colour as hex (e.g. "#2563EB"); falls back to domainColor() palette when null
   domainPrompt String?
 
   nuggets Nugget[]
@@ -43,10 +46,10 @@ model Nugget {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  domain          Domain?        @relation(fields: [domainId], references: [id])
-  reviews         Review[]
-  concepts        NuggetConcept[]
-  bookmarks       Bookmark[]
+  domain    Domain?         @relation(fields: [domainId], references: [id])
+  reviews   Review[]
+  concepts  NuggetConcept[]
+  bookmarks Bookmark[]
 
   @@map("nuggets")
 }
@@ -60,13 +63,13 @@ model Nugget {
 model Bookmark {
   id        String   @id @default(cuid())
   nuggetId  String
-  quote     String   // exact anchor text (the caret text node), used for matching
-  prefix    String   // ~30 chars immediately before the quote (disambiguating context)
-  suffix    String   // ~30 chars immediately after the quote (disambiguating context)
-  lineText  String   // the surrounding block's text, shown in the bookmark list
+  quote     String // exact anchor text (the caret text node), used for matching
+  prefix    String // ~30 chars immediately before the quote (disambiguating context)
+  suffix    String // ~30 chars immediately after the quote (disambiguating context)
+  lineText  String // the surrounding block's text, shown in the bookmark list
   createdAt DateTime @default(now())
 
-  nugget    Nugget   @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
+  nugget Nugget @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
 
   @@index([nuggetId])
   @@map("bookmarks")
@@ -78,19 +81,19 @@ model Concept {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  labels      ConceptLabel[]
-  nuggets     NuggetConcept[]
+  labels  ConceptLabel[]
+  nuggets NuggetConcept[]
 
   @@map("concepts")
 }
 
 model ConceptLabel {
-  id        String  @id @default(cuid())
+  id        String @id @default(cuid())
   conceptId String
-  language  String  // "de" | "en" | "el" | "he"
+  language  String // "de" | "en" | "el" | "he"
   term      String
 
-  concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+  concept Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
 
   @@unique([conceptId, language, term])
   @@map("concept_labels")
@@ -102,22 +105,22 @@ model NuggetConcept {
   relevance Float   @default(1.0)
   note      String? // what THIS nugget specifically says about the concept (the reading lives on the edge, not the node)
 
-  nugget    Nugget  @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
-  concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+  nugget  Nugget  @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
+  concept Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
 
   @@id([nuggetId, conceptId])
   @@map("nugget_concepts")
 }
 
 model Review {
-  id            String   @id @default(cuid())
-  nuggetId      String
-  nugget        Nugget   @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
-  nextReview    DateTime @default(now())
-  intervalDays  Float    @default(1)
-  easeFactor    Float    @default(2.5)
-  repetitions   Int      @default(0)
-  createdAt     DateTime @default(now())
+  id           String   @id @default(cuid())
+  nuggetId     String
+  nugget       Nugget   @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
+  nextReview   DateTime @default(now())
+  intervalDays Float    @default(1)
+  easeFactor   Float    @default(2.5)
+  repetitions  Int      @default(0)
+  createdAt    DateTime @default(now())
 
   @@map("reviews")
 }

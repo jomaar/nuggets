@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { marked } from 'marked'
 import NuggetEditor from '@/components/NuggetEditor'
-import DomainIcon from '@/components/DomainIcon'
+import DomainChips from '@/components/DomainChips'
 import TextStatsBar from '@/components/TextStatsBar'
 import { stripImportBallast } from '@/lib/content'
 import { countHtml } from '@/lib/textStats'
@@ -14,6 +14,7 @@ interface Domain {
   name: string
   slug: string
   icon: string | null
+  color: string | null
 }
 
 export default function EditPage() {
@@ -200,26 +201,7 @@ export default function EditPage() {
             <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
               Domain
             </label>
-            <div className="flex gap-2 flex-wrap">
-              {domains.map(d => (
-                <button
-                  key={d.id}
-                  type="button"
-                  onClick={() => setDomainId(d.id)}
-                  className="px-3 py-1.5 rounded-full text-sm transition-all"
-                  style={{
-                    background: domainId === d.id ? 'var(--accent)' : 'var(--surface)',
-                    color:      domainId === d.id ? 'white'         : 'var(--muted)',
-                    border: `1px solid ${domainId === d.id ? 'var(--accent)' : 'var(--border)'}`,
-                  }}
-                >
-                  <span className="inline-flex items-center gap-1.5">
-                    <DomainIcon slug={d.slug} size={14} />
-                    {d.name}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <DomainChips domains={domains} selectedId={domainId} onSelect={setDomainId} />
           </div>
         )}
 
