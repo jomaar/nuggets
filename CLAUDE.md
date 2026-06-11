@@ -69,6 +69,17 @@ See `PLAN.md` for the full roadmap (Markdown editor, Concept Graph, Claude API, 
    trimmed of its baked-in whitespace + centred (`LOGO_SCALE` 0.82). Re-run with
    `node scripts/generate-icons.mjs`. Wiring in `app/layout.tsx` + `public/manifest.json`.
 4. pm2 setup on Netcup
+7. 💭 **KI-Aktionen beim Edit-Speichern (offen, geplant — nicht gebaut)**: Auf `app/edit`
+   beim Speichern optional den (handeditierten) Text nochmal durchs LLM schicken — NICHT um
+   den Inhalt zu ändern, sondern Formatierung/Qualität: Doppeltes entfernen, umsortieren
+   (Argumentationskette glätten), neu formatieren, auf X % kürzen + zusammenfassen. UI-Idee:
+   kleines Pop-up mit auswählbaren Aktionen (mappen je auf einen Prompt-Baustein) + Freitext-
+   Feld (vgl. `aiHint` + `reviseContent` aus `app/add`, Revision-Prompt in `lib/concepts.ts`).
+   ⚠️ **Kernproblem:** Ein Rewrite zerstört Highlights + Bookmarks (Text-Zitat-Anker am Wortlaut
+   von `contentHtml`). **User-Ansatz:** statt in-place umschreiben → das überarbeitete Ergebnis
+   als NEUES Nugget anlegen (ohne Bookmarks), das Original unverändert lassen. Vor dem Bauen
+   Design klären (eigene Session). Verwandt mit der offenen „Konzepte bei PATCH re-extrahieren"-
+   Baustelle (Phase 6 Stufe C).
 5. 💭 **Bilder-Idee (offen, erst diskutieren ob sinnvoll)**: Nuggets evtl. mit Bildern
    unterstützen. Idee: Nugget-Inhalt bleibt bewusst bildfrei (Text-Fokus), aber separates
    Bild-Verzeichnis in der Persistenz; Nugget verlinkt nur darauf. Offene Frage: verwässert
