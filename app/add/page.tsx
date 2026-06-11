@@ -55,25 +55,34 @@ export default function AddPage() {
   }, [])
 
   // Quick-add via iOS Shortcut / Share Sheet: the shortcut opens
-  // /add?url=… and/or /add?text=…. We pre-fill the content field so the
-  // user lands in the form ready to review & save (the deliberate
-  // domain + AI-hint dialog stays intact). Precedence:
-  //   • shared text wins as the content body; an accompanying url then
-  //     pre-fills the source field as a convenience.
-  //   • a lone url drops into the content field so «Text aus Link» can
-  //     resolve it (and seeds the source field too).
+  // /add?…. We pre-fill the content field so the user lands in the form
+  // ready to review & save (the deliberate domain + AI-hint dialog stays
+  // intact). Three params are accepted:
+  //   • ?q=…    — the smart single param the Shortcut uses. We sniff its
+  //              shape: an http(s) value is treated as a link, anything
+  //              else as text. This keeps the iOS Shortcut branch-free.
+  //   • ?url=…  — explicit link  (back-compat / power users)
+  //   • ?text=… — explicit text  (back-compat / power users)
+  // Resolution: text becomes the content body; an accompanying url then
+  // pre-fills the source field. A lone url drops into BOTH the content
+  // field (so «Text aus Link» can resolve it) and the source field.
   // Read from window.location rather than useSearchParams() to avoid the
   // App-Router Suspense-boundary requirement on this client page.
   useEffect(() => {
-    const params     = new URLSearchParams(window.location.search)
-    const sharedText = params.get('text')?.trim()
-    const sharedUrl  = params.get('url')?.trim()
-    if (sharedText) {
-      setContent(sharedText)
-      if (sharedUrl) setSourceUrl(sharedUrl)
-    } else if (sharedUrl) {
-      setContent(sharedUrl)
-      setSourceUrl(sharedUrl)
+    const params       = new URLSearchParams(window.location.search)
+    let   resolvedText = params.get('text')?.trim()
+    let   resolvedUrl  = params.get('url')?.trim()
+    const sharedQuery  = params.get('q')?.trim()
+    if (!resolvedText && !resolvedUrl && sharedQuery) {
+      if (/^https?:\/\//i.test(sharedQuery)) resolvedUrl = sharedQuery
+      else                                   resolvedText = sharedQuery
+    }
+    if (resolvedText) {
+      setContent(resolvedText)
+      if (resolvedUrl) setSourceUrl(resolvedUrl)
+    } else if (resolvedUrl) {
+      setContent(resolvedUrl)
+      setSourceUrl(resolvedUrl)
     }
   }, [])
 
