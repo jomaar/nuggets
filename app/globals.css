@@ -99,15 +99,11 @@ h1, h2, h3, .serif {
 .nugget-content mark[data-color="orange"] { background: var(--hl-orange); }
 
 /* In-nugget text search (CSS Custom Highlight API) — paints ranges without
-   touching the Tiptap DOM. "current" sits on top of "all" via priority. */
-::highlight(search-all) {
-  background: var(--hl-yellow);
-  color: var(--ink);
-}
-::highlight(search-current) {
-  background: var(--accent);
-  color: #fff;
-}
+   touching the Tiptap DOM. "current" sits on top of "all" via priority.
+   NOTE: the ::highlight() rules live in an inline <style> in app/layout.tsx,
+   NOT here — the Tailwind v4 / Lightning CSS build optimizer rejects the
+   ::highlight() functional pseudo-element as "not a valid pseudo-element".
+   Inline <style> bypasses the optimizer; the CSS vars stay global on :root. */
 
 /* Selection BubbleMenu — colour swatches for highlighting (Schritt 7). */
 .highlight-menu {
