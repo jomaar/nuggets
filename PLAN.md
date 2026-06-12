@@ -64,7 +64,7 @@ Aufgaben, die **nicht** Teil einer laufenden Phase sind, plus Querverweise auf d
 | 3 | `NuggetConcept.note` im UI anzeigen | mittel | Kanten-Lesart auf /concepts/[id] (pro Nugget) sichtbar machen — Datenfeld da, Frontend nutzt es noch nicht. Nacharbeit zu 5g |
 | 4 | Konzepte bei PATCH neu extrahieren | mittel | Aktuell nur bei POST. ⚠️ Achtung Phase 6: kompletter Rewrite würde Highlights zerstören → mit Stufe C absichern |
 | 5 | Batch-Datei-Import | mittel | Mehrere Dateien auswählen → je ein Nugget |
-| 6 | Force-directed Graph-Visualisierung | mittel | d3 oder react-force-graph, /graph Route |
+| 6 | Force-directed Graph-Visualisierung | mittel | **→ eigene Phase 8 (UI-Session).** Daten-Layer steht (`lib/graph.ts`, Nähe-Berechnung). Offen: API-Route + innovative interaktive Oberfläche zusätzlich zur Listenansicht. Details s. **Phase 8** |
 | 7 | Multi-Color-Highlights fertigstellen | hoch | **→ Phase 6, Stufe B (Schritt 7+8)** — Details in der Phase-6-Sektion |
 | 8 | Push Notifications (iOS, 3×/Tag) | niedrig | Web Push API |
 | 9 | iOS Shortcut → Share Sheet quick-add | niedrig | |
@@ -473,6 +473,74 @@ aus einer Liste blitzschnell zurückspringen. Bewusst **keine Suche** in den Boo
 
 ⚠️ **Restrisiko:** Der Anker bricht, wenn genau die **Nachbarschaft dieser Zeile** umgeschrieben
 wird — für kurzlebige Arbeitsmarken akzeptiert.
+
+---
+
+## Phase 8 — Graph-Oberfläche (Daten-Layer fertig, UI offen)
+
+**Ziel:** Den Wissens-Graph nicht nur als Liste, sondern als **innovative, interaktive
+Visualisierung** erlebbar machen — zusätzlich zur bestehenden `/concepts`-Listenansicht.
+
+### ✅ Daten-Layer — `lib/graph.ts` (erledigt 2026-06-12)
+
+Klasse **`KnowledgeGraph`**, kapselt die Nähe-Berechnung auf dem bipartiten
+Nugget↔Concept-Graphen. Einmal `await KnowledgeGraph.load()` (lädt den ganzen Graphen +
+Anzeige-Labels), danach **synchrone, seiteneffektfreie** Queries.
+
+**Öffentliche API (das ist der Vertrag für die UI-Session):**
+```ts
+import { KnowledgeGraph } from '@/lib/graph'
+const graph = await KnowledgeGraph.load()
+
+graph.relatedNuggets(nuggetId, limit = 10): RelatedNugget[]
+// RelatedNugget = { id, title, score, sharedConcepts: { id, term }[] }
+
+graph.relatedConcepts(conceptId, limit = 10): RelatedConcept[]
+// RelatedConcept = { id, term, score, sharedNuggets: number }
+```
+- `score` = **Cosinus-Ähnlichkeit ∈ [0,1]** der gewichteten Vektoren. Komponenten =
+  Kanten-`relevance` × **IDF** (seltene geteilte Knoten zählen mehr, allgegenwärtige kaum).
+- `sharedConcepts` / `sharedNuggets` = **die Begründung** der Nähe (welche Knoten verbinden) —
+  ideal für „nah, weil beide an *Logos* + *Kreuzestheologie* hängen".
+- **5g-konform:** Konzept↔Konzept-Nähe wird *abgeleitet* (geteilte Nuggets), **nie** als
+  gespeicherte Kante geschrieben. Die einzigen echten Kanten bleiben `NuggetConcept`.
+- Verifiziert (2026-06-12): typecheck grün, Cosinus sauber in [0,1] (ein zwischenzeitlicher
+  >1-Bug durch inkonsistente Gewichtung wurde gefixt). ⚠️ Voll wirksam erst nach DB-Reset
+  (TODO 2) — Pre-5g-Dev-Daten haben je Konzept nur 1 Nugget → `relatedNuggets` noch leer.
+
+### Offen — die UI-Session (Brief)
+
+**Zwei Datenquellen stehen bereit, beide nutzen:**
+1. **Roh-Struktur (bipartit):** die echten `NuggetConcept`-Kanten. Knoten = Nuggets *und*
+   Konzepte (zwei visuelle Typen), Kante = Nugget→Konzept, Dicke = `relevance`. Das ist die
+   *Topologie* — direkt aus der DB, ohne `lib/graph.ts`.
+2. **Abgeleitete Nähe:** `lib/graph.ts` für „verwandte Nuggets/Konzepte" (Listen-Block +
+   ggf. Layout-Gewichte / Hervorhebungen).
+
+**Zu bauen:**
+- **API-Route(n):** `GET /api/graph` → `{ nodes: [{ id, type: 'nugget'|'concept', label,
+  domain? }], links: [{ source, target, weight }] }` (Roh-Bipartit). Zusätzlich
+  `GET /api/nuggets/[id]/related` + `GET /api/concepts/[id]/related` (dünne Wrapper um
+  `KnowledgeGraph`) für den „verwandte …"-Block in den Einzelansichten.
+- **`/graph`-Route:** die interaktive Oberfläche (Client-Component).
+
+**Innovations-Richtung (User will „cool & innovativ", nicht 0815-Force-Graph):**
+- **Bibliothek:** `react-force-graph-2d` (Canvas/WebGL, performant, hover/zoom/drag out of the
+  box) als Default-Empfehlung; Alternativen: `cytoscape`, `sigma.js`, `d3-force` pur. 3D
+  (`react-force-graph-3d`) als „wow"-Option prüfen, aber Lesbarkeit/Mobile zuerst.
+- **Brand-Look:** Farben aus den **CSS-Vars** (`globals.css`) + **Domain-Farben** (`Domain.color`,
+  DB-getrieben — Knoten nach Domain einfärben). Akzent = Logo-Indigo `--accent` (#3F4DA2).
+  „Konstellations"-Ästhetik passend zum Nuggets-Logo denkbar.
+- **Interaktion:** Hover hebt Nachbarschaft hervor (Rest abdunkeln), Klick auf Konzept-Knoten
+  → expandieren / zu `/concepts/[id]`, Klick auf Nugget → `/nugget/[id]`. Konzept-Knoten als
+  Hubs größer (Grad/Anzahl Nuggets), Suche/Filter nach Domain.
+- **Mobile-PWA beachten:** Touch-Gesten, Performance bei vielen Knoten, ggf. Domain-Filter um
+  Teilgraphen zu zeigen (vgl. Phase 5e — Konzept-Skalierung).
+- **Wichtig:** zusätzlich zur Liste, **nicht ersetzend** — `/concepts` bleibt.
+
+**Vorarbeiten/Abhängigkeiten:** DB-Reset (TODO 2) zuerst, sonst ist der Graph durch die
+Pre-5g-Daten unverbunden und sieht leer aus. `Domain.icon`/`color` sind DB-getrieben und
+stehen für Knoten-Styling bereit (s. CLAUDE.md Domains-Regel).
 
 ---
 
