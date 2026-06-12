@@ -261,6 +261,13 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
     if (!toolUse || toolUse.type !== 'tool_use') return
 
     const result = toolUse.input as ClauseResult
+    // The model occasionally violates the schema despite forced tool use
+    // (non-array concept lists, new concepts without labels) — normalize
+    // instead of crashing mid-extraction.
+    result.existingConcepts = Array.isArray(result.existingConcepts) ? result.existingConcepts : []
+    result.newConcepts = Array.isArray(result.newConcepts)
+      ? result.newConcepts.filter(nc => Array.isArray(nc.labels) && nc.labels.length > 0)
+      : []
 
     // Persist token usage
     await prisma.nugget.update({
