@@ -16,9 +16,16 @@ THE CORE PRINCIPLE — concepts are ABSTRACT, REUSABLE NODES, not statements abo
 - Ask yourself: "Could a completely different note, on a different day, about a different source, legitimately point to this exact same node?" If no, it is too specific — generalize it.
 - What THIS note specifically says about a concept does NOT belong in the concept. It belongs in the connection's "note" field (see below).
 
+KNOWN ANTI-PATTERNS — recurring mistakes; never produce these as concepts:
+- "X als Y" / "X as Y" (a reading): the concept is X alone; the reading "as Y" belongs in the connection note.
+- "X vs. Y" / "X und Y" (a contrast or pairing): link X and Y as two SEPARATE concepts; the contrast belongs in their notes.
+- Anything scoped to this text or its source ("X in Hebräer 12", "X bei Platon"): the concept is X; the scoping belongs in the note. (The source itself — "Hebräerbrief", "Platon" — may be its own concept if central.)
+- Concept labels are typically 1–3 words. A longer label is almost always a statement in disguise — generalize it.
+
 NAMED-ENTITY-LINKING — strongly prefer reusing existing concepts:
 - You receive the list of concepts already in the graph. Default to MATCHING an existing concept.
 - Only mint a NEW concept when no existing node genuinely covers the idea. When unsure, match rather than create.
+- Every NEW concept requires "whyNoExistingMatch": one short sentence on why no existing node covers it. If you cannot give a real reason, match an existing concept instead.
 - Match across languages (ἀγάπη = Liebe = Love = the same concept node).
 - Greek terms ἀγάπη, φιλία, ἔρως are DISTINCT concepts — never merge different Greek words.
 
@@ -75,7 +82,45 @@ interface ClauseResult {
     labels: { language: string; term: string }[]
     relevance: number
     note?: string
+    whyNoExistingMatch?: string
   }[]
+}
+
+/**
+ * Concept budget for one note, derived from its length: short notes get 3
+ * concepts, long ones up to 8, and at most half the budget may be NEW nodes.
+ * The numbers are injected into the prompt AND enforced on the response —
+ * the model otherwise over-links (~8 edges per note, hardly any node reuse),
+ * and without reused nodes no graph emerges.
+ */
+function conceptBudget(text: string): { maxTotal: number; maxNew: number } {
+  const words = text.trim().split(/\s+/).length
+  const maxTotal = Math.min(8, Math.max(3, 3 + Math.floor(words / 800)))
+  return { maxTotal, maxNew: Math.ceil(maxTotal / 2) }
+}
+
+/**
+ * Caps the model's selection to the budget: at most maxNew new concepts and
+ * maxTotal edges overall, keeping the highest-relevance ones. Existing
+ * concepts win ties — reuse beats minting new nodes.
+ */
+function enforceConceptBudget(result: ClauseResult, maxTotal: number, maxNew: number): {
+  existingToLink: ClauseResult['existingConcepts']
+  newToCreate: ClauseResult['newConcepts']
+} {
+  const candidates = [
+    ...(result.existingConcepts ?? []).map(c => ({ isNew: false, relevance: c.relevance, concept: c })),
+    ...[...(result.newConcepts ?? [])]
+      .sort((a, b) => b.relevance - a.relevance)
+      .slice(0, maxNew)
+      .map(c => ({ isNew: true, relevance: c.relevance, concept: c })),
+  ]
+  candidates.sort((a, b) => (b.relevance - a.relevance) || (Number(a.isNew) - Number(b.isNew)))
+  const kept = candidates.slice(0, maxTotal)
+  return {
+    existingToLink: kept.filter(c => !c.isNew).map(c => c.concept) as ClauseResult['existingConcepts'],
+    newToCreate:    kept.filter(c => c.isNew).map(c => c.concept) as ClauseResult['newConcepts'],
+  }
 }
 
 /**
@@ -113,7 +158,13 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
       ? `Existing concepts in the knowledge graph:\n${JSON.stringify(existingForPrompt, null, 2)}\n\nNew note to analyze:\n"${text}"`
       : `No existing concepts yet.\n\nNew note to analyze:\n"${text}"`
 
+    // Concrete per-note budget numbers beat an abstract "be sparing" rule.
+    const { maxTotal, maxNew } = conceptBudget(text)
     let systemPrompt = SYSTEM_PROMPT
+    systemPrompt += `\n\nCONCEPT BUDGET for this note (hard limits, enforced after your response):
+- Link at MOST ${maxTotal} concepts in total (existing + new combined).
+- At MOST ${maxNew} of them may be NEW concepts.
+- Fewer is better: pick only concepts central enough that a future, unrelated note could realistically link to the same node.`
     if (settings?.globalPromptAddition) systemPrompt += `\n\n${settings.globalPromptAddition}`
     if (domain?.domainPrompt) systemPrompt += `\n\n${domain.domainPrompt}`
     if (reviseContent) systemPrompt += REVISION_PROMPT
@@ -192,8 +243,9 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
                     },
                     relevance: { type: 'number', description: '0.3–1.0' },
                     note:      { type: 'string', description: 'Short phrase: what THIS note specifically says about the concept (same language as note)' },
+                    whyNoExistingMatch: { type: 'string', description: 'One short sentence: why none of the existing concepts covers this idea' },
                   },
-                  required: ['description', 'labels', 'relevance'],
+                  required: ['description', 'labels', 'relevance', 'whyNoExistingMatch'],
                 },
               },
             },
@@ -244,8 +296,10 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
         await prisma.nugget.update({ where: { id: nuggetId }, data: patch })
     }
 
+    const { existingToLink, newToCreate } = enforceConceptBudget(result, maxTotal, maxNew)
+
     // Link existing concepts
-    for (const { id, relevance, note } of result.existingConcepts ?? []) {
+    for (const { id, relevance, note } of existingToLink) {
       if (!existing.find(c => c.id === id)) continue
       await prisma.nuggetConcept.upsert({
         where: { nuggetId_conceptId: { nuggetId, conceptId: id } },
@@ -255,7 +309,7 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
     }
 
     // Create new concepts and link them
-    for (const nc of result.newConcepts ?? []) {
+    for (const nc of newToCreate) {
       const concept = await prisma.concept.create({
         data: {
           description: nc.description,
@@ -269,7 +323,7 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
       })
     }
 
-    console.log(`[concepts] nugget ${nuggetId}: title="${result.title}", tags=${JSON.stringify(result.tags)}, ${result.existingConcepts?.length ?? 0} matched, ${result.newConcepts?.length ?? 0} new`)
+    console.log(`[concepts] nugget ${nuggetId}: title="${result.title}", tags=${JSON.stringify(result.tags)}, ${existingToLink.length}/${result.existingConcepts?.length ?? 0} matched, ${newToCreate.length}/${result.newConcepts?.length ?? 0} new (budget ${maxTotal} total / ${maxNew} new)`)
   } catch (err) {
     console.error('[concepts] extraction failed:', err)
   }

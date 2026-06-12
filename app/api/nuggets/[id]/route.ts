@@ -58,5 +58,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   await prisma.nugget.delete({ where: { id } })
+  // The delete cascades only this nugget's edges; concepts left without any
+  // edge would linger as orphans and pollute every extraction prompt — sweep them.
+  await prisma.concept.deleteMany({ where: { nuggets: { none: {} } } })
   return new NextResponse(null, { status: 204 })
 }
