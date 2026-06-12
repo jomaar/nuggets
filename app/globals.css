@@ -196,6 +196,15 @@ h1, h2, h3, .serif {
   padding: 0;
 }
 
+/* Ego-network view (/graph) — fresh nodes fade in on mount; edges remount on
+   every focus change and fade in late, after the node glide has settled. */
+@keyframes ego-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.ego-enter      { animation: ego-fade-in 300ms ease both; }
+.ego-enter-late { animation: ego-fade-in 300ms ease 250ms both; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--warm); }

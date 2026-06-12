@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { Waypoints } from 'lucide-react'
 import DomainIcon from '@/components/DomainIcon'
 
 interface Label {
@@ -99,9 +100,20 @@ export default function ConceptPage() {
           ← Zurück
         </button>
 
-        <h1 className="text-3xl mb-2">
-          {primaryTerm}
-        </h1>
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <h1 className="text-3xl">
+            {primaryTerm}
+          </h1>
+          {/* Entry into the ego-network view, focused on this concept. */}
+          <Link
+            href={`/graph?type=concept&id=${concept.id}`}
+            className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 flex-shrink-0"
+            style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+          >
+            <Waypoints size={13} />
+            <span>Netz</span>
+          </Link>
+        </div>
         <p className="text-sm mb-4" style={{ color: 'var(--muted)', lineHeight: '1.6' }}>
           {concept.description}
         </p>

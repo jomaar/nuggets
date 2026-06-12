@@ -545,14 +545,36 @@ nicht zum einzigen Zugang.
 
 #### Stufe B — Ego-Netzwerk (`/graph`, die Visualisierung)
 
+**✅ Kern-Slice erledigt 2026-06-12:**
+- `GET /api/graph/ego?type=concept|nugget&id=…` — Zentrum + direkte Nachbarn aus den echten
+  `NuggetConcept`-Kanten (`relevance` + `note`, Domain-Styling, max. 16, relevanzsortiert).
+  Geteilte Typen in `lib/ego.ts` (Vertrag Route ↔ Komponente).
+- `components/EgoGraph.tsx` — deterministisches radiales SVG-Layout (keine Physik-Lib).
+  **Animations-Trick:** Zentrum + Ring sind EINE gekeyte Liste, darum behält ein Knoten beim
+  Fokuswechsel sein DOM-Element und gleitet per CSS-Transform-Transition an den neuen Platz;
+  Kanten remounten je Fokus (Key enthält Center-Id) und faden verzögert ein (`.ego-enter*`
+  in globals.css). Kanten-Dicke = `relevance`, Punkt auf der Kante = Note vorhanden,
+  unsichtbare breite Zwillings-Line/-Shapes = Touch-Targets.
+- `app/graph/page.tsx` — Fokus lebt in der URL (`?type=…&id=…`), gelesen via
+  `window.location` (NICHT `useSearchParams`, Suspense-Falle) + pushState/popstate →
+  **iOS-Back-Swipe läuft den Hüpf-Pfad zurück.** Tap auf Kante = Note-Karte über der
+  BottomNav (Graph bleibt bedienbar), Tap aufs Zentrum = Detailseite. Ohne Parameter:
+  Konzept-Chips als Einstieg (meistverknüpfte zuerst).
+- Einstiege: BottomNav-Tab „Netz" (das Network-Icon wanderte dorthin; „Konzepte" hat jetzt
+  `Tags`), „Netz"-Buttons auf `/concepts/[id]` + im Konzepte-Panel der Single-View.
+- Verifiziert (Playwright, 390px): 12-Nachbarn-Härtefall lesbar, Hop-Animation, Note-Karte,
+  Back-Swipe, Fehlerfälle 400/404. Typecheck grün.
+
+**Offen (Folge-Sessions):**
 - **Immer EIN Knoten im Zentrum** (Konzept *oder* Nugget), direkte Nachbarn radial darum.
   Tap auf Nachbar → gleitet animiert ins Zentrum, neue Nachbarn fächern auf. Navigation =
-  Hüpfen von Knoten zu Knoten.
+  Hüpfen von Knoten zu Knoten. *(✅ Kern-Slice)*
 - **Keine Physik-Simulation:** deterministisches radiales Layout (SVG + eigene Layout-Logik,
   kein cytoscape/sigma/d3-force nötig) — ruhig, schnell, auf 390px immer lesbar, volle
-  Kontrolle über Touch-Gesten.
+  Kontrolle über Touch-Gesten. *(✅ Kern-Slice)*
 - **Zweiter Ring (gedimmt):** Proximity aus `lib/graph.ts` — „was liegt dahinter".
 - **Kanten tappbar:** Tap auf Verbindungslinie → `note` als Popover/Sheet.
+  *(✅ Kern-Slice: einfache Note-Karte; hochziehbares Sheet = Teil des Bottom-Sheet-Punkts)*
 - **Bottom Sheet** (iOS-Pattern, hochziehbar) unter dem Graph: selektierter Knoten im Detail
   (Beschreibung, verbundene Nuggets samt Notes, Domain-Chip). Graph bleibt navigierbar.
 - **Breadcrumb-Trail:** horizontale Chip-Leiste der besuchten Knoten, Tap = zurückspringen.
@@ -560,6 +582,7 @@ nicht zum einzigen Zugang.
 - **Long-Press** auf Knoten = Quick-Preview ohne Fokuswechsel.
 - **Einstieg über Konzept-Suche/Chips,** nicht über eine Riesen-Übersicht. Optionaler
   herausgezoomter „Konstellations-Modus" (nach Domains geclustert) = sekundär, später.
+  *(✅ Kern-Slice: Chips; Suche fehlt noch)*
 
 **Visuelle Kodierung (beide Stufen):**
 - Domain-Farbe/-Icon aus der DB (`Domain.color`, `DomainIcon`) — das Netz zeigt sofort,

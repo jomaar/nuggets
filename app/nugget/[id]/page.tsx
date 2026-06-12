@@ -9,7 +9,7 @@ import DomainIcon from '@/components/DomainIcon'
 import TextStatsBar from '@/components/TextStatsBar'
 import { countHtml } from '@/lib/textStats'
 import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, type AnchorToken } from '@/lib/bookmarkLink'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2 } from 'lucide-react'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -929,9 +929,20 @@ export default function NuggetDetailPage() {
                 the concept — the WHY of the link, not just that it exists. */}
             {concepts.length > 0 && (
               <div>
-                <h2 className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--muted)' }}>
-                  Konzepte
-                </h2>
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-xs tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
+                    Konzepte
+                  </h2>
+                  {/* Entry into the ego-network view, focused on this nugget. */}
+                  <Link
+                    href={`/graph?type=nugget&id=${nugget.id}`}
+                    className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
+                    style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+                  >
+                    <Waypoints size={13} />
+                    <span>Netz</span>
+                  </Link>
+                </div>
                 <div className="flex flex-col gap-2.5">
                   {concepts.map(({ concept, note }) => (
                     <div key={concept.id}>
