@@ -15,3 +15,6 @@ DEV_TIPS.md
 .stfolder/
 .stversions/
 .DS_Store
+
+# Affinity transient lock files
+*.af~lock~
