@@ -61,7 +61,7 @@ Aufgaben, die **nicht** Teil einer laufenden Phase sind, plus Querverweise auf d
 |---|---------|------|-------|
 | 1 | Phase 5g testen | hoch | Neue Nuggets anlegen, prüfen: Konzepte abstrakt? matcht NEL bestehende? ist `NuggetConcept.note` gefüllt? (`npm run dev` + `npx prisma studio`) |
 | 2 | Produktions-DB neu aufsetzen | hoch | Testdaten löschen (Duplikate!), sauber starten (Befehl s. Referenz). Lokale Dev-DB enthält noch alte, zu-spezifische Konzepte aus der Zeit vor 5g |
-| 3 | `NuggetConcept.note` im UI anzeigen | mittel | Kanten-Lesart auf /concepts/[id] (pro Nugget) sichtbar machen — Datenfeld da, Frontend nutzt es noch nicht. Nacharbeit zu 5g |
+| ~~3~~ | ~~`NuggetConcept.note` im UI anzeigen~~ | ✅ | **Erledigt 2026-06-12** mit Phase 8 Stufe A: Note auf `/concepts/[id]` (unter jeder Nugget-Zeile) + im Konzepte-Block der Single-View (unter jedem Chip). |
 | 4 | Konzepte bei PATCH neu extrahieren | mittel | Aktuell nur bei POST. ⚠️ Achtung Phase 6: kompletter Rewrite würde Highlights zerstören → mit Stufe C absichern |
 | 5 | Batch-Datei-Import | mittel | Mehrere Dateien auswählen → je ein Nugget |
 | 6 | Force-directed Graph-Visualisierung | mittel | **→ eigene Phase 8 (UI-Session).** Daten-Layer steht (`lib/graph.ts`, Nähe-Berechnung). Offen: API-Route + innovative interaktive Oberfläche zusätzlich zur Listenansicht. Details s. **Phase 8** |
@@ -508,35 +508,71 @@ graph.relatedConcepts(conceptId, limit = 10): RelatedConcept[]
   >1-Bug durch inkonsistente Gewichtung wurde gefixt). ⚠️ Voll wirksam erst nach DB-Reset
   (TODO 2) — Pre-5g-Dev-Daten haben je Konzept nur 1 Nugget → `relatedNuggets` noch leer.
 
-### Offen — die UI-Session (Brief)
+### UI-Design — entschieden 2026-06-12 (Design-Session)
 
-**Zwei Datenquellen stehen bereit, beide nutzen:**
-1. **Roh-Struktur (bipartit):** die echten `NuggetConcept`-Kanten. Knoten = Nuggets *und*
-   Konzepte (zwei visuelle Typen), Kante = Nugget→Konzept, Dicke = `relevance`. Das ist die
-   *Topologie* — direkt aus der DB, ohne `lib/graph.ts`.
-2. **Abgeleitete Nähe:** `lib/graph.ts` für „verwandte Nuggets/Konzepte" (Listen-Block +
-   ggf. Layout-Gewichte / Hervorhebungen).
+**Leitentscheidung: KEIN Force-Directed-Gesamtgraph als primäre Ansicht.** Auf dem iPhone
+(390px, Touch) ist der klassische Obsidian-Style-Gesamtgraph unlesbar (Gewusel, Pinch-Zoom-
+Kampf, Label-Chaos). Stattdessen **Fokus+Kontext**-Ansatz in zwei Stufen:
 
-**Zu bauen:**
-- **API-Route(n):** `GET /api/graph` → `{ nodes: [{ id, type: 'nugget'|'concept', label,
-  domain? }], links: [{ source, target, weight }] }` (Roh-Bipartit). Zusätzlich
-  `GET /api/nuggets/[id]/related` + `GET /api/concepts/[id]/related` (dünne Wrapper um
-  `KnowledgeGraph`) für den „verwandte …"-Block in den Einzelansichten.
-- **`/graph`-Route:** die interaktive Oberfläche (Client-Component).
+#### ✅ Stufe A — Drill-Down-Listen (das Fundament) — erledigt 2026-06-12
 
-**Innovations-Richtung (User will „cool & innovativ", nicht 0815-Force-Graph):**
-- **Bibliothek:** `react-force-graph-2d` (Canvas/WebGL, performant, hover/zoom/drag out of the
-  box) als Default-Empfehlung; Alternativen: `cytoscape`, `sigma.js`, `d3-force` pur. 3D
-  (`react-force-graph-3d`) als „wow"-Option prüfen, aber Lesbarkeit/Mobile zuerst.
-- **Brand-Look:** Farben aus den **CSS-Vars** (`globals.css`) + **Domain-Farben** (`Domain.color`,
-  DB-getrieben — Knoten nach Domain einfärben). Akzent = Logo-Indigo `--accent` (#3F4DA2).
-  „Konstellations"-Ästhetik passend zum Nuggets-Logo denkbar.
-- **Interaktion:** Hover hebt Nachbarschaft hervor (Rest abdunkeln), Klick auf Konzept-Knoten
-  → expandieren / zu `/concepts/[id]`, Klick auf Nugget → `/nugget/[id]`. Konzept-Knoten als
-  Hubs größer (Grad/Anzahl Nuggets), Suche/Filter nach Domain.
-- **Mobile-PWA beachten:** Touch-Gesten, Performance bei vielen Knoten, ggf. Domain-Filter um
-  Teilgraphen zu zeigen (vgl. Phase 5e — Konzept-Skalierung).
-- **Wichtig:** zusätzlich zur Liste, **nicht ersetzend** — `/concepts` bleibt.
+Die Graph-Navigation als schlichte, verlinkte Listen — billig, barrierefrei, funktioniert
+garantiert. Das Ego-Netzwerk (Stufe B) wird später zur Visualisierung *derselben* Navigation,
+nicht zum einzigen Zugang.
+
+- **Konzept-Seite (`/concepts/[id]`):** verknüpfte Nuggets **mit ihrer Kanten-Note**
+  (`NuggetConcept.note` = die spezifische Lesart — erledigt damit TODO 3) + Block
+  „Verwandte Konzepte" (`graph.relatedConcepts`, mit Begründung `sharedNuggets`).
+- **Nugget-Single-View (`/nugget/[id]`):** Konzepte **mit Notes** (Infopanel) + Block
+  „Verwandte Nuggets" unter dem Lesetext (`graph.relatedNuggets`, mit Begründung
+  `sharedConcepts` — „gemeinsam: *Logos* · *Kreuzestheologie*").
+- **API:** `GET /api/nuggets/[id]/related` + `GET /api/concepts/[id]/related`
+  (dünne Wrapper um `KnowledgeGraph`, `?limit=`, Default 8).
+- **Kern-Prinzip — die Kanten-Notes sind das Alleinstellungsmerkmal:** Das Datenmodell ist
+  reicher als Obsidian & Co., weil die Kante Bedeutung trägt. Das UI zeigt deshalb bei jeder
+  Verknüpfung *warum* sie besteht (Note bzw. shared-Begründung), nie nur „ist verlinkt".
+
+**Umsetzungsnotizen (2026-06-12):**
+- `note` kam in beiden Detail-APIs schon mit (Prisma-`include` auf der Join-Tabelle liefert
+  alle Skalare) — nur das Frontend zeigte es nicht.
+- Related-Fetch ist unkritisch entkoppelt: Fehler/leeres Ergebnis blendet den Block einfach aus.
+- **Wichtiger Fix nebenbei:** `NuggetReader` in der Single-View ist jetzt `key={nugget.id}` —
+  App-Router-Navigation `/nugget/a → /nugget/b` (Related-Link, Cross-Nugget-Deeplink) remountet
+  die Page NICHT, aber `useHighlightSave` seedet State + Save-Baseline nur beim Mount → ohne
+  key zeigte der Reader alten Content / hätte falsch gePATCHt. Latenter Alt-Bug der Deeplinks.
+- Verifiziert: typecheck grün, beide Routen liefern echte Nachbarn am Dev-Server, Seiten 200.
+  ⚠️ Voll sichtbar erst nach DB-Reset (TODO 2) — Pre-5g-Daten haben kaum geteilte Konzepte/Notes.
+
+#### Stufe B — Ego-Netzwerk (`/graph`, die Visualisierung)
+
+- **Immer EIN Knoten im Zentrum** (Konzept *oder* Nugget), direkte Nachbarn radial darum.
+  Tap auf Nachbar → gleitet animiert ins Zentrum, neue Nachbarn fächern auf. Navigation =
+  Hüpfen von Knoten zu Knoten.
+- **Keine Physik-Simulation:** deterministisches radiales Layout (SVG + eigene Layout-Logik,
+  kein cytoscape/sigma/d3-force nötig) — ruhig, schnell, auf 390px immer lesbar, volle
+  Kontrolle über Touch-Gesten.
+- **Zweiter Ring (gedimmt):** Proximity aus `lib/graph.ts` — „was liegt dahinter".
+- **Kanten tappbar:** Tap auf Verbindungslinie → `note` als Popover/Sheet.
+- **Bottom Sheet** (iOS-Pattern, hochziehbar) unter dem Graph: selektierter Knoten im Detail
+  (Beschreibung, verbundene Nuggets samt Notes, Domain-Chip). Graph bleibt navigierbar.
+- **Breadcrumb-Trail:** horizontale Chip-Leiste der besuchten Knoten, Tap = zurückspringen.
+  Löst das „wo war ich?"-Problem + macht den eigenen Pfad transparent.
+- **Long-Press** auf Knoten = Quick-Preview ohne Fokuswechsel.
+- **Einstieg über Konzept-Suche/Chips,** nicht über eine Riesen-Übersicht. Optionaler
+  herausgezoomter „Konstellations-Modus" (nach Domains geclustert) = sekundär, später.
+
+**Visuelle Kodierung (beide Stufen):**
+- Domain-Farbe/-Icon aus der DB (`Domain.color`, `DomainIcon`) — das Netz zeigt sofort,
+  wo Domänen sich kreuzen. Akzent = Logo-Indigo `--accent`, Farben via CSS-Vars.
+- Konzepte vs. Nuggets klar unterscheidbar (z. B. Konzepte = Kreise, Nuggets = Kärtchen).
+
+**Datenquellen (beide nutzen):**
+1. **Roh-Struktur (bipartit):** die echten `NuggetConcept`-Kanten (Topologie, direkt aus
+   der DB; Kanten-Dicke = `relevance`).
+2. **Abgeleitete Nähe:** `lib/graph.ts` (zweiter Ring, „verwandte …"-Blöcke).
+
+**Mobile-PWA beachten:** Touch-Gesten, Performance, ggf. Domain-Filter für Teilgraphen
+(vgl. Phase 5e). **Wichtig:** zusätzlich zur Liste, **nicht ersetzend** — `/concepts` bleibt.
 
 **Vorarbeiten/Abhängigkeiten:** DB-Reset (TODO 2) zuerst, sonst ist der Graph durch die
 Pre-5g-Daten unverbunden und sieht leer aus. `Domain.icon`/`color` sind DB-getrieben und

@@ -32,7 +32,16 @@ interface ConceptDetail {
   id: string
   description: string
   labels: Label[]
-  nuggets: { relevance: number; nugget: Nugget }[]
+  // note = the edge reading: what THIS nugget specifically says about the concept.
+  nuggets: { relevance: number; note: string | null; nugget: Nugget }[]
+}
+
+/** One proximity result from /api/concepts/:id/related (derived, not a stored edge). */
+interface RelatedConcept {
+  id: string
+  term: string
+  score: number
+  sharedNuggets: number
 }
 
 const LANG_NAMES: Record<string, string> = {
@@ -43,12 +52,18 @@ export default function ConceptPage() {
   const { id } = useParams<{ id: string }>()
   const router  = useRouter()
   const [concept, setConcept] = useState<ConceptDetail | null>(null)
+  const [related, setRelated] = useState<RelatedConcept[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/concepts/${id}`)
-    if (!res.ok) { setLoading(false); return }
-    setConcept(await res.json())
+    // Proximity is fetched alongside the detail; an empty result just hides the block.
+    const [detailRes, relatedRes] = await Promise.all([
+      fetch(`/api/concepts/${id}`),
+      fetch(`/api/concepts/${id}/related`),
+    ])
+    if (relatedRes.ok) setRelated(await relatedRes.json())
+    if (!detailRes.ok) { setLoading(false); return }
+    setConcept(await detailRes.json())
     setLoading(false)
   }, [id])
 
@@ -112,33 +127,64 @@ export default function ConceptPage() {
         {concept.nuggets.length} {concept.nuggets.length === 1 ? 'Nugget' : 'Nuggets'}
       </p>
 
-      {/* Title-only list — tap a row to open the single view */}
+      {/* Nugget list — each row shows the edge reading (what THIS nugget says
+          about the concept) beneath the title; tap a row to open the single view */}
       <div className="flex flex-col gap-2">
-        {concept.nuggets.map(({ nugget }) => (
+        {concept.nuggets.map(({ nugget, note }) => (
           <Link
             key={nugget.id}
             href={`/nugget/${nugget.id}`}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl border transition-all active:scale-[0.99]"
+            className="flex flex-col gap-1 px-5 py-2.5 rounded-2xl border transition-all active:scale-[0.99]"
             style={{
               background: 'var(--surface)',
               borderColor: 'var(--border)',
               boxShadow: '0 2px 12px rgba(26,23,20,0.06)',
             }}
           >
-            {nugget.domain && (
-              <span
-                className="inline-flex items-center text-xs px-2 py-1 rounded-full flex-shrink-0"
-                style={{ background: 'var(--warm)', color: 'var(--muted)' }}
-              >
-                <DomainIcon slug={nugget.domain.slug} icon={nugget.domain.icon} color={nugget.domain.color} size={13} colored />
+            <span className="flex items-center gap-2">
+              {nugget.domain && (
+                <span
+                  className="inline-flex items-center text-xs px-2 py-1 rounded-full flex-shrink-0"
+                  style={{ background: 'var(--warm)', color: 'var(--muted)' }}
+                >
+                  <DomainIcon slug={nugget.domain.slug} icon={nugget.domain.icon} color={nugget.domain.color} size={13} colored />
+                </span>
+              )}
+              <span className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>
+                {nugget.title || fallbackTitle(nugget.contentHtml)}
+              </span>
+            </span>
+            {note && (
+              <span className="text-xs line-clamp-2" style={{ color: 'var(--muted)', lineHeight: '1.5' }}>
+                {note}
               </span>
             )}
-            <span className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>
-              {nugget.title || fallbackTitle(nugget.contentHtml)}
-            </span>
           </Link>
         ))}
       </div>
+
+      {/* Related concepts — proximity derived from shared nuggets (lib/graph.ts),
+          never a stored edge. The count shows WHY they are close. */}
+      {related.length > 0 && (
+        <>
+          <p className="text-xs tracking-widest uppercase mt-10 mb-4" style={{ color: 'var(--muted)' }}>
+            Verwandte Konzepte
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {related.map(r => (
+              <Link
+                key={r.id}
+                href={`/concepts/${r.id}`}
+                className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
+                style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+              >
+                <span>{r.term}</span>
+                <span style={{ opacity: 0.6 }} title="gemeinsame Nuggets">{r.sharedNuggets}</span>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
     </>
   )
 }

@@ -57,6 +57,14 @@ interface Nugget {
   createdAt: string
 }
 
+/** One proximity result from /api/nuggets/:id/related (derived via shared concepts). */
+interface RelatedNugget {
+  id: string
+  title: string
+  score: number
+  sharedConcepts: { id: string; term: string }[]
+}
+
 /** Returns the best display label: German → English → first available. */
 function primaryLabel(labels: ConceptLabel[]): string {
   return (
@@ -306,6 +314,7 @@ export default function NuggetDetailPage() {
   const { id } = useParams<{ id: string }>()
 
   const [nugget, setNugget]   = useState<Nugget | null>(null)
+  const [relatedNuggets, setRelatedNuggets] = useState<RelatedNugget[]>([])
   const [loading, setLoading] = useState(true)
   const [isOwner, setIsOwner] = useState(false)
   const [infoOpen, setInfoOpen]       = useState(false)
@@ -340,6 +349,18 @@ export default function NuggetDetailPage() {
     } finally {
       setLoading(false)
     }
+  }, [id])
+
+  // Proximity neighbours for the "Verwandte Nuggets" block below the content.
+  // Fetched separately from the detail: it is non-critical, so a failure (or an
+  // empty graph) just hides the block. Re-runs when a related link navigates to
+  // another nugget (same route, new id).
+  useEffect(() => {
+    setRelatedNuggets([])
+    fetch(`/api/nuggets/${id}/related`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((list: RelatedNugget[]) => setRelatedNuggets(list))
+      .catch(() => {})
   }, [id])
 
   useEffect(() => {
@@ -903,23 +924,31 @@ export default function NuggetDetailPage() {
               </div>
             )}
 
-            {/* Concepts — sorted by how many nuggets share them */}
+            {/* Concepts — sorted by how many nuggets share them. Each entry shows
+                the edge reading (NuggetConcept.note): what THIS nugget says about
+                the concept — the WHY of the link, not just that it exists. */}
             {concepts.length > 0 && (
               <div>
                 <h2 className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--muted)' }}>
                   Konzepte
                 </h2>
-                <div className="flex flex-wrap gap-2">
-                  {concepts.map(({ concept }) => (
-                    <Link
-                      key={concept.id}
-                      href={`/concepts/${concept.id}`}
-                      className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
-                      style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
-                    >
-                      <span>{primaryLabel(concept.labels)}</span>
-                      <span style={{ opacity: 0.6 }}>{concept._count.nuggets}</span>
-                    </Link>
+                <div className="flex flex-col gap-2.5">
+                  {concepts.map(({ concept, note }) => (
+                    <div key={concept.id}>
+                      <Link
+                        href={`/concepts/${concept.id}`}
+                        className="inline-flex text-xs px-2.5 py-1 rounded-full items-center gap-1.5"
+                        style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+                      >
+                        <span>{primaryLabel(concept.labels)}</span>
+                        <span style={{ opacity: 0.6 }}>{concept._count.nuggets}</span>
+                      </Link>
+                      {note && (
+                        <p className="text-xs mt-1" style={{ color: 'var(--muted)', lineHeight: '1.5' }}>
+                          {note}
+                        </p>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -930,10 +959,44 @@ export default function NuggetDetailPage() {
       {/* Length read-out above the text — characters · words · paragraphs. */}
       <TextStatsBar stats={countHtml(nugget.contentHtml)} className="pb-3" />
 
-      {/* Content in focus */}
+      {/* Content in focus. Keyed by nugget id: same-segment navigation (related
+          links, cross-nugget deeplinks) re-renders this page WITHOUT remounting,
+          but the reader's highlight-save hook seeds its state/baseline only on
+          mount — the key forces a clean remount for the new nugget. */}
       <div ref={contentRef} onClick={handleContentClick}>
-        <NuggetReader id={nugget.id} contentHtml={nugget.contentHtml} />
+        <NuggetReader key={nugget.id} id={nugget.id} contentHtml={nugget.contentHtml} />
       </div>
+
+      {/* Related nuggets — proximity over shared abstract concepts (lib/graph.ts).
+          Each row names the shared concepts: the reason the two nuggets are close. */}
+      {relatedNuggets.length > 0 && (
+        <section className="mt-10">
+          <h2 className="text-xs tracking-widest uppercase mb-4" style={{ color: 'var(--muted)' }}>
+            Verwandte Nuggets
+          </h2>
+          <div className="flex flex-col gap-2">
+            {relatedNuggets.map(r => (
+              <Link
+                key={r.id}
+                href={`/nugget/${r.id}`}
+                className="flex flex-col gap-1 px-5 py-2.5 rounded-2xl border transition-all active:scale-[0.99]"
+                style={{
+                  background: 'var(--surface)',
+                  borderColor: 'var(--border)',
+                  boxShadow: '0 2px 12px rgba(26,23,20,0.06)',
+                }}
+              >
+                <span className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>
+                  {r.title}
+                </span>
+                <span className="text-xs truncate" style={{ color: 'var(--muted)' }}>
+                  gemeinsam: {r.sharedConcepts.map(c => c.term).join(' · ')}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Highlights popup — lists every mark in reading order; tap a row to jump
           to it (closes the popup), or dismiss via × / backdrop. */}

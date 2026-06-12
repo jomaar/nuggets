@@ -14,12 +14,14 @@ app/api/due/          → GET due nuggets
 app/api/nuggets/      → GET list / POST create
 app/api/nuggets/[id]/ → GET PATCH DELETE
 app/api/nuggets/[id]/review/ → POST SM-2 rating
+app/api/nuggets/[id]/related/ → GET related nuggets (KnowledgeGraph proximity)
+app/api/concepts/[id]/related/ → GET related concepts (KnowledgeGraph proximity)
 app/api/bookmarks/    → GET list / POST create
 app/api/bookmarks/[id]/ → DELETE
 app/api/extract/      → POST { url } → { text } (resolve link: YouTube transcript / web article)
 app/edit/[id]/        → edit nugget form
 components/NuggetCard.tsx · BottomNav.tsx · DomainChips.tsx · DomainIcon.tsx · TextStatsBar.tsx
-lib/prisma.ts · sm2.ts · content.ts · youtube.ts · webpage.ts · textStats.ts
+lib/prisma.ts · sm2.ts · content.ts · youtube.ts · webpage.ts · textStats.ts · graph.ts
 ```
 
 ## Rules
@@ -35,6 +37,7 @@ lib/prisma.ts · sm2.ts · content.ts · youtube.ts · webpage.ts · textStats.t
 - "Text aus Link" (app/add): the content field's URL is resolved server-side via `/api/extract` (browser can't fetch cross-origin). `lib/youtube.ts` (transcript) + `lib/webpage.ts` (Readability article text). MUST stay server-side. Length is guarded: 5 MB byte-cap on web downloads, 100k-char hard cap on returned text (`truncated` flag). Web extractor uses `jsdom` + `@mozilla/readability` — heavy dep, swap to `linkedom` later (see TODO 6).
 - Length meter: `lib/textStats.ts` (`countPlainText` for Markdown/add, `countHtml` for HTML/read+edit) + `components/TextStatsBar.tsx`, shown above the text in add/edit/read. Soft warn threshold in app/add = `WARN_CHARS` (20k).
 - Domains: icon **and** colour are DB-driven (`Domain.icon` = Lucide key e.g. `"Cross"`; `Domain.color` = hex). `components/DomainIcon.tsx` resolves the key via `DOMAIN_ICON_REGISTRY` (the curated icon set — also the source for Session B's admin picker) and renders `color` when `colored`; both fall back to the legacy slug maps / palette (`domainColor()`) when the DB value is null, so un-migrated domains still render. Seed (`prisma/seed.ts`) sets icon/color per domain and self-heals on re-run. Every domain-rendering surface must pass `icon`/`color`, so selects must include both (`domain: true` covers it; an explicit `select` must list them). `components/DomainChips.tsx` is the adaptive selector (icon-only → +short name → +full name by width; `variant="full"` forces names) and is reused by add + edit; the `all` page's filter chips replicate the same adaptive label pattern (they keep their own slug-toggle + "Alle" chip). Short label = `shortName()` (text before " & ", exported from DomainChips).
+- Graph navigation (PLAN.md Phase 8): Stufe A (drill-down lists) is live — related blocks on `/concepts/[id]` + `/nugget/[id]`, fed by `GET …/related` routes wrapping `lib/graph.ts` (`KnowledgeGraph`, derived proximity — never store concept↔concept edges). UI principle: always show WHY a link exists (edge `note` / shared concepts), never just that it exists. Stufe B = ego network (radial focus+context, design in PLAN.md Phase 8) — NO force-directed full graph as primary mobile view. ⚠️ `NuggetReader` in the single view must stay `key={nugget.id}`: same-segment navigation (`/nugget/a → /nugget/b`) re-renders without remounting, but `useHighlightSave` seeds its state/baseline only on mount.
 - Code + comments in English
 
 ## Commands
