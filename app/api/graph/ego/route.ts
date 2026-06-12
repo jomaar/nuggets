@@ -104,6 +104,8 @@ async function nuggetEgo(id: string): Promise<EgoData | null> {
       id: nugget.id,
       label: nugget.title.trim() || fallbackTitle(nugget.contentPlain),
       degree: nugget.concepts.length,
+      // Short excerpt so the detail sheet has body text for a nugget centre.
+      description: nugget.contentPlain.replace(/\s+/g, ' ').trim().slice(0, 280),
       domain: nugget.domain,
     },
     neighbors: sortAndCap(neighbors),

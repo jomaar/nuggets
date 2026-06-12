@@ -2,6 +2,7 @@
 
 import type { EgoData, EgoNeighbor, EgoNode } from '@/lib/ego'
 import DomainIcon, { resolveDomainColor } from '@/components/DomainIcon'
+import useLongPress from '@/components/useLongPress'
 
 /**
  * The ego-network view (PLAN.md Phase 8 Stufe B): one node in the centre, its
@@ -35,10 +36,12 @@ interface EgoGraphProps {
   data: EgoData
   /** Tap on a ring node — the page re-focuses the graph on it. */
   onFocusNode: (node: EgoNode) => void
-  /** Tap on the centre node — the page opens its detail view. */
+  /** Tap on the centre node — the page opens its detail sheet. */
   onOpenCenter: (node: EgoNode) => void
   /** Tap on a connecting line — the page shows the edge note. */
   onEdgeTap: (neighbor: EgoNeighbor) => void
+  /** Long-press on a ring node — preview sheet without changing focus. */
+  onPreviewNode: (neighbor: EgoNeighbor) => void
 }
 
 /** Truncates a label to fit the ring; tighter the fuller the ring gets. */
@@ -54,8 +57,14 @@ function nuggetStroke(node: EgoNode): string {
     : 'var(--muted)'
 }
 
-export default function EgoGraph({ data, onFocusNode, onOpenCenter, onEdgeTap }: EgoGraphProps) {
+export default function EgoGraph({ data, onFocusNode, onOpenCenter, onEdgeTap, onPreviewNode }: EgoGraphProps) {
   const ringSize = data.neighbors.length
+
+  // Ring nodes: short tap = hop, long-press = preview without focus change.
+  const ringPressHandlers = useLongPress<EgoNeighbor>(
+    onPreviewNode,
+    neighbor => onFocusNode(neighbor.node),
+  )
 
   // Deterministic radial placement: strongest edge starts at 12 o'clock, the
   // rest follow clockwise (the API sorts by relevance, so the order is stable).
@@ -79,6 +88,7 @@ export default function EgoGraph({ data, onFocusNode, onOpenCenter, onEdgeTap }:
       className="w-full select-none"
       role="img"
       aria-label={`Netz um ${data.center.label}`}
+      style={{ WebkitTouchCallout: 'none' }}
     >
       {/* Edge layer — always below the nodes. Keyed per centre so a focus
           change remounts them at the new geometry and replays the fade-in. */}
@@ -129,7 +139,9 @@ export default function EgoGraph({ data, onFocusNode, onOpenCenter, onEdgeTap }:
             transition: 'transform 480ms cubic-bezier(0.22, 0.9, 0.3, 1)',
             cursor: 'pointer',
           }}
-          onClick={() => (p.role === 'center' ? onOpenCenter(p.node) : onFocusNode(p.node))}
+          {...(p.role === 'center'
+            ? { onClick: () => onOpenCenter(p.node) }
+            : ringPressHandlers(p.neighbor!))}
         >
           {p.node.type === 'concept'
             ? <ConceptShape node={p.node} role={p.role} y={p.y} ringSize={ringSize} />

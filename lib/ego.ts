@@ -21,7 +21,8 @@ export interface EgoNode {
   label: string
   /** How many bipartite edges the node has in total (its full degree). */
   degree: number
-  /** Concept nodes only: the abstract description shown in detail contexts. */
+  /** Body text for detail contexts: a concept's abstract description, or a
+   *  short contentPlain excerpt when the node is a nugget centre. */
   description?: string
   /** Nugget nodes only: domain styling; null when the nugget has no domain. */
   domain?: EgoDomainStyle | null

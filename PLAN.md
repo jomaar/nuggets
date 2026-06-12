@@ -565,24 +565,44 @@ nicht zum einzigen Zugang.
 - Verifiziert (Playwright, 390px): 12-Nachbarn-Härtefall lesbar, Hop-Animation, Note-Karte,
   Back-Swipe, Fehlerfälle 400/404. Typecheck grün.
 
-**Offen (Folge-Sessions):**
-- **Immer EIN Knoten im Zentrum** (Konzept *oder* Nugget), direkte Nachbarn radial darum.
-  Tap auf Nachbar → gleitet animiert ins Zentrum, neue Nachbarn fächern auf. Navigation =
-  Hüpfen von Knoten zu Knoten. *(✅ Kern-Slice)*
-- **Keine Physik-Simulation:** deterministisches radiales Layout (SVG + eigene Layout-Logik,
-  kein cytoscape/sigma/d3-force nötig) — ruhig, schnell, auf 390px immer lesbar, volle
-  Kontrolle über Touch-Gesten. *(✅ Kern-Slice)*
-- **Zweiter Ring (gedimmt):** Proximity aus `lib/graph.ts` — „was liegt dahinter".
-- **Kanten tappbar:** Tap auf Verbindungslinie → `note` als Popover/Sheet.
-  *(✅ Kern-Slice: einfache Note-Karte; hochziehbares Sheet = Teil des Bottom-Sheet-Punkts)*
-- **Bottom Sheet** (iOS-Pattern, hochziehbar) unter dem Graph: selektierter Knoten im Detail
-  (Beschreibung, verbundene Nuggets samt Notes, Domain-Chip). Graph bleibt navigierbar.
+**✅ Slice 1 erledigt 2026-06-12 (Bottom Sheet + Long-Press):**
+- **Bottom Sheet** (`components/GraphSheet.tsx`): iOS-Pattern, hochziehbar Peek (40 %) ↔
+  Expanded (85 %), **bewusst ohne Backdrop** — der Graph dahinter bleibt sichtbar und
+  hoppbar; offenes Sheet verdeckt die BottomNav (z-60, wie native iOS-Sheets die Tab-Bar).
+  `SheetSelection = {kind:'center'} | {kind:'neighbor', neighbor}` — Ring-Preview und
+  Kanten-Tap sind EIN Fall (`EgoNeighbor` bündelt Knoten + Kante). Center-Fall zeigt
+  Beschreibung + Liste „Verbindungen (n)" mit Notes (Zeilen-Tap = Hop); Neighbor-Fall
+  Knoten-Chip + „{center} ↔ {node}" + Note. **Zentrum-Tap öffnet jetzt das Sheet**,
+  „Öffnen" im Header navigiert zur Detailseite; die alte fixe Kanten-Note-Karte ist ersetzt.
+- **Long-Press** auf Ring-Knoten (`components/useLongPress.ts`, generischer Hook, 500 ms,
+  Abbruch bei >10 px Bewegung) = Preview-Sheet OHNE Fokuswechsel; Kurz-Tap hoppt weiter.
+  Click-Suppression nach Fire via `preventDefault()` im `touchend` (NICHT passiv bei React,
+  anders als touchstart/move) + `fired`-Ref; `onContextMenu` killt den iOS-Callout.
+- **Kein API-Change** — alles steckte schon in `EgoData`; einziger Tweak: Nugget-Zentrum
+  bekommt ein `contentPlain`-Exzerpt (280 Zeichen) als `description` für den Sheet-Body.
+- **Drag-Mechanik-Lektionen:** (1) React-Touch-Listener sind passiv → Scroll-Blocken nur
+  deklarativ via `touch-action: none` auf den Drag-Zonen; Content scrollt im Expanded nativ
+  (`overflow-y-auto` + `overscroll-contain`), im Peek ist er Drag-Zone — keine
+  Scroll-vs-Drag-Arbitrierung nötig. (2) **Pointer-Capture muss beim `pointerdown` greifen**
+  (Maus hat kein implizites Capture wie Touch, sonst stallt der Aufwärts-Drag); Buttons sind
+  ausgenommen, weil Capture deren trailing click retargeten und schlucken würde.
+- Glide-Invariante (EINE gekeyte Knotenliste) unangetastet — nur Handler-Props geändert.
+- Verifiziert: 18/18 Playwright-Checks (390×844, Python-Playwright, Skript-Muster:
+  Knoten-Koordinaten via getBoundingClientRect aus dem SVG evaluieren), Typecheck grün.
+  Interaktionsmatrix als Kommentar in `app/graph/page.tsx`.
+
+**Offen (Slice 2, nächste Session):**
 - **Breadcrumb-Trail:** horizontale Chip-Leiste der besuchten Knoten, Tap = zurückspringen.
   Löst das „wo war ich?"-Problem + macht den eigenen Pfad transparent.
-- **Long-Press** auf Knoten = Quick-Preview ohne Fokuswechsel.
-- **Einstieg über Konzept-Suche/Chips,** nicht über eine Riesen-Übersicht. Optionaler
-  herausgezoomter „Konstellations-Modus" (nach Domains geclustert) = sekundär, später.
-  *(✅ Kern-Slice: Chips; Suche fehlt noch)*
+  *Ansatz:* `pushState({trail})`-Payload in `focusNode` (heute `null`) + `trail`-State in
+  der Page; Chip-Leiste zwischen Header und Graph. Sheet schließt eh bei jedem Fokuswechsel.
+- **Zweiter Ring (gedimmt, tappbar):** Proximity aus `lib/graph.ts` — „was liegt dahinter".
+  **Entschieden:** Tap auf Außenknoten = direkter Hop (2-Hop-Abkürzung), nicht nur Deko.
+  *Ansatz:* `EgoData.outer?: EgoNode[]` (Server: `KnowledgeGraph.relatedConcepts/-Nuggets`,
+  Ring-Mitglieder ausschließen); `PlacedNode.role` + `'outer'`, `OUTER_RADIUS ≈ 195`,
+  Opacity ~0.45, in DIESELBE gekeyte Liste → Hop-Glide gratis.
+- **Einstieg über Konzept-Suche** (Chips ✅ Kern-Slice; Suche fehlt noch). Optionaler
+  „Konstellations-Modus" (nach Domains geclustert) = sekundär, später.
 
 **Visuelle Kodierung (beide Stufen):**
 - Domain-Farbe/-Icon aus der DB (`Domain.color`, `DomainIcon`) — das Netz zeigt sofort,

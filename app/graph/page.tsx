@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X } from 'lucide-react'
 import EgoGraph from '@/components/EgoGraph'
+import GraphSheet, { type SheetSelection } from '@/components/GraphSheet'
 import type { EgoData, EgoNeighbor, EgoNode, EgoNodeType } from '@/lib/ego'
 
 /** The focused node, addressed by the URL: /graph?type=concept|nugget&id=… */
@@ -46,6 +46,15 @@ function readFocusFromUrl(): Focus | null {
  * iOS back swipe walks the visited path and a view can be shared/bookmarked.
  * Read via window.location, NOT useSearchParams (avoids the App-Router
  * Suspense requirement — same pattern as app/add).
+ *
+ * Interaction matrix:
+ *   tap ring node        → hop (focus change, pushState); closes the sheet
+ *   long-press ring node → sheet (peek) with that neighbour, focus unchanged
+ *   tap centre node      → sheet (peek) with the centre's detail
+ *   tap edge line        → sheet (peek) with the neighbour + edge note
+ *   "Öffnen" in sheet    → the node's regular detail page
+ *   neighbour row in sheet → hop + sheet closes
+ *   popstate (back swipe) → sheet closes, focus steps back
  */
 export default function GraphPage() {
   const router = useRouter()
@@ -55,8 +64,8 @@ export default function GraphPage() {
   const [data, setData] = useState<EgoData | null>(null)
   const [loading, setLoading] = useState(false)
   const [entryConcepts, setEntryConcepts] = useState<ConceptListEntry[]>([])
-  /** The tapped edge whose note is shown in the bottom card; null = closed. */
-  const [edgeSheet, setEdgeSheet] = useState<EgoNeighbor | null>(null)
+  /** What the bottom sheet shows; null = closed. */
+  const [sheet, setSheet] = useState<SheetSelection | null>(null)
 
   // Resolve the focus from the URL on mount and on every history move, so the
   // back swipe steps back through the hop trail.
@@ -65,7 +74,7 @@ export default function GraphPage() {
     setBooted(true)
     const onPopState = () => {
       setFocus(readFocusFromUrl())
-      setEdgeSheet(null)
+      setSheet(null)
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
@@ -99,11 +108,19 @@ export default function GraphPage() {
   const focusNode = useCallback((node: EgoNode) => {
     window.history.pushState(null, '', `/graph?type=${node.type}&id=${node.id}`)
     setFocus({ type: node.type, id: node.id })
-    setEdgeSheet(null)
+    setSheet(null)
   }, [])
 
-  /** Tap on the centre opens the node's regular detail page. */
-  const openCenter = useCallback((node: EgoNode) => {
+  /** Tap on the centre opens its detail sheet (navigation moved to "Öffnen"). */
+  const openCenter = useCallback(() => setSheet({ kind: 'center' }), [])
+
+  /** Long-press on a ring node or tap on an edge: preview the neighbour. */
+  const previewNeighbor = useCallback((neighbor: EgoNeighbor) => {
+    setSheet({ kind: 'neighbor', neighbor })
+  }, [])
+
+  /** "Öffnen" in the sheet: leave the graph for the node's regular page. */
+  const openNodePage = useCallback((node: EgoNode) => {
     router.push(node.type === 'concept' ? `/concepts/${node.id}` : `/nugget/${node.id}`)
   }, [router])
 
@@ -120,7 +137,7 @@ export default function GraphPage() {
         <h1 className="text-3xl mb-1">Netz</h1>
         <p className="text-sm" style={{ color: 'var(--muted)' }}>
           {focus
-            ? 'Tipp auf einen Nachbarn, um weiterzuhüpfen — auf eine Linie für die Notiz.'
+            ? 'Tipp auf einen Nachbarn zum Weiterhüpfen — halte ihn gedrückt für eine Vorschau.'
             : 'Wähle ein Konzept als Einstieg.'}
         </p>
       </header>
@@ -157,7 +174,8 @@ export default function GraphPage() {
               data={data}
               onFocusNode={focusNode}
               onOpenCenter={openCenter}
-              onEdgeTap={setEdgeSheet}
+              onEdgeTap={previewNeighbor}
+              onPreviewNode={previewNeighbor}
             />
           ) : (
             <p className="text-sm pt-6" style={{ color: 'var(--muted)' }}>
@@ -167,40 +185,16 @@ export default function GraphPage() {
         </div>
       )}
 
-      {/* Edge card — the WHY of the tapped link (NuggetConcept.note). Fixed
-          above the BottomNav; the graph stays visible and navigable behind it. */}
-      {edgeSheet && data && (
-        <div
-          className="fixed left-0 right-0 z-40 px-4"
-          style={{ bottom: 'calc(72px + env(safe-area-inset-bottom))' }}
-        >
-          <div
-            className="max-w-2xl mx-auto rounded-2xl px-5 py-4"
-            style={{
-              background: 'var(--surface)',
-              border: '1px solid var(--border)',
-              boxShadow: '0 12px 40px rgba(0,0,0,0.18)',
-            }}
-          >
-            <div className="flex items-start justify-between gap-3 mb-1">
-              <p className="text-xs font-medium" style={{ color: 'var(--ink)' }}>
-                {data.center.label}
-                <span style={{ color: 'var(--muted)' }}> ↔ </span>
-                {edgeSheet.node.label}
-              </p>
-              <button
-                onClick={() => setEdgeSheet(null)}
-                aria-label="Schließen"
-                style={{ color: 'var(--muted)' }}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <p className="text-xs" style={{ color: 'var(--muted)', lineHeight: '1.5' }}>
-              {edgeSheet.edge.note ?? 'Keine Notiz an dieser Kante.'}
-            </p>
-          </div>
-        </div>
+      {/* Bottom sheet — node detail / edge note. No backdrop on purpose: the
+          graph stays visible and hoppable behind the peek state. */}
+      {sheet && data && (
+        <GraphSheet
+          data={data}
+          selection={sheet}
+          onClose={() => setSheet(null)}
+          onOpenNode={openNodePage}
+          onFocusNode={focusNode}
+        />
       )}
     </>
   )

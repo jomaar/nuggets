@@ -205,6 +205,13 @@ h1, h2, h3, .serif {
 .ego-enter      { animation: ego-fade-in 300ms ease both; }
 .ego-enter-late { animation: ego-fade-in 300ms ease 250ms both; }
 
+/* Graph bottom sheet: slides up from below on mount. From-only keyframe, so it
+   composes with the inline translateY the component sets as the end value. */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+}
+.sheet-enter { animation: sheet-up 320ms cubic-bezier(0.32, 0.72, 0, 1); }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--warm); }
