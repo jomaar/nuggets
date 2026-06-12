@@ -25,6 +25,10 @@ export const viewport: Viewport = {
   themeColor: '#FFFFFF',
   width: 'device-width',
   initialScale: 1,
+  // Lock pinch-zoom: accidental zoom gestures kept breaking the layout.
+  // Font size is adjusted via iOS system text-size settings instead.
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: 'cover',
 }
 
