@@ -26,6 +26,15 @@
 
 * { box-sizing: border-box; }
 
+/* iOS Safari zoom-out guard: any element wider than the viewport widens the
+   layout viewport, so mobile Safari shrinks the whole page to fit (buttons/text
+   look cut off). Clip horizontal overflow at the root and forbid the page from
+   exceeding the visible width. Long content is broken below (.nugget-content). */
+html, body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 body {
   background: var(--bg);
   color: var(--ink);
@@ -59,6 +68,16 @@ h1, h2, h3, .serif {
 }
 
 /* Nugget content rendering */
+/* Break long words / URLs so they never push the layout wider than the
+   viewport (the root cause of iOS zoom-out). */
+.nugget-content {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.nugget-content pre {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
 .nugget-content h1, .nugget-content h2, .nugget-content h3 {
   font-weight: 600;
   letter-spacing: -0.01em;
