@@ -46,4 +46,9 @@ export interface EgoData {
   center: EgoNode
   /** Sorted by edge relevance (desc), so the layout is deterministic. */
   neighbors: EgoNeighbor[]
+  /** Second ring: nodes of the SAME type as the centre, reached by DERIVED
+   *  proximity (lib/graph.ts) — "what lies behind". No stored edge ties them to
+   *  the centre; tapping one is a 2-hop shortcut. Sorted by closeness (desc).
+   *  Absent/empty when the centre has no proximity neighbours. */
+  outer?: EgoNode[]
 }

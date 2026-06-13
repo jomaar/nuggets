@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import type { EgoData, EgoNeighbor } from '@/lib/ego'
+import { KnowledgeGraph } from '@/lib/graph'
+import type { EgoData, EgoNeighbor, EgoNode } from '@/lib/ego'
 
-/** Ring size cap — keeps the radial layout readable on a 390px viewport. */
+/** Inner ring size cap — keeps the radial layout readable on a 390px viewport. */
 const MAX_NEIGHBORS = 16
+/** Outer (proximity) ring cap — deliberately small; it is secondary context. */
+const MAX_OUTER = 6
 
 /**
  * GET /api/graph/ego?type=concept|nugget&id=… — the ego network of one node:
@@ -67,7 +70,33 @@ async function conceptEgo(id: string): Promise<EgoData | null> {
       description: concept.description,
     },
     neighbors: sortAndCap(neighbors),
+    outer: await conceptOuterRing(id),
   }
+}
+
+/**
+ * Second ring for a concept centre: the concepts closest to it by DERIVED
+ * proximity (co-occurrence across shared nuggets, lib/graph.ts). Same type as
+ * the centre, so it never collides with the opposite-type inner ring. Enriched
+ * with each concept's full degree (the count rendered inside its circle).
+ */
+async function conceptOuterRing(id: string): Promise<EgoNode[]> {
+  const graph = await KnowledgeGraph.load()
+  const related = graph.relatedConcepts(id, MAX_OUTER)
+  if (related.length === 0) return []
+
+  const concepts = await prisma.concept.findMany({
+    where: { id: { in: related.map(r => r.id) } },
+    select: { id: true, _count: { select: { nuggets: true } } },
+  })
+  const degreeById = new Map(concepts.map(c => [c.id, c._count.nuggets]))
+
+  return related.map(r => ({
+    type: 'concept' as const,
+    id: r.id,
+    label: r.term,
+    degree: degreeById.get(r.id) ?? 0,
+  }))
 }
 
 /** Builds the ego data for a nugget centre: its concepts form the ring. */
@@ -109,7 +138,40 @@ async function nuggetEgo(id: string): Promise<EgoData | null> {
       domain: nugget.domain,
     },
     neighbors: sortAndCap(neighbors),
+    outer: await nuggetOuterRing(id),
   }
+}
+
+/**
+ * Second ring for a nugget centre: the nuggets closest to it by DERIVED
+ * proximity (shared concepts, lib/graph.ts). Same type as the centre. Enriched
+ * with domain styling (the node's colour/icon) and its full concept degree.
+ */
+async function nuggetOuterRing(id: string): Promise<EgoNode[]> {
+  const graph = await KnowledgeGraph.load()
+  const related = graph.relatedNuggets(id, MAX_OUTER)
+  if (related.length === 0) return []
+
+  const nuggets = await prisma.nugget.findMany({
+    where: { id: { in: related.map(r => r.id) } },
+    select: {
+      id: true,
+      domain: { select: { slug: true, icon: true, color: true } },
+      _count: { select: { concepts: true } },
+    },
+  })
+  const byId = new Map(nuggets.map(n => [n.id, n]))
+
+  return related.map(r => {
+    const enriched = byId.get(r.id)
+    return {
+      type: 'nugget' as const,
+      id: r.id,
+      label: r.title,
+      degree: enriched?._count.concepts ?? 0,
+      domain: enriched?.domain ?? null,
+    }
+  })
 }
 
 /** Strongest edges first (then label, for a stable layout), capped for the ring. */

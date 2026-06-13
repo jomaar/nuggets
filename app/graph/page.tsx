@@ -56,6 +56,7 @@ function readFocusFromUrl(): Focus | null {
  *
  * Interaction matrix:
  *   tap ring node        → hop (focus change, pushState); closes the sheet
+ *   tap outer node       → 2-hop shortcut (proximity), same hop machinery
  *   long-press ring node → sheet (peek) with that neighbour, focus unchanged
  *   tap centre node      → sheet (peek) with the centre's detail
  *   tap edge line        → sheet (peek) with the neighbour + edge note
