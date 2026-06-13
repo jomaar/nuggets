@@ -591,16 +591,28 @@ nicht zum einzigen Zugang.
   Knoten-Koordinaten via getBoundingClientRect aus dem SVG evaluieren), Typecheck grün.
   Interaktionsmatrix als Kommentar in `app/graph/page.tsx`.
 
-**Offen (Slice 2, nächste Session):**
-- **Breadcrumb-Trail:** horizontale Chip-Leiste der besuchten Knoten, Tap = zurückspringen.
-  Löst das „wo war ich?"-Problem + macht den eigenen Pfad transparent.
-  *Ansatz:* `pushState({trail})`-Payload in `focusNode` (heute `null`) + `trail`-State in
-  der Page; Chip-Leiste zwischen Header und Graph. Sheet schließt eh bei jedem Fokuswechsel.
-- **Zweiter Ring (gedimmt, tappbar):** Proximity aus `lib/graph.ts` — „was liegt dahinter".
-  **Entschieden:** Tap auf Außenknoten = direkter Hop (2-Hop-Abkürzung), nicht nur Deko.
-  *Ansatz:* `EgoData.outer?: EgoNode[]` (Server: `KnowledgeGraph.relatedConcepts/-Nuggets`,
-  Ring-Mitglieder ausschließen); `PlacedNode.role` + `'outer'`, `OUTER_RADIUS ≈ 195`,
-  Opacity ~0.45, in DIESELBE gekeyte Liste → Hop-Glide gratis.
+**✅ Slice 2 erledigt 2026-06-13 (Breadcrumb + zweiter Ring):**
+- **Breadcrumb-Trail** (Slice 2a, `app/graph/page.tsx`): `trail`-State (besuchte Knoten,
+  letzter = Fokus), bei jedem Hop in `pushState({ trail })` gesnapshottet → `popstate`
+  (Back-Swipe) stellt Fokus **und** Trail wieder her. Hop auf einen bereits besuchten Knoten
+  **kürzt** den Trail dorthin (Pfad statt Loop). Chip-Leiste zwischen Header und Graph (ab 2
+  Knoten, horizontal scrollbar); früherer Chip = Rücksprung, aktueller hervorgehoben/inaktiv.
+  Labels: Hops tragen ihr Label mit, Entry-Chip liefert den echten Term, Fresh-Mount aus URL
+  füllt das Label nach, sobald `data` lädt. Kein API-Change.
+- **Zweiter Ring** (Slice 2b, gedimmt, tappbar): `EgoData.outer?: EgoNode[]` — Knoten vom
+  **gleichen Typ** wie das Zentrum, via abgeleitete Proximity (`lib/graph.ts`,
+  `relatedConcepts/-Nuggets`, Cap `MAX_OUTER = 6`). Server reichert mit `degree` an (+ Domain
+  bei Nuggets); kein Overlap mit dem Innenring (Gegentyp) → nichts auszuschließen. **Keine
+  Linien** (keine echten Kanten), Opacity 0.45, `OUTER_RADIUS = 200`. Tap = direkter Hop
+  (2-Hop-Abkürzung) über dieselbe `onFocusNode`-Mechanik. In DERSELBEN gekeyten Knotenliste →
+  ein angetippter Außenknoten **gleitet nach innen und hellt auf** (opacity-Transition).
+  **viewBox wächst nur MIT Außenring** (460×470 statt 400×420) → das verifizierte Ein-Ring-
+  Layout bleibt pixelgleich; `NodeLabel` bekam `above:boolean` (CY ist jetzt dynamisch).
+- Verifiziert (Playwright, 390px): 6er-Außenring rendert gedimmt mit Grad-Zahlen, 2-Hop
+  wechselt Fokus + verlängert den Breadcrumb-Pfad. Typecheck grün. Commits `7a4fa62` (2a) +
+  `ce7c81f` (2b).
+
+**Offen (Stufe B Rest, optional/später):**
 - **Einstieg über Konzept-Suche** (Chips ✅ Kern-Slice; Suche fehlt noch). Optionaler
   „Konstellations-Modus" (nach Domains geclustert) = sekundär, später.
 
