@@ -230,7 +230,7 @@ export default function EditPage() {
           {/* Live length meter — updates as the editor content changes. */}
           <TextStatsBar stats={countHtml(content)} className="mb-1.5" />
           <div ref={editorBoxRef} style={{ ...inputStyle, padding: 0 }}>
-            <NuggetEditor value={content} onChange={setContent} />
+            <NuggetEditor value={content} onChange={setContent} enableAiRework />
           </div>
         </div>
 

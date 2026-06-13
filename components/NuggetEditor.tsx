@@ -4,8 +4,10 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Sparkles } from 'lucide-react'
 import CssVarHighlight from './CssVarHighlight'
+import AiReworkPopup from './AiReworkPopup'
 
 /**
  * Highlight palette offered in the selection BubbleMenu. The `color` value is
@@ -35,6 +37,22 @@ interface NuggetEditorProps {
   placeholder?: string
   /** Whether the content can be edited. Defaults to true. */
   editable?: boolean
+  /** Opt-in: show a "rework with AI" action in the selection menu (edit view). */
+  enableAiRework?: boolean
+}
+
+/**
+ * Convert the AI's plain-text result into editor content for insertion. A single
+ * block stays inline (so replacing mid-sentence doesn't split the paragraph);
+ * blank-line-separated blocks become paragraphs. HTML is escaped so the model's
+ * text can never inject markup, and single newlines become <br>.
+ */
+function reworkToContent(text: string): string {
+  const escape = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const blocks = text.split(/\n{2,}/).map(b => b.trim()).filter(Boolean)
+  if (blocks.length <= 1) return escape(blocks[0] ?? '').replace(/\n/g, '<br>')
+  return blocks.map(b => `<p>${escape(b).replace(/\n/g, '<br>')}</p>`).join('')
 }
 
 /**
@@ -51,7 +69,14 @@ export default function NuggetEditor({
   onReady,
   placeholder,
   editable = true,
+  enableAiRework = false,
 }: NuggetEditorProps) {
+  // The selected passage handed to the AI rework popup (null = popup closed).
+  const [reworkText, setReworkText] = useState<string | null>(null)
+  // The document range the popup's result will replace. Captured when the popup
+  // opens, because focusing the popup's inputs drops the visible DOM selection —
+  // ProseMirror keeps its state, but we replace by explicit range to be safe.
+  const reworkRange = useRef<{ from: number; to: number } | null>(null)
   const editor = useEditor({
     // Avoid SSR hydration mismatch in the Next.js App Router.
     immediatelyRender: false,
@@ -110,6 +135,27 @@ export default function NuggetEditor({
     chain.unsetHighlight().run()
   }
 
+  /** Open the AI rework popup for the current selection (edit view only). */
+  const openRework = () => {
+    if (!editor) return
+    const { from, to } = editor.state.selection
+    if (from === to) return
+    const text = editor.state.doc.textBetween(from, to, '\n').trim()
+    if (!text) return
+    reworkRange.current = { from, to }
+    setReworkText(text)
+  }
+
+  /** Accept the AI result: replace the captured range with it, then close. */
+  const applyRework = (newText: string) => {
+    const range = reworkRange.current
+    if (editor && range) {
+      editor.chain().focus().insertContentAt(range, reworkToContent(newText)).run()
+    }
+    reworkRange.current = null
+    setReworkText(null)
+  }
+
   return (
     <div className={`tiptap-editor nugget-content${editable ? '' : ' tiptap-readonly'}`}>
       {editor && (
@@ -140,10 +186,29 @@ export default function NuggetEditor({
             >
               ✕
             </button>
+            {/* Edit view only: rework the selected passage with the AI. */}
+            {enableAiRework && editor.isEditable && (
+              <button
+                type="button"
+                className="highlight-ai"
+                aria-label="Mit KI überarbeiten"
+                title="Mit KI überarbeiten"
+                onClick={openRework}
+              >
+                <Sparkles size={15} />
+              </button>
+            )}
           </div>
         </BubbleMenu>
       )}
       <EditorContent editor={editor} />
+      {reworkText !== null && (
+        <AiReworkPopup
+          selectedText={reworkText}
+          onClose={() => { reworkRange.current = null; setReworkText(null) }}
+          onReplace={applyRework}
+        />
+      )}
     </div>
   )
 }
