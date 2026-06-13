@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Trash2, Link2, Check } from 'lucide-react'
+import { Trash2, Link2, Check, Clock } from 'lucide-react'
 import { encodeAnchorToken, copyDeepLink } from '@/lib/bookmarkLink'
+import { getRecentNuggets, type RecentNugget } from '@/lib/recentNuggets'
 
 interface Bookmark {
   id: string
@@ -28,6 +29,8 @@ export default function BookmarksPage() {
   const router = useRouter()
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [loading, setLoading] = useState(true)
+  // The last few nuggets opened on this device (localStorage, newest first).
+  const [recent, setRecent] = useState<RecentNugget[]>([])
   // Id of the bookmark whose link was just copied (flips the icon to a check).
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
@@ -36,6 +39,8 @@ export default function BookmarksPage() {
       .then(r => r.json())
       .then((data: Bookmark[]) => { setBookmarks(data); setLoading(false) })
       .catch(() => setLoading(false))
+    // localStorage is client-only, so read the recents after mount.
+    setRecent(getRecentNuggets(3))
   }, [])
 
   /** Stash the anchor for the nugget view to resolve, then navigate there. */
@@ -77,6 +82,33 @@ export default function BookmarksPage() {
         </p>
         <h1 className="text-3xl">Lesezeichen</h1>
       </header>
+
+      {/* Recently opened — current work surfaced without an explicit bookmark.
+          Per-device (localStorage); a small divider separates it from the
+          saved bookmarks below. Hidden entirely when nothing was opened yet. */}
+      {recent.length > 0 && (
+        <section className="mb-6">
+          <p className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--muted)' }}>
+            Zuletzt geöffnet
+          </p>
+          <div className="flex flex-col gap-2">
+            {recent.map(r => (
+              <button
+                key={r.id}
+                onClick={() => router.push(`/nugget/${r.id}`)}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all active:scale-[0.99]"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+              >
+                <Clock size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+                <span className="text-sm truncate" style={{ color: 'var(--ink)' }}>
+                  {r.title || 'Ohne Titel'}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="mt-6 border-t" style={{ borderColor: 'var(--border)' }} />
+        </section>
+      )}
 
       {loading && (
         <p style={{ color: 'var(--muted)' }} className="text-sm">Lädt…</p>

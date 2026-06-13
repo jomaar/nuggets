@@ -9,6 +9,7 @@ import DomainIcon from '@/components/DomainIcon'
 import TextStatsBar from '@/components/TextStatsBar'
 import { countHtml } from '@/lib/textStats'
 import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, type AnchorToken } from '@/lib/bookmarkLink'
+import { recordRecentNugget } from '@/lib/recentNuggets'
 import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints } from 'lucide-react'
 
 interface Domain {
@@ -370,6 +371,12 @@ export default function NuggetDetailPage() {
       .then((d: { isOwner: boolean }) => setIsOwner(d.isOwner))
       .catch(() => {})
   }, [load])
+
+  // Remember this nugget as recently opened (per-device, localStorage), so the
+  // bookmarks home tab can list current work without an explicit bookmark.
+  useEffect(() => {
+    if (nugget) recordRecentNugget(nugget.id, nugget.title)
+  }, [nugget])
 
   const handleDelete = async () => {
     if (!confirmDelete) { setConfirmDelete(true); return }
