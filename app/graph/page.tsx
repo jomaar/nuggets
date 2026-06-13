@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import EgoGraph from '@/components/EgoGraph'
 import GraphSheet, { type SheetSelection } from '@/components/GraphSheet'
@@ -10,6 +10,13 @@ import type { EgoData, EgoNeighbor, EgoNode, EgoNodeType } from '@/lib/ego'
 interface Focus {
   type: EgoNodeType
   id: string
+}
+
+/** One visited node in the breadcrumb trail (just what a chip needs). */
+interface TrailNode {
+  type: EgoNodeType
+  id: string
+  label: string
 }
 
 /** One concept row from GET /api/concepts, reduced to what the entry list shows. */
@@ -54,7 +61,12 @@ function readFocusFromUrl(): Focus | null {
  *   tap edge line        → sheet (peek) with the neighbour + edge note
  *   "Öffnen" in sheet    → the node's regular detail page
  *   neighbour row in sheet → hop + sheet closes
- *   popstate (back swipe) → sheet closes, focus steps back
+ *   tap breadcrumb chip  → jump back to that node, trail truncates
+ *   popstate (back swipe) → sheet closes, focus + trail step back
+ *
+ * The breadcrumb trail snapshots into history.state on every hop, so popstate
+ * restores the exact path; hopping onto a visited node cuts the trail back to
+ * it (a path, never a loop).
  */
 export default function GraphPage() {
   const router = useRouter()
@@ -66,15 +78,26 @@ export default function GraphPage() {
   const [entryConcepts, setEntryConcepts] = useState<ConceptListEntry[]>([])
   /** What the bottom sheet shows; null = closed. */
   const [sheet, setSheet] = useState<SheetSelection | null>(null)
+  /** Breadcrumb of visited nodes; the last entry is the current focus. Each
+   *  hop snapshots this into history.state, so the back swipe restores it. */
+  const [trail, setTrail] = useState<TrailNode[]>([])
 
   // Resolve the focus from the URL on mount and on every history move, so the
   // back swipe steps back through the hop trail.
   useEffect(() => {
-    setFocus(readFocusFromUrl())
+    const initialFocus = readFocusFromUrl()
+    setFocus(initialFocus)
+    // Restore a trail snapshot if we landed via history (shared link / reload
+    // mid-trail won't have one — seed it from the focus, label filled on load).
+    const stateTrail = window.history.state?.trail as TrailNode[] | undefined
+    if (stateTrail?.length) setTrail(stateTrail)
+    else if (initialFocus) setTrail([{ ...initialFocus, label: '' }])
     setBooted(true)
     const onPopState = () => {
       setFocus(readFocusFromUrl())
       setSheet(null)
+      const restored = window.history.state?.trail as TrailNode[] | undefined
+      setTrail(restored ?? [])
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
@@ -104,12 +127,41 @@ export default function GraphPage() {
     return () => { cancelled = true }
   }, [booted, focus])
 
-  /** Hop: a ring node becomes the new centre; the URL records the step. */
+  // Fill the current trail chip's label once the focused node's data arrives
+  // (the seed-from-URL case starts label-less; hops already carry their label).
+  useEffect(() => {
+    if (!data || !focus) return
+    setTrail(prev => {
+      const last = prev[prev.length - 1]
+      if (!last || last.label || last.type !== focus.type || last.id !== focus.id) return prev
+      return [...prev.slice(0, -1), { ...last, label: data.center.label }]
+    })
+  }, [data, focus])
+
+  /** Hop: a ring node becomes the new centre; the URL records the step and the
+   *  growing trail is snapshotted into history.state. Hopping onto a node that
+   *  is already in the trail cuts back to it (a path, not a visit log — no loops). */
   const focusNode = useCallback((node: EgoNode) => {
-    window.history.pushState(null, '', `/graph?type=${node.type}&id=${node.id}`)
+    const seen = trail.findIndex(n => n.type === node.type && n.id === node.id)
+    const next: TrailNode[] = seen >= 0
+      ? trail.slice(0, seen + 1)
+      : [...trail, { type: node.type, id: node.id, label: node.label }]
+    window.history.pushState({ trail: next }, '', `/graph?type=${node.type}&id=${node.id}`)
+    setTrail(next)
     setFocus({ type: node.type, id: node.id })
     setSheet(null)
-  }, [])
+  }, [trail])
+
+  /** Tap a breadcrumb chip: jump back to that node, truncating the trail. */
+  const jumpToTrail = useCallback((index: number) => {
+    const node = trail[index]
+    if (!node || index === trail.length - 1) return
+    const next = trail.slice(0, index + 1)
+    window.history.pushState({ trail: next }, '', `/graph?type=${node.type}&id=${node.id}`)
+    setTrail(next)
+    setFocus({ type: node.type, id: node.id })
+    setSheet(null)
+  }, [trail])
 
   /** Tap on the centre opens its detail sheet (navigation moved to "Öffnen"). */
   const openCenter = useCallback(() => setSheet({ kind: 'center' }), [])
@@ -142,13 +194,44 @@ export default function GraphPage() {
         </p>
       </header>
 
+      {/* Breadcrumb: the visited path. Tap an earlier chip to jump back; the
+          last chip is the current node (highlighted, no-op). Hidden for a lone
+          node — a single crumb is not a trail. */}
+      {booted && focus && trail.length > 1 && (
+        <div
+          className="flex items-center gap-1 overflow-x-auto pb-3 -mx-1 px-1"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
+          {trail.map((n, i) => {
+            const current = i === trail.length - 1
+            return (
+              <Fragment key={`${n.type}:${n.id}:${i}`}>
+                {i > 0 && (
+                  <span className="text-xs shrink-0" style={{ color: 'var(--muted)', opacity: 0.5 }}>›</span>
+                )}
+                <button
+                  onClick={() => jumpToTrail(i)}
+                  disabled={current}
+                  className="text-xs whitespace-nowrap px-2 py-0.5 rounded-full shrink-0"
+                  style={current
+                    ? { color: 'var(--accent)', fontWeight: 500 }
+                    : { color: 'var(--muted)' }}
+                >
+                  {n.label || '…'}
+                </button>
+              </Fragment>
+            )
+          })}
+        </div>
+      )}
+
       {/* Entry: concept chips (most connected first), no giant overview graph. */}
       {booted && !focus && (
         <div className="flex flex-wrap gap-2">
           {entryConcepts.map(c => (
             <button
               key={c.id}
-              onClick={() => focusNode({ type: 'concept', id: c.id, label: '', degree: 0 })}
+              onClick={() => focusNode({ type: 'concept', id: c.id, label: primaryTerm(c.labels), degree: 0 })}
               className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
               style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
             >
