@@ -161,6 +161,13 @@ export default function NuggetEditor({
       {editor && (
         <BubbleMenu
           editor={editor}
+          // Place our menu BELOW the selection with a gap. iOS's native selection
+          // callout (Copy / Look Up / …) sits ABOVE the selection, so the two
+          // would stack and overlap if ours were also on top. We can't read the
+          // native menu's position (it's a UIKit overlay, not in the DOM), so the
+          // robust fix is to sit on the opposite side; flip/shift (Floating UI
+          // defaults) still pull it back into view near the screen edges.
+          options={{ placement: 'bottom', offset: 12 }}
           // Show on any non-empty selection — highlighting works in the read-only
           // reading view too (programmatic mark commands run even when editable=false).
           shouldShow={({ editor, from, to }) => from !== to}
