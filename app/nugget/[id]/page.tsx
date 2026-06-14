@@ -1145,8 +1145,8 @@ export default function NuggetDetailPage() {
           onClick={() => setMarksOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
-            style={{ background: 'var(--surface)', maxHeight: '70vh', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}
+            className="w-full max-w-xl rounded-2xl overflow-hidden flex flex-col"
+            style={{ background: 'var(--surface)', maxHeight: '80vh', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}
             onClick={e => e.stopPropagation()}
           >
             <div
@@ -1173,12 +1173,12 @@ export default function NuggetDetailPage() {
                 marks.map((m, i) => (
                   <div
                     key={i}
-                    className="flex items-center gap-1 rounded-lg flex-shrink-0 overflow-hidden"
+                    className="flex items-start gap-1 rounded-lg flex-shrink-0 overflow-hidden"
                     style={{ background: `var(${HIGHLIGHT_VARS[m.color] ?? '--hl-yellow'})` }}
                   >
                     <button
                       onClick={() => scrollToMark(m.markIndex)}
-                      className="flex-1 min-w-0 text-left text-sm px-3 py-2 truncate transition-all active:scale-[0.99]"
+                      className="flex-1 min-w-0 text-left text-sm px-3 py-2 line-clamp-2 break-words transition-all active:scale-[0.99]"
                       style={{ color: 'var(--ink)' }}
                     >
                       {m.text || '—'}
