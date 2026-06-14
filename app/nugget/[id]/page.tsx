@@ -10,6 +10,10 @@ import TextStatsBar from '@/components/TextStatsBar'
 import { countHtml } from '@/lib/textStats'
 import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, type AnchorToken } from '@/lib/bookmarkLink'
 import { recordRecentNugget, updateRecentScroll, getRecentScroll } from '@/lib/recentNuggets'
+import {
+  getNuggetFontSize, setNuggetFontSize,
+  MIN_FONT_SIZE, MAX_FONT_SIZE, DEFAULT_FONT_SIZE, FONT_SIZE_STEP,
+} from '@/lib/nuggetFontSize'
 import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints } from 'lucide-react'
 
 interface Domain {
@@ -321,6 +325,9 @@ export default function NuggetDetailPage() {
   const [loading, setLoading] = useState(true)
   const [isOwner, setIsOwner] = useState(false)
   const [infoOpen, setInfoOpen]       = useState(false)
+  // Reading font size for nugget text (px). Default first to match SSR, then
+  // read the per-device preference on mount to avoid a hydration mismatch.
+  const [fontSize, setFontSize]       = useState(DEFAULT_FONT_SIZE)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [marksOpen, setMarksOpen]     = useState(false)
   const [marks, setMarks]             = useState<{ text: string; color: string; markIndex: number }[]>([])
@@ -379,6 +386,15 @@ export default function NuggetDetailPage() {
   useEffect(() => {
     if (nugget) recordRecentNugget(nugget.id, nugget.title)
   }, [nugget])
+
+  // Sync the control to the stored reading size on mount (the CSS var itself is
+  // already applied flash-free by the boot script in layout.tsx).
+  useEffect(() => { setFontSize(getNuggetFontSize()) }, [])
+
+  /** Step the reading font size by `delta` px (clamped + persisted + applied). */
+  const changeFontSize = (delta: number) => setFontSize(setNuggetFontSize(fontSize + delta))
+  /** Reset the reading font size to the default. */
+  const resetFontSize = () => setFontSize(setNuggetFontSize(DEFAULT_FONT_SIZE))
 
   // Persist the reading scroll position for this nugget, from any entry point,
   // so the recent list can return here. A periodic save during a long scroll
@@ -953,6 +969,44 @@ export default function NuggetDetailPage() {
                   Noch nicht wiederholt.
                 </p>
               )}
+            </div>
+
+            {/* Reading font size — scopes to nugget text only (--nugget-font-size). */}
+            <div>
+              <h2 className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--muted)' }}>
+                Schriftgröße
+              </h2>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => changeFontSize(-FONT_SIZE_STEP)}
+                  disabled={fontSize <= MIN_FONT_SIZE}
+                  aria-label="Schrift verkleinern"
+                  className="flex items-center justify-center w-9 h-9 rounded-lg disabled:opacity-40"
+                  style={{ color: 'var(--ink)', border: '1px solid var(--border)', fontSize: '13px' }}
+                >
+                  A
+                </button>
+                <span className="text-sm tabular-nums w-12 text-center" style={{ color: 'var(--ink)' }}>
+                  {fontSize} px
+                </span>
+                <button
+                  onClick={() => changeFontSize(FONT_SIZE_STEP)}
+                  disabled={fontSize >= MAX_FONT_SIZE}
+                  aria-label="Schrift vergrößern"
+                  className="flex items-center justify-center w-9 h-9 rounded-lg disabled:opacity-40"
+                  style={{ color: 'var(--ink)', border: '1px solid var(--border)', fontSize: '20px' }}
+                >
+                  A
+                </button>
+                <button
+                  onClick={resetFontSize}
+                  disabled={fontSize === DEFAULT_FONT_SIZE}
+                  className="text-xs px-2.5 py-1 rounded-lg disabled:opacity-40 ml-auto"
+                  style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+                >
+                  Zurücksetzen
+                </button>
+              </div>
             </div>
 
             {/* Links */}

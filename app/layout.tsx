@@ -51,6 +51,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 `,
           }}
         />
+        {/* Apply the saved nugget reading font size before first paint, so the
+            text never flashes at the default size first. Mirrors the key/clamp
+            in lib/nuggetFontSize.ts. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var s=parseInt(localStorage.getItem('nugget-font-size'),10);if(s>=13&&s<=24)document.documentElement.style.setProperty('--nugget-font-size',s+'px')}catch(e){}`,
+          }}
+        />
       </head>
       <body>
         <BottomNav />

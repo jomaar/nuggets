@@ -203,7 +203,12 @@ h1, h2, h3, .serif {
   min-height: 120px;
   padding: 0.75rem;
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.95rem;
+  /* User-adjustable nugget reading size — set on <html> from localStorage (see
+     lib/nuggetFontSize.ts + the inline boot script in layout.tsx). This is the
+     ONE place the nugget body text size is defined (read + edit); the rest of
+     the UI is unaffected. Fallback 15px = the previous fixed size, so default
+     rendering is unchanged when no preference is stored. */
+  font-size: var(--nugget-font-size, 15px);
   line-height: 1.7;
 }
 .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
