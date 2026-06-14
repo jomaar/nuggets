@@ -2,18 +2,32 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { normalizeToHtml, htmlToMarkdown, htmlToPlain } from '@/lib/content'
 
-// GET /api/nuggets/:id
-export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// GET /api/nuggets/:id  (?edit=1 to also return the Markdown/plain projections)
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  // The read view renders only contentHtml; the heavy contentMarkdown/contentPlain
+  // blobs are needed solely by the edit view (legacy-content fallback + AI rework).
+  // Ship them only when explicitly asked, so the common read path stays lean.
+  const wantsEditFields = new URL(req.url).searchParams.get('edit') === '1'
   const nugget = await prisma.nugget.findUnique({
     where: { id },
-    include: {
+    select: {
+      id:          true,
+      title:       true,
+      contentHtml: true,
+      ...(wantsEditFields ? { contentMarkdown: true, contentPlain: true } : {}),
+      sourceUrl:   true,
+      sourceLabel: true,
+      aiChatUrl:   true,
+      tags:        true,
+      domainId:    true,
+      createdAt:   true,
       reviews: { orderBy: { createdAt: 'desc' }, take: 1 },
       domain: true,
       concepts: {
+        // _count.nuggets = how many other nuggets share this concept; the
+        // single view sorts concepts by it (most-connected first).
         include: {
-          // _count.nuggets = how many other nuggets share this concept; the
-          // single view sorts concepts by it (most-connected first).
           concept: { include: { labels: true, _count: { select: { nuggets: true } } } },
         },
         orderBy: { relevance: 'desc' },

@@ -73,6 +73,18 @@ export function htmlToPlain(html: string): string {
 }
 
 /**
+ * Derives a display title from canonical HTML for nuggets without a stored title:
+ * the first sentence of the plain text, capped at ~80 chars. Lives here so the
+ * server can compute it once (e.g. the list route) and the payload never has to
+ * ship full contentHtml just so the client can fall back to it. Mirrors the
+ * per-view helpers in app/all, app/concepts and components/NuggetCard.
+ */
+export function fallbackTitle(contentHtml: string): string {
+  const sentence = htmlToPlain(contentHtml).split(/[.!?]/)[0].trim()
+  return sentence.length > 80 ? sentence.substring(0, 77) + '…' : sentence
+}
+
+/**
  * Server-side HTML sanitizer (no DOMParser available in Node).
  * Removes script/iframe/object tags and dangerous attributes.
  */

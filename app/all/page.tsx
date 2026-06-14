@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import DomainIcon from '@/components/DomainIcon'
 import { shortName } from '@/components/DomainChips'
+import { useOwner } from '@/components/OwnerContext'
 import { Settings } from 'lucide-react'
 
 interface Domain {
@@ -16,16 +17,8 @@ interface Domain {
 
 interface Nugget {
   id: string
-  title: string
-  contentHtml: string
+  title: string // already resolved server-side (falls back to a derived title)
   domain: Domain | null
-}
-
-/** Derives a fallback title from raw HTML when no title is stored. */
-function fallbackTitle(contentHtml: string): string {
-  const plain = contentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-  const sentence = plain.split(/[.!?]/)[0].trim()
-  return sentence.length > 80 ? sentence.substring(0, 77) + '…' : sentence
 }
 
 interface Stats {
@@ -41,7 +34,7 @@ export default function AllPage() {
   const [search, setSearch]             = useState('')
   const [activeDomain, setActiveDomain] = useState<string>('')
   const [loading, setLoading]           = useState(true)
-  const [isOwner, setIsOwner]           = useState(false)
+  const { isOwner, setIsOwner }         = useOwner()
   const [stats, setStats]               = useState<Stats | null>(null)
 
   useEffect(() => {
@@ -49,16 +42,14 @@ export default function AllPage() {
       .then(r => r.json())
       .then(setDomains)
       .catch(() => {})
-    fetch('/api/auth/me')
-      .then(r => r.json())
-      .then((d: { isOwner: boolean }) => {
-        setIsOwner(d.isOwner)
-        if (d.isOwner) {
-          fetch('/api/stats').then(r => r.json()).then(setStats).catch(() => {})
-        }
-      })
-      .catch(() => {})
   }, [])
+
+  // Owner-only stats; owner status comes from the layout-provided context.
+  useEffect(() => {
+    if (isOwner) {
+      fetch('/api/stats').then(r => r.json()).then(setStats).catch(() => {})
+    }
+  }, [isOwner])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -210,7 +201,7 @@ export default function AllPage() {
               </span>
             )}
             <span className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>
-              {n.title || fallbackTitle(n.contentHtml)}
+              {n.title}
             </span>
           </Link>
         ))}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { normalizeToHtml, htmlToMarkdown, htmlToPlain } from '@/lib/content'
+import { normalizeToHtml, htmlToMarkdown, htmlToPlain, fallbackTitle } from '@/lib/content'
 import { extractAndLinkConcepts } from '@/lib/concepts'
 
 // GET /api/nuggets?search=...&tag=...&domain=<slug>
@@ -28,14 +28,21 @@ export async function GET(req: NextRequest) {
     select: {
       id:          true,
       title:       true,
-      contentHtml: true, // needed for the client-side fallback title
+      contentHtml: true, // server-only: used to derive the fallback title, stripped before the response
       domain:      { select: { id: true, name: true, slug: true, icon: true, color: true } },
     },
     orderBy: { createdAt: 'desc' },
     take: 500,
   })
 
-  return NextResponse.json(nuggets)
+  // Resolve the fallback title server-side and drop contentHtml from the payload —
+  // a title-only list otherwise shipped potentially hundreds of KB of full HTML.
+  const rows = nuggets.map(({ contentHtml, title, ...rest }) => ({
+    ...rest,
+    title: title || fallbackTitle(contentHtml),
+  }))
+
+  return NextResponse.json(rows)
 }
 
 // POST /api/nuggets

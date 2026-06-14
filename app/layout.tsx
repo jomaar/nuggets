@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import { DM_Sans } from 'next/font/google'
 import BottomNav from '@/components/BottomNav'
+import { OwnerProvider } from '@/components/OwnerContext'
+import { isOwner } from '@/lib/auth'
 import './globals.css'
 
 const dmSans = DM_Sans({
@@ -34,7 +36,10 @@ export const viewport: Viewport = {
 
 const buildVersion = process.env.NEXT_PUBLIC_BUILD_VERSION ?? 'dev'
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Owner status is read once here from the session cookie and shared via context,
+  // so individual pages no longer each fetch /api/auth/me on mount.
+  const owner = await isOwner()
   return (
     <html lang="de" className={dmSans.variable}>
       <head>
@@ -61,17 +66,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <BottomNav />
-        <div className="max-w-2xl mx-auto px-4 pb-24">
-          {children}
-          <p className="text-center pb-1" style={{ fontSize: '10px', color: 'var(--muted)' }}>
-            {buildVersion}
-          </p>
-          <p className="text-center pb-4 flex justify-center gap-4" style={{ fontSize: '10px' }}>
-            <a href="/impressum" style={{ color: 'var(--muted)' }}>Impressum</a>
-            <a href="/datenschutz" style={{ color: 'var(--muted)' }}>Datenschutz</a>
-          </p>
-        </div>
+        <OwnerProvider initialIsOwner={owner}>
+          <BottomNav />
+          <div className="max-w-2xl mx-auto px-4 pb-24">
+            {children}
+            <p className="text-center pb-1" style={{ fontSize: '10px', color: 'var(--muted)' }}>
+              {buildVersion}
+            </p>
+            <p className="text-center pb-4 flex justify-center gap-4" style={{ fontSize: '10px' }}>
+              <a href="/impressum" style={{ color: 'var(--muted)' }}>Impressum</a>
+              <a href="/datenschutz" style={{ color: 'var(--muted)' }}>Datenschutz</a>
+            </p>
+          </div>
+        </OwnerProvider>
       </body>
     </html>
   )

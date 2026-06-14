@@ -48,7 +48,7 @@ export default function EditPage() {
 
   const loadNugget = useCallback(async () => {
     const [nuggetRes, domainsRes] = await Promise.all([
-      fetch(`/api/nuggets/${id}`),
+      fetch(`/api/nuggets/${id}?edit=1`), // ?edit=1 → include contentMarkdown/contentPlain (legacy fallback)
       fetch('/api/domains'),
     ])
     const nugget  = await nuggetRes.json()

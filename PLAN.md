@@ -635,6 +635,69 @@ stehen für Knoten-Styling bereit (s. CLAUDE.md Domains-Regel).
 
 ---
 
+## Phase 9 — Performance (Analyse 2026-06-14)
+
+Befund: Jede Route ist `'use client'` und lädt Daten erst nach dem Mount per `fetch`
+auf eine eigene API-Route. Folge bei jeder Navigation: leere Seite → „Lädt…" →
+HTTP-Roundtrip → Render. Die DB-Abfrage läuft über den API-Umweg (Client → `/api/…`
+→ Prisma), obwohl ein Server Component direkt Prisma aufrufen könnte. Reihenfolge nach
+Aufwand/Wirkung — Quick Wins zuerst, der Architektur-Hebel (#1) bewusst zuletzt.
+
+### Quick Wins (klein, risikoarm — eine Session)
+
+#### 9a — Liste: kein `contentHtml` über die Leitung (`GET /api/nuggets`) ✅ (2026-06-14)
+`/api/nuggets` selektiert `contentHtml` für bis zu 500 Nuggets, nur damit der Client per
+`fallbackTitle()` (app/all) einen Ersatztitel ableiten kann — potentiell hunderte KB
+Volltext-HTML für eine reine Titelliste.
+→ Fallback-Titel **server-seitig** berechnen, nur das fertige `title`-Feld senden;
+`contentHtml` aus dem `select` der Liste streichen. `fallbackTitle()` in `app/all`
+entfernen bzw. nach `lib/` ziehen, falls server-seitig gebraucht.
+✅ `fallbackTitle()` nach `lib/content.ts` gezogen; die Liste-Route löst den Titel server-
+seitig auf und strippt `contentHtml` aus dem Payload (Response = `id`/`title`/`domain`).
+`app/all` rendert `n.title` direkt.
+
+#### 9b — Detail-Query schlanker (`GET /api/nuggets/:id`) ✅ (2026-06-14)
+Die Route gibt `contentMarkdown` UND `contentPlain` (beides Volltext-Blobs) mit zurück,
+obwohl der Read-View nur `contentHtml` rendert.
+→ Auf `select` umstellen, die beiden ungenutzten Blobs weglassen. **Achtung:** prüfen,
+ob der Edit-View (`app/edit/[id]`) `contentMarkdown` braucht — falls ja, dort getrennt
+laden oder einen Query-Param spendieren.
+✅ Auf `select` umgestellt; `contentMarkdown`/`contentPlain` nur bei `?edit=1` (vom Edit-View
+gesetzt, braucht sie für Legacy-Fallback + AI-Rework), der Read-View bekommt sie nicht mehr.
+
+#### 9c — `auth/me` nicht pro Seite nachladen ✅ (2026-06-14)
+Owner-Status kommt aus einem Cookie und wird auf mehreren Seiten einzeln per `fetch`
+geholt. → Server-seitig einmal im Layout lesen (oder per Context cachen), Extra-Roundtrip
+sparen.
+✅ Owner-Check einmal server-seitig im Root-Layout (`lib/auth.ts` liest das Session-Cookie),
+via `components/OwnerContext.tsx` (`useOwner()`) bereitgestellt. Die drei `fetch('/api/auth/me')`
+in `app/all`/`app/today`/`app/nugget/[id]` entfallen; die Route bleibt als Fallback bestehen.
+
+### Architektur-Hebel (eigene Session, bewusst)
+
+#### 9d — Listen + Detail initial als Server Component rendern
+Größter wahrgenommener Gewinn: Daten server-seitig direkt aus Prisma holen und als Props
+in eine Client-Kind-Komponente geben (Interaktivität — Scroll-Restore, Bookmarks,
+Highlights, Suche — bleibt Client). Eliminiert Spinner + API-Roundtrip beim ersten Render.
+Im Detail-View zusätzlich die **3 separaten Fetches** (`:id`, `:id/related`, `auth/me`)
+zusammenfassen/parallelisieren.
+⚠️ **Risiko:** berührt die sessionStorage-/Scroll-Restore-Logik (s. CLAUDE.md Recent-
+Nuggets-Regel) und den `key={nugget.id}`-Trick im Single-View. Gezielt umbauen, nicht
+alles auf einmal; Read-View hat viel Client-State.
+
+### Beobachten / mittelfristig
+
+#### 9e — Suche & Paginierung
+`GET /api/nuggets` macht `take: 500` + Suche via `contentPlain: { contains }` =
+Full-Table-Scan ohne Index. Bei Hunderten Nuggets ok, skaliert linear. → später SQLite
+**FTS5** oder Index; aktuell nur beobachten.
+
+#### 9f — `jsdom` → `linkedom` (= TODO 6)
+Schweres Server-Dep, nur in `/api/extract`, erhöht Speicher/Cold-Start. Bereits als
+TODO 6 erfasst.
+
+---
+
 ## Referenz — Server-Befehle
 
 > `$SERVER_IP` ist ein Platzhalter (Repo ist public). Die echte IP steht lokal in

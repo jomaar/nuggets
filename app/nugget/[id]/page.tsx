@@ -10,6 +10,7 @@ import TextStatsBar from '@/components/TextStatsBar'
 import { countHtml } from '@/lib/textStats'
 import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, type AnchorToken } from '@/lib/bookmarkLink'
 import { recordRecentNugget, updateRecentScroll, getRecentScroll } from '@/lib/recentNuggets'
+import { useOwner } from '@/components/OwnerContext'
 import {
   getNuggetFontSize, setNuggetFontSize,
   MIN_FONT_SIZE, MAX_FONT_SIZE, DEFAULT_FONT_SIZE, FONT_SIZE_STEP,
@@ -323,7 +324,7 @@ export default function NuggetDetailPage() {
   const [nugget, setNugget]   = useState<Nugget | null>(null)
   const [relatedNuggets, setRelatedNuggets] = useState<RelatedNugget[]>([])
   const [loading, setLoading] = useState(true)
-  const [isOwner, setIsOwner] = useState(false)
+  const { isOwner } = useOwner()
   const [infoOpen, setInfoOpen]       = useState(false)
   // Reading font size for nugget text (px). Default first to match SSR, then
   // read the per-device preference on mount to avoid a hydration mismatch.
@@ -375,10 +376,6 @@ export default function NuggetDetailPage() {
 
   useEffect(() => {
     load()
-    fetch('/api/auth/me')
-      .then(r => r.json())
-      .then((d: { isOwner: boolean }) => setIsOwner(d.isOwner))
-      .catch(() => {})
   }, [load])
 
   // Remember this nugget as recently opened (per-device, localStorage), so the

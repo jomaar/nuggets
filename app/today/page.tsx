@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import NuggetCard from '@/components/NuggetCard'
+import { useOwner } from '@/components/OwnerContext'
 
 interface Domain {
   id: string
@@ -35,16 +36,12 @@ interface Nugget {
 export default function TodayPage() {
   const [nuggets, setNuggets] = useState<Nugget[]>([])
   const [loading, setLoading] = useState(true)
-  const [isOwner, setIsOwner] = useState(false)
+  const { isOwner } = useOwner()
 
   useEffect(() => {
     fetch('/api/due')
       .then(r => r.json())
       .then(data => { setNuggets(data); setLoading(false) })
-    fetch('/api/auth/me')
-      .then(r => r.json())
-      .then((d: { isOwner: boolean }) => setIsOwner(d.isOwner))
-      .catch(() => {})
   }, [])
 
   const handleReview = async (id: string, rating: 'again' | 'hard' | 'easy') => {
