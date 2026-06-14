@@ -55,25 +55,33 @@ function escapeHtml(text: string): string {
  * text is human-readable (the highlight text or bookmarked line); the URL stays
  * hidden in the href.
  *
- * The plain-text fallback is made absolute (current origin + path) so a link
- * pasted OUTSIDE the app (chat, notes) is still complete and clickable.
- * Returns false if the clipboard is unavailable.
+ * The plain-text fallback is a MARKDOWN link `[label](absolute-url)`, not a bare
+ * URL: the new-nugget form (`app/add`) and the editor preview are Markdown, so a
+ * bare URL pasted there shows the raw URL instead of a labelled link. Markdown
+ * `[label](url)` renders (via `marked`) to the same hidden-URL hyperlink as the
+ * rich HTML variant, and Markdown-aware apps render it too; the URL is absolute
+ * (current origin) so it also works outside the app. The HTML `<a>` keeps the
+ * href relative for in-app portability (see above). Returns false if the
+ * clipboard is unavailable.
  */
 export async function copyDeepLink(path: string, label: string): Promise<boolean> {
   const text = label.trim() || path
   const html = `<a href="${escapeHtml(path)}">${escapeHtml(text)}</a>`
   const absoluteUrl = `${window.location.origin}${path}`
+  // Escape `[`/`]` so a label with brackets can't break the Markdown link.
+  const cleanLabel = label.trim().replace(/[[\]]/g, '\\$&')
+  const markdown = cleanLabel ? `[${cleanLabel}](${absoluteUrl})` : absoluteUrl
   try {
     if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
       await navigator.clipboard.write([
         new ClipboardItem({
-          'text/html':  new Blob([html],        { type: 'text/html' }),
-          'text/plain': new Blob([absoluteUrl], { type: 'text/plain' }),
+          'text/html':  new Blob([html],     { type: 'text/html' }),
+          'text/plain': new Blob([markdown], { type: 'text/plain' }),
         }),
       ])
       return true
     }
-    await navigator.clipboard.writeText(absoluteUrl)
+    await navigator.clipboard.writeText(markdown)
     return true
   } catch {
     return false
