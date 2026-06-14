@@ -29,9 +29,14 @@
 /* iOS Safari zoom-out guard: any element wider than the viewport widens the
    layout viewport, so mobile Safari shrinks the whole page to fit (buttons/text
    look cut off). Clip horizontal overflow at the root and forbid the page from
-   exceeding the visible width. Long content is broken below (.nugget-content). */
+   exceeding the visible width. Long content is broken below (.nugget-content).
+   IMPORTANT: use `overflow-x: clip`, NOT `hidden`. On iOS WebKit `overflow-x:
+   hidden` turns the root into a scroll container (overflow-y computes to auto),
+   which breaks `position: sticky` (the single-view action bar with the bookmark
+   button scrolled away) and detaches window scrolling (scroll save/restore read
+   0). `clip` clips the same way but creates no scroll container. */
 html, body {
-  overflow-x: hidden;
+  overflow-x: clip;
   max-width: 100%;
 }
 

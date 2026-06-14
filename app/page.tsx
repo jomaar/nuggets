@@ -99,8 +99,10 @@ export default function BookmarksPage() {
                 key={r.id}
                 onClick={() => {
                   // Signal the nugget view to restore where this nugget was left.
+                  // scroll: false stops Next from scrolling the new route to the
+                  // top, which would otherwise fight the restore.
                   sessionStorage.setItem(SCROLL_RESTORE_KEY, r.id)
-                  router.push(`/nugget/${r.id}`)
+                  router.push(`/nugget/${r.id}`, { scroll: false })
                 }}
                 className="flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all active:scale-[0.99]"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}

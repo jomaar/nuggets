@@ -420,14 +420,15 @@ export default function NuggetDetailPage() {
     const target = getRecentScroll(nugget.id)
     if (!target) return
 
+    // Re-apply the target every frame for a short window. Tiptap renders async
+    // and grows the page, and a late scroll-to-top (router/browser) can strand
+    // us at 0 — re-applying for ~700ms beats both without locking out the user.
     const start = performance.now()
     let raf = 0
     const tick = () => {
       const maxScroll = document.documentElement.scrollHeight - window.innerHeight
       window.scrollTo({ top: Math.min(target, Math.max(0, maxScroll)) })
-      if (window.scrollY < target - 2 && performance.now() - start < 1500) {
-        raf = requestAnimationFrame(tick)
-      }
+      if (performance.now() - start < 700) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
