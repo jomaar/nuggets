@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { marked } from 'marked'
+import { Maximize2, Minimize2 } from 'lucide-react'
 import NuggetEditor from '@/components/NuggetEditor'
 import DomainChips from '@/components/DomainChips'
 import TextStatsBar from '@/components/TextStatsBar'
@@ -33,6 +34,7 @@ export default function EditPage() {
   const [saving, setSaving]           = useState(false)
   const [dirty, setDirty]             = useState(false)   // unsaved edits since load/save
   const [savedFlash, setSavedFlash]   = useState(false)   // brief "Gespeichert ✓" confirmation
+  const [focus, setFocus]             = useState(false)   // hide metadata fields, maximize editor
   const fileInputRef = useRef<HTMLInputElement>(null)
   const editorBoxRef = useRef<HTMLDivElement>(null)
   // Snapshot of the last persisted field values. `dirty` is derived by comparing the
@@ -260,6 +262,20 @@ export default function EditPage() {
               Gespeichert ✓
             </span>
           )}
+          {/* Focus mode: hide the metadata fields and maximize the text editor. */}
+          <button
+            onClick={() => setFocus(f => !f)}
+            className="p-1.5 rounded-lg transition-colors active:scale-95"
+            style={{
+              background: focus ? 'var(--accent)' : 'var(--surface)',
+              color:      focus ? 'white'         : 'var(--muted)',
+              border: '1px solid var(--border)',
+            }}
+            aria-label={focus ? 'Focus-Modus beenden' : 'Focus-Modus'}
+            title={focus ? 'Focus-Modus beenden' : 'Focus-Modus'}
+          >
+            {focus ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
           <button
             onClick={handleLeave}
             className="text-xs px-3 py-1.5 rounded-lg"
@@ -282,21 +298,23 @@ export default function EditPage() {
       </header>
 
       <div className="flex flex-col gap-4">
-        {/* Title */}
-        <div>
-          <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
-            Titel <span style={{ opacity: 0.5 }}>(leer = wird von KI generiert)</span>
-          </label>
-          <input
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder="Kurzer, aussagekräftiger Titel…"
-            style={inputStyle}
-          />
-        </div>
+        {/* Title — hidden in focus mode */}
+        {!focus && (
+          <div>
+            <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
+              Titel <span style={{ opacity: 0.5 }}>(leer = wird von KI generiert)</span>
+            </label>
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="Kurzer, aussagekräftiger Titel…"
+              style={inputStyle}
+            />
+          </div>
+        )}
 
-        {/* Domain selector */}
-        {domains.length > 0 && (
+        {/* Domain selector — hidden in focus mode */}
+        {!focus && domains.length > 0 && (
           <div>
             <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
               Domain
@@ -314,22 +332,29 @@ export default function EditPage() {
             onChange={handleFileLoad}
             style={{ display: 'none' }}
           />
-          <div className="flex items-center gap-2 mb-2">
-            <label className="text-xs tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
-              Inhalt *
-            </label>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="text-xs px-2 py-0.5 rounded-lg"
-              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-            >
-              ↑ Datei laden
-            </button>
-          </div>
+          {/* Label + file-load row — hidden in focus mode to free up space */}
+          {!focus && (
+            <div className="flex items-center gap-2 mb-2">
+              <label className="text-xs tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
+                Inhalt *
+              </label>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-xs px-2 py-0.5 rounded-lg"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                ↑ Datei laden
+              </button>
+            </div>
+          )}
           {/* Live length meter — updates as the editor content changes. */}
           <TextStatsBar stats={countHtml(content)} className="mb-1.5" />
-          <div ref={editorBoxRef} style={{ ...inputStyle, padding: 0 }}>
+          <div
+            ref={editorBoxRef}
+            className={focus ? 'edit-focus-box' : undefined}
+            style={{ ...inputStyle, padding: 0 }}
+          >
             <NuggetEditor
               value={content}
               onChange={setContent}
@@ -341,6 +366,9 @@ export default function EditPage() {
           </div>
         </div>
 
+        {/* Source / AI-Chat / Tags — all hidden in focus mode */}
+        {!focus && (
+        <>
         {/* Source */}
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -392,6 +420,8 @@ export default function EditPage() {
             style={inputStyle}
           />
         </div>
+        </>
+        )}
       </div>
     </>
   )

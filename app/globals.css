@@ -217,6 +217,11 @@ h1, h2, h3, .serif {
   font-size: var(--nugget-font-size, 15px);
   line-height: 1.7;
 }
+/* Focus mode (edit view): give the editor a large clickable area so working on
+   the text alone uses (nearly) the whole viewport below the sticky action bar. */
+.edit-focus-box .ProseMirror {
+  min-height: calc(100dvh - 210px);
+}
 .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   color: var(--muted);
