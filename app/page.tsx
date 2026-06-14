@@ -18,6 +18,8 @@ interface Bookmark {
 
 /** sessionStorage key handing the jump target over to the nugget view. */
 const BOOKMARK_JUMP_KEY = 'nugget-bookmark-jump'
+/** sessionStorage key signalling the nugget view to restore its saved scroll. */
+const SCROLL_RESTORE_KEY = 'nugget-restore-scroll'
 
 /**
  * Bookmarks landing page (the app's home tab). Lists saved reading spots newest
@@ -95,7 +97,11 @@ export default function BookmarksPage() {
             {recent.map(r => (
               <button
                 key={r.id}
-                onClick={() => router.push(`/nugget/${r.id}`)}
+                onClick={() => {
+                  // Signal the nugget view to restore where this nugget was left.
+                  sessionStorage.setItem(SCROLL_RESTORE_KEY, r.id)
+                  router.push(`/nugget/${r.id}`)
+                }}
                 className="flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all active:scale-[0.99]"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
               >

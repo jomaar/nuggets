@@ -9,7 +9,7 @@ import DomainIcon from '@/components/DomainIcon'
 import TextStatsBar from '@/components/TextStatsBar'
 import { countHtml } from '@/lib/textStats'
 import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, type AnchorToken } from '@/lib/bookmarkLink'
-import { recordRecentNugget } from '@/lib/recentNuggets'
+import { recordRecentNugget, updateRecentScroll, getRecentScroll } from '@/lib/recentNuggets'
 import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints } from 'lucide-react'
 
 interface Domain {
@@ -292,6 +292,8 @@ function resolveAnchor(root: HTMLElement, quote: string, prefix: string, suffix:
 
 /** sessionStorage key carrying a bookmark target across navigation to the nugget. */
 const BOOKMARK_JUMP_KEY = 'nugget-bookmark-jump'
+/** sessionStorage key signalling that the recent list wants the saved scroll restored. */
+const SCROLL_RESTORE_KEY = 'nugget-restore-scroll'
 
 /**
  * Read-only Tiptap reading view with debounced highlight persistence.
@@ -376,6 +378,59 @@ export default function NuggetDetailPage() {
   // bookmarks home tab can list current work without an explicit bookmark.
   useEffect(() => {
     if (nugget) recordRecentNugget(nugget.id, nugget.title)
+  }, [nugget])
+
+  // Persist the reading scroll position for this nugget (throttled), from any
+  // entry point, so the recent list can return here. Also captured on leave.
+  useEffect(() => {
+    if (!nugget) return
+    const id = nugget.id
+    let last = 0
+    const onScroll = () => {
+      const now = Date.now()
+      if (now - last < 300) return
+      last = now
+      updateRecentScroll(id, window.scrollY)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      updateRecentScroll(id, window.scrollY)
+    }
+  }, [nugget])
+
+  // Tracks which nugget's saved scroll we've already restored (survives the
+  // same-segment re-render that related links cause without a remount).
+  const restoredScrollFor = useRef<string | null>(null)
+
+  /**
+   * Restore the saved scroll position when the recent list asked for it. A
+   * bookmark target (URL `?bm=` or a stashed jump) takes precedence, so a
+   * deliberate jump always wins. Tiptap renders async and grows the page, so we
+   * re-apply the target across animation frames until it fits (or time out).
+   */
+  useEffect(() => {
+    if (!nugget || restoredScrollFor.current === nugget.id) return
+    if (new URLSearchParams(window.location.search).get('bm')) return
+    if (sessionStorage.getItem(BOOKMARK_JUMP_KEY)) return
+    if (sessionStorage.getItem(SCROLL_RESTORE_KEY) !== nugget.id) return
+
+    restoredScrollFor.current = nugget.id
+    sessionStorage.removeItem(SCROLL_RESTORE_KEY)
+    const target = getRecentScroll(nugget.id)
+    if (!target) return
+
+    const start = performance.now()
+    let raf = 0
+    const tick = () => {
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight
+      window.scrollTo({ top: Math.min(target, Math.max(0, maxScroll)) })
+      if (window.scrollY < target - 2 && performance.now() - start < 1500) {
+        raf = requestAnimationFrame(tick)
+      }
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
   }, [nugget])
 
   const handleDelete = async () => {

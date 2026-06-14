@@ -13,6 +13,9 @@ export interface RecentNugget {
   title: string
   /** Epoch ms of the most recent open — used only to order newest first. */
   openedAt: number
+  /** Last reading scroll position (window.scrollY) within this nugget, so the
+   *  recent list can return the user to exactly where they left off. */
+  scrollY?: number
 }
 
 /** localStorage key holding the JSON-encoded RecentNugget[] (newest first). */
@@ -40,9 +43,13 @@ function readAll(): RecentNugget[] {
  */
 export function recordRecentNugget(id: string, title: string): void {
   if (typeof window === 'undefined' || !id) return
+  const all = readAll()
+  // Carry the saved scroll position over to the refreshed entry — re-opening a
+  // nugget must not forget where the reader left off.
+  const scrollY = all.find(entry => entry.id === id)?.scrollY
   const next: RecentNugget[] = [
-    { id, title, openedAt: Date.now() },
-    ...readAll().filter(entry => entry.id !== id),
+    { id, title, openedAt: Date.now(), scrollY },
+    ...all.filter(entry => entry.id !== id),
   ].slice(0, MAX_ENTRIES)
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
@@ -54,4 +61,27 @@ export function recordRecentNugget(id: string, title: string): void {
 /** The most recently opened nuggets, newest first, limited to `limit`. */
 export function getRecentNuggets(limit = 3): RecentNugget[] {
   return readAll().slice(0, limit)
+}
+
+/**
+ * Remember the reading scroll position for a nugget, updating its entry in place
+ * (no reorder — recency is about opens, not scrolling). No-op if the nugget is
+ * not in the list, which only happens before its open was recorded.
+ */
+export function updateRecentScroll(id: string, scrollY: number): void {
+  if (typeof window === 'undefined' || !id) return
+  const all = readAll()
+  const entry = all.find(n => n.id === id)
+  if (!entry) return
+  entry.scrollY = Math.max(0, Math.round(scrollY))
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(all))
+  } catch {
+    /* best-effort */
+  }
+}
+
+/** The stored scroll position for a nugget, or undefined if none is known. */
+export function getRecentScroll(id: string): number | undefined {
+  return readAll().find(n => n.id === id)?.scrollY
 }
