@@ -380,22 +380,28 @@ export default function NuggetDetailPage() {
     if (nugget) recordRecentNugget(nugget.id, nugget.title)
   }, [nugget])
 
-  // Persist the reading scroll position for this nugget (throttled), from any
-  // entry point, so the recent list can return here. Also captured on leave.
+  // Persist the reading scroll position for this nugget, from any entry point,
+  // so the recent list can return here. A periodic save during a long scroll
+  // plus a trailing save when scrolling settles captures the resting position.
+  // We deliberately do NOT save on cleanup: leaving via an in-app link scrolls
+  // the page to the top first, so a cleanup read of window.scrollY would clobber
+  // the good value with 0 (this is exactly why it failed on iOS but not in a
+  // hard-reload test).
   useEffect(() => {
     if (!nugget) return
     const id = nugget.id
-    let last = 0
+    let lastSave = 0
+    let trailing = 0
+    const save = () => { lastSave = Date.now(); updateRecentScroll(id, window.scrollY) }
     const onScroll = () => {
-      const now = Date.now()
-      if (now - last < 300) return
-      last = now
-      updateRecentScroll(id, window.scrollY)
+      if (Date.now() - lastSave > 400) save()       // periodic during continuous scroll
+      clearTimeout(trailing)
+      trailing = window.setTimeout(save, 200)         // resting position after scrolling stops
     }
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => {
       window.removeEventListener('scroll', onScroll)
-      updateRecentScroll(id, window.scrollY)
+      clearTimeout(trailing)
     }
   }, [nugget])
 
@@ -420,15 +426,22 @@ export default function NuggetDetailPage() {
     const target = getRecentScroll(nugget.id)
     if (!target) return
 
-    // Re-apply the target every frame for a short window. Tiptap renders async
-    // and grows the page, and a late scroll-to-top (router/browser) can strand
-    // us at 0 — re-applying for ~700ms beats both without locking out the user.
+    // Re-apply the target each frame until we reach it and hold briefly, or a
+    // safety cap elapses. Tiptap renders async and grows the page (so the target
+    // may be unreachable for a while on a slow device), and a late scroll-to-top
+    // can strand us at 0 — holding past first contact beats both.
     const start = performance.now()
+    let reachedAt = 0
     let raf = 0
     const tick = () => {
       const maxScroll = document.documentElement.scrollHeight - window.innerHeight
-      window.scrollTo({ top: Math.min(target, Math.max(0, maxScroll)) })
-      if (performance.now() - start < 700) raf = requestAnimationFrame(tick)
+      const goal = Math.min(target, Math.max(0, maxScroll))
+      window.scrollTo({ top: goal })
+      const reached = Math.abs(window.scrollY - goal) <= 2
+      reachedAt = reached ? (reachedAt || performance.now()) : 0
+      const held = reachedAt && performance.now() - reachedAt > 150
+      if (held || performance.now() - start > 2500) return
+      raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
