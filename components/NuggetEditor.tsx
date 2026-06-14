@@ -161,16 +161,23 @@ export default function NuggetEditor({
       {editor && (
         <BubbleMenu
           editor={editor}
-          // Place our menu BELOW the selection with a gap. iOS's native selection
-          // callout (Copy / Look Up / …) sits ABOVE the selection, so the two
-          // would stack and overlap if ours were also on top. We can't read the
-          // native menu's position (it's a UIKit overlay, not in the DOM), so the
-          // robust fix is to sit on the opposite side; flip/shift (Floating UI
-          // defaults) still pull it back into view near the screen edges.
-          options={{ placement: 'bottom', offset: 12 }}
+          // Pin the menu just UNDER the sticky top bar instead of next to the
+          // selection. iOS's native selection callout hugs the selection (and
+          // can't be read — it's a UIKit overlay, not in the DOM), so anchoring
+          // ours to a fixed spot at the top keeps the two from ever colliding,
+          // wherever the selection is. The reference is a zero-size virtual point
+          // at the bottom edge of the sticky header (`.sticky`, present in the
+          // read + edit views; fallback near the top otherwise).
+          getReferencedVirtualElement={() => {
+            const bar = typeof document !== 'undefined' ? document.querySelector('.sticky') : null
+            const top = bar ? bar.getBoundingClientRect().bottom : 8
+            const x = (typeof window !== 'undefined' ? window.innerWidth : 360) / 2
+            return { getBoundingClientRect: () => new DOMRect(x, top, 0, 0) }
+          }}
+          options={{ placement: 'bottom', offset: 8, flip: false, shift: true }}
           // Show on any non-empty selection — highlighting works in the read-only
           // reading view too (programmatic mark commands run even when editable=false).
-          shouldShow={({ editor, from, to }) => from !== to}
+          shouldShow={({ from, to }) => from !== to}
         >
           <div className="highlight-menu">
             {HIGHLIGHT_COLORS.map((color) => (
