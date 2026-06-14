@@ -209,7 +209,7 @@ export default function NuggetEditor({
                 title="Mit KI überarbeiten"
                 onClick={openRework}
               >
-                <Sparkles size={15} />
+                <Sparkles size={22} />
               </button>
             )}
           </div>
