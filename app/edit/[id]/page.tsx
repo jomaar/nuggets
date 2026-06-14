@@ -31,8 +31,18 @@ export default function EditPage() {
   const [tags, setTags]               = useState('')
   const [loading, setLoading]         = useState(true)
   const [saving, setSaving]           = useState(false)
+  const [dirty, setDirty]             = useState(false)   // unsaved edits since load/save
+  const [savedFlash, setSavedFlash]   = useState(false)   // brief "Gespeichert ✓" confirmation
   const fileInputRef = useRef<HTMLInputElement>(null)
   const editorBoxRef = useRef<HTMLDivElement>(null)
+  // Snapshot of the last persisted field values. `dirty` is derived by comparing the
+  // live fields to this; updated on load and after every successful save. The content
+  // entry is corrected to Tiptap's normalized HTML via the editor's onReady callback,
+  // so mount-time re-serialization doesn't count as an edit.
+  const baselineRef = useRef({
+    title: '', content: '', domainId: '', sourceUrl: '', sourceLabel: '', aiChatUrl: '', tags: '',
+  })
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const loadNugget = useCallback(async () => {
     const [nuggetRes, domainsRes] = await Promise.all([
@@ -42,23 +52,93 @@ export default function EditPage() {
     const nugget  = await nuggetRes.json()
     const domList = await domainsRes.json() as Domain[]
 
-    setDomains(domList)
-    setTitle(nugget.title || '')
     // Canonical content is HTML; fall back to rendering Markdown for legacy nuggets.
-    if (nugget.contentHtml) {
-      setContent(nugget.contentHtml)
-    } else if (nugget.contentMarkdown) {
-      setContent(marked(nugget.contentMarkdown) as string)
-    } else {
-      setContent(nugget.contentPlain || '')
+    const initialContent = nugget.contentHtml
+      ? nugget.contentHtml
+      : nugget.contentMarkdown
+        ? (marked(nugget.contentMarkdown) as string)
+        : (nugget.contentPlain || '')
+    const initial = {
+      title:       nugget.title || '',
+      content:     initialContent,
+      domainId:    nugget.domainId || '',
+      sourceUrl:   nugget.sourceUrl || '',
+      sourceLabel: nugget.sourceLabel || '',
+      aiChatUrl:   nugget.aiChatUrl || '',
+      tags:        JSON.parse(nugget.tags || '[]').join(', '),
     }
-    setDomainId(nugget.domainId || '')
-    setSourceUrl(nugget.sourceUrl || '')
-    setSourceLabel(nugget.sourceLabel || '')
-    setAiChatUrl(nugget.aiChatUrl || '')
-    setTags(JSON.parse(nugget.tags || '[]').join(', '))
+    baselineRef.current = { ...initial }
+
+    setDomains(domList)
+    setTitle(initial.title)
+    setContent(initial.content)
+    setDomainId(initial.domainId)
+    setSourceUrl(initial.sourceUrl)
+    setSourceLabel(initial.sourceLabel)
+    setAiChatUrl(initial.aiChatUrl)
+    setTags(initial.tags)
     setLoading(false)
   }, [id])
+
+  /**
+   * Recompute the dirty flag whenever a field changes: compare the live values to the
+   * last-persisted baseline. Skipped while loading so the initial field hydration doesn't
+   * register as an edit.
+   */
+  useEffect(() => {
+    if (loading) return
+    const b = baselineRef.current
+    setDirty(
+      title       !== b.title       ||
+      content     !== b.content     ||
+      domainId    !== b.domainId    ||
+      sourceUrl   !== b.sourceUrl   ||
+      sourceLabel !== b.sourceLabel ||
+      aiChatUrl   !== b.aiChatUrl   ||
+      tags        !== b.tags,
+    )
+  }, [loading, title, content, domainId, sourceUrl, sourceLabel, aiChatUrl, tags])
+
+  /**
+   * Warn before a full page unload (reload / tab close / external navigation) while
+   * there are unsaved changes. Client-side navigation (BottomNav links) is handled
+   * separately by the capture-phase click interceptor below.
+   */
+  useEffect(() => {
+    if (!dirty) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [dirty])
+
+  /**
+   * Intercept in-app navigation (Next.js <Link>, e.g. the BottomNav) while there are
+   * unsaved changes and confirm before leaving. App Router has no built-in navigation
+   * guard, so we catch the anchor click in the capture phase and cancel it if declined.
+   * Links inside the editor content are left to Tiptap (they don't navigate here).
+   */
+  useEffect(() => {
+    if (!dirty) return
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const anchor = (e.target as HTMLElement)?.closest?.('a[href]') as HTMLAnchorElement | null
+      if (!anchor || anchor.closest('.tiptap-editor')) return
+      const href = anchor.getAttribute('href') || ''
+      if (!href || href.startsWith('#') || anchor.target === '_blank') return
+      if (!confirm('Ungespeicherte Änderungen verwerfen?')) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }
+    document.addEventListener('click', onClick, true)
+    return () => document.removeEventListener('click', onClick, true)
+  }, [dirty])
+
+  // Clear the pending "saved" flash timer on unmount.
+  useEffect(() => () => clearTimeout(savedTimerRef.current), [])
 
   useEffect(() => { loadNugget() }, [loadNugget])
 
@@ -108,6 +188,11 @@ export default function EditPage() {
     e.target.value = ''
   }
 
+  /**
+   * Persist the nugget but STAY in edit mode — the user keeps reading/editing and
+   * leaves via the nav whenever they want. Resets the dirty baseline to the just-saved
+   * values and shows a brief confirmation instead of navigating away.
+   */
   const handleSave = async () => {
     if (!content.trim()) return
     setSaving(true)
@@ -125,6 +210,16 @@ export default function EditPage() {
       }),
     })
     setSaving(false)
+    baselineRef.current = { title, content, domainId, sourceUrl, sourceLabel, aiChatUrl, tags }
+    setDirty(false)
+    setSavedFlash(true)
+    clearTimeout(savedTimerRef.current)
+    savedTimerRef.current = setTimeout(() => setSavedFlash(false), 2000)
+  }
+
+  /** Leave the edit view (Abbrechen), confirming first if there are unsaved changes. */
+  const handleLeave = () => {
+    if (dirty && !confirm('Ungespeicherte Änderungen verwerfen?')) return
     router.push('/all')
   }
 
@@ -160,12 +255,17 @@ export default function EditPage() {
           Bearbeiten
         </h1>
         <div className="flex items-center gap-2">
+          {savedFlash && (
+            <span className="text-xs" style={{ color: 'var(--accent)' }}>
+              Gespeichert ✓
+            </span>
+          )}
           <button
-            onClick={() => router.push('/all')}
+            onClick={handleLeave}
             className="text-xs px-3 py-1.5 rounded-lg"
             style={{ background: 'var(--surface)', color: 'var(--muted)', border: '1px solid var(--border)' }}
           >
-            Abbrechen
+            {dirty ? 'Abbrechen' : 'Schließen'}
           </button>
           <button
             onClick={handleSave}
@@ -230,7 +330,14 @@ export default function EditPage() {
           {/* Live length meter — updates as the editor content changes. */}
           <TextStatsBar stats={countHtml(content)} className="mb-1.5" />
           <div ref={editorBoxRef} style={{ ...inputStyle, padding: 0 }}>
-            <NuggetEditor value={content} onChange={setContent} enableAiRework />
+            <NuggetEditor
+              value={content}
+              onChange={setContent}
+              // Adopt Tiptap's normalized serialization as the content baseline AND the
+              // live value, so mount-time re-serialization isn't mistaken for an edit.
+              onReady={(html) => { baselineRef.current.content = html; setContent(html) }}
+              enableAiRework
+            />
           </div>
         </div>
 
