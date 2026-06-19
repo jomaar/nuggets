@@ -256,3 +256,70 @@ h1, h2, h3, .serif {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--warm); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── PDF / print view (app/nugget/[id]/print) ──────────────────────────────
+   A dedicated document page. On screen it shows a plain reading layout; the
+   @media print block below tightens it into a dense, page-break-friendly PDF.
+   The body text uses a FIXED point size here (not the adjustable
+   --nugget-font-size) so exports are consistent regardless of the per-device
+   reading size; the .nugget-content headings stay em-relative and scale off it. */
+.pdf-doc { color: var(--ink); }
+.pdf-doc .pdf-head {
+  margin-bottom: 1.1rem;
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--border);
+}
+.pdf-doc .pdf-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--ink);
+  margin: 0 0 0.4rem;
+}
+.pdf-doc .pdf-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.pdf-doc .pdf-meta > * + *::before {
+  content: "·";
+  margin-right: 0.6rem;
+}
+.pdf-doc .pdf-meta a { color: var(--accent-light); }
+.pdf-doc .pdf-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.7rem;
+  margin-top: 0.4rem;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+@media print {
+  /* Hide app chrome so only the document prints. */
+  nav, .no-print { display: none !important; }
+
+  /* Keep highlight + accent backgrounds in the PDF — browsers strip them by
+     default. This is what makes the coloured <mark> highlights survive. */
+  .pdf-doc, .pdf-doc * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @page { margin: 14mm 15mm; }
+
+  /* Fixed, dense body size; headings remain em-relative (see .nugget-content). */
+  .pdf-doc { font-size: 10.7pt; line-height: 1.45; }
+  .pdf-doc .pdf-title { font-size: 16pt; }
+  .pdf-doc .pdf-meta  { font-size: 8.5pt; }
+  .pdf-doc .pdf-tags  { font-size: 8pt; }
+
+  /* Page-break hygiene: don't strand a heading at the foot of a page, don't
+     split tight blocks across pages. */
+  .pdf-doc h1, .pdf-doc h2, .pdf-doc h3 { break-after: avoid; }
+  .pdf-doc blockquote, .pdf-doc li, .pdf-doc pre, .pdf-doc img { break-inside: avoid; }
+  .pdf-doc p { orphans: 2; widows: 2; }
+}

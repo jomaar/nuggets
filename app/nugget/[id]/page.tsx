@@ -15,7 +15,7 @@ import {
   getNuggetFontSize, setNuggetFontSize,
   MIN_FONT_SIZE, MAX_FONT_SIZE, DEFAULT_FONT_SIZE, FONT_SIZE_STEP,
 } from '@/lib/nuggetFontSize'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints } from 'lucide-react'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -832,6 +832,14 @@ export default function NuggetDetailPage() {
             >
               <Info size={16} />
             </button>
+            <Link
+              href={`/nugget/${nugget.id}/print`}
+              aria-label="Als PDF exportieren"
+              className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+            >
+              <Printer size={16} />
+            </Link>
           </div>
 
           {isOwner && (

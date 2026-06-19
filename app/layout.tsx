@@ -70,10 +70,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <BottomNav />
           <div className="max-w-2xl mx-auto px-4 pb-24">
             {children}
-            <p className="text-center pb-1" style={{ fontSize: '10px', color: 'var(--muted)' }}>
+            <p className="no-print text-center pb-1" style={{ fontSize: '10px', color: 'var(--muted)' }}>
               {buildVersion}
             </p>
-            <p className="text-center pb-4 flex justify-center gap-4" style={{ fontSize: '10px' }}>
+            <p className="no-print text-center pb-4 flex justify-center gap-4" style={{ fontSize: '10px' }}>
               <a href="/impressum" style={{ color: 'var(--muted)' }}>Impressum</a>
               <a href="/datenschutz" style={{ color: 'var(--muted)' }}>Datenschutz</a>
             </p>
