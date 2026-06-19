@@ -15,7 +15,7 @@ import {
   getNuggetFontSize, setNuggetFontSize,
   MIN_FONT_SIZE, MAX_FONT_SIZE, DEFAULT_FONT_SIZE, FONT_SIZE_STEP,
 } from '@/lib/nuggetFontSize'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer } from 'lucide-react'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer, Pencil, Trash2 } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -784,8 +784,9 @@ export default function NuggetDetailPage() {
             ← Zurück
           </button>
 
-          {/* Bookmark current line · search · highlights list · info toggle */}
-          <div className="flex items-center gap-2">
+          {/* All actions as uniform icons in one group so the bar never
+              overflows on narrow iPhones (edit = blue pencil, delete = red trash). */}
+          <div className="flex items-center gap-1.5">
             {isOwner && (
               <button
                 onClick={addBookmark}
@@ -840,41 +841,41 @@ export default function NuggetDetailPage() {
             >
               <Printer size={16} />
             </Link>
-          </div>
-
-          {isOwner && (
-            <div className="flex items-center gap-2">
-              {!confirmDelete && (
-                <button
-                  onClick={goEdit}
-                  className="text-xs px-3 py-1 rounded-lg"
-                  style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-                >
-                  Bearbeiten
-                </button>
-              )}
+            {isOwner && !confirmDelete && (
+              <button
+                onClick={goEdit}
+                aria-label="Bearbeiten"
+                className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+                style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+              >
+                <Pencil size={16} />
+              </button>
+            )}
+            {isOwner && (
               <button
                 onClick={handleDelete}
-                className="text-xs px-3 py-1 rounded-lg"
+                aria-label={confirmDelete ? 'Wirklich löschen?' : 'Löschen'}
+                className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
                 style={{
                   background: confirmDelete ? '#c0392b' : 'transparent',
-                  color: confirmDelete ? 'white' : 'var(--muted)',
-                  border: `1px solid ${confirmDelete ? '#c0392b' : 'var(--border)'}`,
+                  color: confirmDelete ? 'white' : '#c0392b',
+                  border: '1px solid #c0392b',
                 }}
               >
-                {confirmDelete ? 'Wirklich löschen?' : 'Löschen'}
+                <Trash2 size={16} />
               </button>
-              {confirmDelete && (
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="text-xs px-3 py-1 rounded-lg"
-                  style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-                >
-                  Abbrechen
-                </button>
-              )}
-            </div>
-          )}
+            )}
+            {isOwner && confirmDelete && (
+              <button
+                onClick={() => setConfirmDelete(false)}
+                aria-label="Löschen abbrechen"
+                className="flex items-center justify-center p-1.5 rounded-lg"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* In-text search bar — kept inside the sticky bar so it (and the match

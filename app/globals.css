@@ -302,6 +302,10 @@ h1, h2, h3, .serif {
   /* Hide app chrome so only the document prints. */
   nav, .no-print { display: none !important; }
 
+  /* White page — the app's grey background (var(--bg)) would otherwise print
+     behind the text since print-color-adjust is forced to exact below. */
+  html, body { background: #fff !important; }
+
   /* Keep highlight + accent backgrounds in the PDF — browsers strip them by
      default. This is what makes the coloured <mark> highlights survive. */
   .pdf-doc, .pdf-doc * {
