@@ -137,8 +137,14 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
   const { domainId, reviseContent, aiHint } = options
 
   try {
+    // Domain-scoped NEL: only concepts already used within the nugget's domain
+    // are offered for matching (no domain = only concepts on domainless nuggets).
+    // Membership is DERIVED from edges, not stored — a concept belongs to every
+    // domain it is used in. Consequence: a concept known only in another domain
+    // is invisible here and will be minted again (separate per-domain subgraphs).
     const [existing, domain, settings] = await Promise.all([
       prisma.concept.findMany({
+        where: { nuggets: { some: { nugget: { domainId: domainId ?? null } } } },
         include: { labels: { select: { language: true, term: true } } },
         orderBy: { createdAt: 'asc' },
       }),
