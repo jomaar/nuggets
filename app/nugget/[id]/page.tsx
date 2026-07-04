@@ -10,6 +10,7 @@ import TextStatsBar from '@/components/TextStatsBar'
 import { countHtml } from '@/lib/textStats'
 import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, type AnchorToken } from '@/lib/bookmarkLink'
 import { recordRecentNugget, updateRecentScroll, getRecentScroll } from '@/lib/recentNuggets'
+import { markColorVar, type MarkKind } from '@/lib/marking'
 import { useOwner } from '@/components/OwnerContext'
 import {
   getNuggetFontSize, setNuggetFontSize,
@@ -80,14 +81,13 @@ function primaryLabel(labels: ConceptLabel[]): string {
   )
 }
 
-/** Maps a highlight's data-color to its CSS palette variable (default yellow). */
-const HIGHLIGHT_VARS: Record<string, string> = {
-  yellow: '--hl-yellow',
-  blue:   '--hl-blue',
-  green:  '--hl-green',
-  pink:   '--hl-pink',
-  orange: '--hl-orange',
-}
+/**
+ * Selector matching every reader marking in the rendered content: highlight
+ * marks and coloured underlines. openMarks/scrollToMark/copyMarkLink must all
+ * use THIS selector so an entry's index resolves to the same element everywhere
+ * (querySelectorAll returns document order regardless of tag).
+ */
+const MARK_SELECTOR = 'mark, u[data-color]'
 
 /** Formats an ISO date as a short German date (e.g. 9. Juni 2026). */
 function formatDate(iso: string): string {
@@ -237,9 +237,10 @@ function nodeAnchorContext(root: HTMLElement, node: Text): { prefix: string; suf
 }
 
 /**
- * Build a portable text-quote anchor for a highlight `<mark>` element so it can
- * be deep-linked from another nugget. The marked text is itself the quote; the
- * surrounding text gives the prefix/suffix context that disambiguates repeats.
+ * Build a portable text-quote anchor for a marking element (`<mark>` highlight
+ * or `<u data-color>` underline) so it can be deep-linked from another nugget.
+ * The marked text is itself the quote; the surrounding text gives the
+ * prefix/suffix context that disambiguates repeats.
  */
 function anchorForMark(root: HTMLElement, mark: Element): AnchorToken {
   const before = document.createRange()
@@ -331,7 +332,7 @@ export default function NuggetDetailPage() {
   const [fontSize, setFontSize]       = useState(DEFAULT_FONT_SIZE)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [marksOpen, setMarksOpen]     = useState(false)
-  const [marks, setMarks]             = useState<{ text: string; color: string; markIndex: number }[]>([])
+  const [marks, setMarks]             = useState<{ text: string; color: string; kind: MarkKind; markIndex: number }[]>([])
   // Mark index whose deep-link was just copied (flips that row's icon to a check).
   const [copiedMarkIndex, setCopiedMarkIndex] = useState<number | null>(null)
   const [searchOpen, setSearchOpen]   = useState(false)
@@ -481,24 +482,26 @@ export default function NuggetDetailPage() {
   }
 
   /**
-   * Collect highlight marks from the rendered content and open the popup.
-   * A single block selection spanning several paragraphs becomes one <mark>
-   * per paragraph (ProseMirror can't span block boundaries), so we merge
-   * consecutive marks of the same colour that are only separated by
-   * whitespace/block boundaries into one list entry. `markIndex` keeps each
-   * entry pointing at its first <mark> for scroll-to.
+   * Collect reader markings (highlights + coloured underlines) from the
+   * rendered content and open the popup. A single block selection spanning
+   * several paragraphs becomes one element per paragraph (ProseMirror can't
+   * span block boundaries), so we merge consecutive markings of the same
+   * style + colour that are only separated by whitespace/block boundaries
+   * into one list entry. `markIndex` keeps each entry pointing at its first
+   * element (index over the shared MARK_SELECTOR list) for scroll-to.
    */
   const openMarks = () => {
-    const nodes = Array.from(contentRef.current?.querySelectorAll('mark') ?? [])
-    const groups: { text: string; color: string; markIndex: number; lastEl: Element }[] = []
+    const nodes = Array.from(contentRef.current?.querySelectorAll(MARK_SELECTOR) ?? [])
+    const groups: { text: string; color: string; kind: MarkKind; markIndex: number; lastEl: Element }[] = []
 
     nodes.forEach((el, i) => {
+      const kind: MarkKind = el.tagName === 'MARK' ? 'hl' : 'ul'
       const color = el.getAttribute('data-color') ?? 'yellow'
       const text  = (el.textContent ?? '').replace(/\s+/g, ' ').trim()
       const prev  = groups[groups.length - 1]
 
       let contiguous = false
-      if (prev && prev.color === color) {
+      if (prev && prev.color === color && prev.kind === kind) {
         const between = document.createRange()
         between.setStartAfter(prev.lastEl)
         between.setEndBefore(el)
@@ -510,17 +513,17 @@ export default function NuggetDetailPage() {
         prev.text   = `${prev.text} ${text}`.trim()
         prev.lastEl = el
       } else {
-        groups.push({ text, color, markIndex: i, lastEl: el })
+        groups.push({ text, color, kind, markIndex: i, lastEl: el })
       }
     })
 
-    setMarks(groups.map(({ text, color, markIndex }) => ({ text, color, markIndex })))
+    setMarks(groups.map(({ text, color, kind, markIndex }) => ({ text, color, kind, markIndex })))
     setMarksOpen(true)
   }
 
-  /** Scroll the highlight at the given <mark> index into view and close the popup. */
+  /** Scroll the marking at the given MARK_SELECTOR index into view and close the popup. */
   const scrollToMark = (markIndex: number) => {
-    const el = contentRef.current?.querySelectorAll('mark')[markIndex]
+    const el = contentRef.current?.querySelectorAll(MARK_SELECTOR)[markIndex]
     setMarksOpen(false)
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
@@ -533,7 +536,7 @@ export default function NuggetDetailPage() {
    */
   const copyMarkLink = async (markIndex: number) => {
     const root = contentRef.current
-    const mark = root?.querySelectorAll('mark')[markIndex]
+    const mark = root?.querySelectorAll(MARK_SELECTOR)[markIndex]
     if (!root || !mark) return
     const anchor = anchorForMark(root, mark)
     // Site-relative path so the stored link survives a domain/server move.
@@ -1183,12 +1186,24 @@ export default function NuggetDetailPage() {
                   <div
                     key={i}
                     className="flex items-start gap-1 rounded-lg flex-shrink-0 overflow-hidden"
-                    style={{ background: `var(${HIGHLIGHT_VARS[m.color] ?? '--hl-yellow'})` }}
+                    // Row look mirrors the marking style: highlights get their
+                    // background wash, underlines a neutral fill with the text
+                    // carrying the thick coloured line.
+                    style={{ background: m.kind === 'hl' ? markColorVar('hl', m.color) : 'var(--warm)' }}
                   >
                     <button
                       onClick={() => scrollToMark(m.markIndex)}
                       className="flex-1 min-w-0 text-left text-sm px-3 py-2 line-clamp-2 break-words transition-all active:scale-[0.99]"
-                      style={{ color: 'var(--ink)' }}
+                      style={{
+                        color: 'var(--ink)',
+                        ...(m.kind === 'ul' && {
+                          textDecoration: 'underline',
+                          textDecorationThickness: '0.18em',
+                          textDecorationColor: markColorVar('ul', m.color),
+                          textUnderlineOffset: '0.14em',
+                          textDecorationSkipInk: 'none',
+                        }),
+                      }}
                     >
                       {m.text || '—'}
                     </button>

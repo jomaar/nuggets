@@ -2,10 +2,12 @@ import { marked } from 'marked'
 import TurndownService from 'turndown'
 
 const turndown = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' })
-// Highlights (<mark>) are reader annotations, not content. Unwrap them so the
-// derived Markdown — and therefore the AI — never sees highlight markup.
-turndown.addRule('unwrapHighlight', {
-  filter: 'mark',
+// Highlights (<mark>) and coloured underlines (<u data-color>) are reader
+// annotations, not content. Unwrap them so the derived Markdown — and
+// therefore the AI — never sees marking markup. Plain <u> is unwrapped too:
+// Markdown has no underline syntax, so only the text can survive anyway.
+turndown.addRule('unwrapMarkings', {
+  filter: ['mark', 'u'],
   replacement: content => content,
 })
 

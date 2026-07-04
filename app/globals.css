@@ -22,6 +22,17 @@
   --hl-green:   #cfe9bd;
   --hl-pink:    #f8cdda;
   --hl-orange:  #fbd6a4;
+  --hl-purple:  #e4d4f4;
+
+  /* Underline marking palette — deliberately independent from the highlight
+     hues: pastel washes are unreadable as a line, so these are saturated
+     tones that hold up as a thick text-decoration on white. */
+  --ul-red:     #d64545;
+  --ul-blue:    #2f7fd1;
+  --ul-green:   #3a9e4f;
+  --ul-orange:  #e8830c;
+  --ul-purple:  #8e5bc9;
+  --ul-teal:    #129d9d;
 }
 
 * { box-sizing: border-box; }
@@ -132,6 +143,24 @@ h1, h2, h3, .serif {
 .nugget-content mark[data-color="green"]  { background: var(--hl-green); }
 .nugget-content mark[data-color="pink"]   { background: var(--hl-pink); }
 .nugget-content mark[data-color="orange"] { background: var(--hl-orange); }
+.nugget-content mark[data-color="purple"] { background: var(--hl-purple); }
+
+/* Coloured underline markings — <u data-color="…"> from CssVarUnderline.
+   Deliberately thick + offset so they read as reader markings, clearly
+   distinct from links (thin, accent-coloured underline). Plain <u> without
+   data-color (e.g. from imported HTML) keeps the browser default. */
+.nugget-content u[data-color] {
+  text-decoration: underline;
+  text-decoration-thickness: 0.2em;
+  text-underline-offset: 0.12em;
+  text-decoration-skip-ink: none;
+}
+.nugget-content u[data-color="red"]    { text-decoration-color: var(--ul-red); }
+.nugget-content u[data-color="blue"]   { text-decoration-color: var(--ul-blue); }
+.nugget-content u[data-color="green"]  { text-decoration-color: var(--ul-green); }
+.nugget-content u[data-color="orange"] { text-decoration-color: var(--ul-orange); }
+.nugget-content u[data-color="purple"] { text-decoration-color: var(--ul-purple); }
+.nugget-content u[data-color="teal"]   { text-decoration-color: var(--ul-teal); }
 
 /* In-nugget text search (CSS Custom Highlight API) — paints ranges without
    touching the Tiptap DOM. "current" sits on top of "all" via priority.
@@ -140,16 +169,22 @@ h1, h2, h3, .serif {
    ::highlight() functional pseudo-element as "not a valid pseudo-element".
    Inline <style> bypasses the optimizer; the CSS vars stay global on :root. */
 
-/* Selection BubbleMenu — colour swatches for highlighting (Schritt 7). */
+/* Selection BubbleMenu — two swatch rows: highlights on top, underlines
+   below (plus remove / AI actions at the row ends). */
 .highlight-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e0d8c8);
+  border-radius: 1.1rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+}
+.highlight-menu-row {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.45rem 0.6rem;
-  background: var(--surface, #fff);
-  border: 1px solid var(--border, #e0d8c8);
-  border-radius: 999px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
 }
 .highlight-swatch {
   width: 1.65rem;
@@ -161,6 +196,21 @@ h1, h2, h3, .serif {
   transition: transform 0.1s ease;
 }
 .highlight-swatch:hover {
+  transform: scale(1.18);
+}
+/* Underline swatch: light rounded tile whose thick bottom bar (an inset
+   box-shadow set inline, per colour) previews the underline stroke. */
+.underline-swatch {
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  background: var(--surface, #fff);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.underline-swatch:hover {
   transform: scale(1.18);
 }
 .highlight-remove {

@@ -7,20 +7,9 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { useEffect, useRef, useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import CssVarHighlight from './CssVarHighlight'
+import CssVarUnderline from './CssVarUnderline'
 import AiReworkPopup from './AiReworkPopup'
-
-/**
- * Highlight palette offered in the selection BubbleMenu. The `color` value is
- * written to `data-color`; the actual colour comes from the matching CSS variable
- * in globals.css (see `.nugget-content mark[data-color="…"]`).
- */
-const HIGHLIGHT_COLORS = [
-  { name: 'yellow', label: 'Gelb', cssVar: 'var(--hl-yellow)' },
-  { name: 'blue', label: 'Blau', cssVar: 'var(--hl-blue)' },
-  { name: 'green', label: 'Grün', cssVar: 'var(--hl-green)' },
-  { name: 'pink', label: 'Pink', cssVar: 'var(--hl-pink)' },
-  { name: 'orange', label: 'Orange', cssVar: 'var(--hl-orange)' },
-] as const
+import { HIGHLIGHT_PALETTE, UNDERLINE_PALETTE } from '@/lib/marking'
 
 interface NuggetEditorProps {
   /** Current content as HTML (canonical format). */
@@ -89,8 +78,13 @@ export default function NuggetEditor({
       // bookmark/highlight deep-link URL into a clickable <a>.
       StarterKit.configure({
         link: { openOnClick: false, linkOnPaste: true, autolink: true },
+        // StarterKit (v3) also bundles Underline — disabled because our
+        // CssVarUnderline (colour via data-color) replaces it; two copies of
+        // the same mark would trigger the duplicate-extension warning.
+        underline: false,
       }),
       CssVarHighlight.configure({ multicolor: true }),
+      CssVarUnderline,
       Placeholder.configure({ placeholder: placeholder ?? 'Schreibe dein Nugget…' }),
     ],
     content: value,
@@ -127,12 +121,24 @@ export default function NuggetEditor({
     chain.setHighlight({ color: colorName }).run()
   }
 
-  /** Remove any highlight from the current selection. */
-  const removeHighlight = () => {
+  /**
+   * Apply a coloured underline to the current selection. Same focus rule as
+   * applyHighlight. Uses setMark directly because the stock setUnderline
+   * command takes no attributes.
+   */
+  const applyUnderline = (colorName: string) => {
     if (!editor) return
     const chain = editor.chain()
     if (editor.isEditable) chain.focus()
-    chain.unsetHighlight().run()
+    chain.setMark('underline', { color: colorName }).run()
+  }
+
+  /** Remove both marking styles (highlight + underline) from the selection. */
+  const removeMarks = () => {
+    if (!editor) return
+    const chain = editor.chain()
+    if (editor.isEditable) chain.focus()
+    chain.unsetHighlight().unsetUnderline().run()
   }
 
   /** Open the AI rework popup for the current selection (edit view only). */
@@ -180,38 +186,55 @@ export default function NuggetEditor({
           shouldShow={({ from, to }) => from !== to}
         >
           <div className="highlight-menu">
-            {HIGHLIGHT_COLORS.map((color) => (
-              <button
-                key={color.name}
-                type="button"
-                className="highlight-swatch"
-                style={{ background: color.cssVar }}
-                aria-label={`Markieren: ${color.label}`}
-                title={color.label}
-                onClick={() => applyHighlight(color.name)}
-              />
-            ))}
-            <button
-              type="button"
-              className="highlight-remove"
-              aria-label="Markierung entfernen"
-              title="Markierung entfernen"
-              onClick={removeHighlight}
-            >
-              ✕
-            </button>
-            {/* Edit view only: rework the selected passage with the AI. */}
-            {enableAiRework && editor.isEditable && (
+            {/* Row 1: highlight (background) colours + remove-both. */}
+            <div className="highlight-menu-row">
+              {HIGHLIGHT_PALETTE.map((color) => (
+                <button
+                  key={color.name}
+                  type="button"
+                  className="highlight-swatch"
+                  style={{ background: color.cssVar }}
+                  aria-label={`Markieren: ${color.label}`}
+                  title={color.label}
+                  onClick={() => applyHighlight(color.name)}
+                />
+              ))}
               <button
                 type="button"
-                className="highlight-ai"
-                aria-label="Mit KI überarbeiten"
-                title="Mit KI überarbeiten"
-                onClick={openRework}
+                className="highlight-remove"
+                aria-label="Markierung entfernen"
+                title="Markierung entfernen"
+                onClick={removeMarks}
               >
-                <Sparkles size={22} />
+                ✕
               </button>
-            )}
+            </div>
+            {/* Row 2: underline colours (swatch = thick colour bar at the base). */}
+            <div className="highlight-menu-row">
+              {UNDERLINE_PALETTE.map((color) => (
+                <button
+                  key={color.name}
+                  type="button"
+                  className="underline-swatch"
+                  style={{ boxShadow: `inset 0 -0.34rem 0 ${color.cssVar}` }}
+                  aria-label={`Unterstreichen: ${color.label}`}
+                  title={color.label}
+                  onClick={() => applyUnderline(color.name)}
+                />
+              ))}
+              {/* Edit view only: rework the selected passage with the AI. */}
+              {enableAiRework && editor.isEditable && (
+                <button
+                  type="button"
+                  className="highlight-ai"
+                  aria-label="Mit KI überarbeiten"
+                  title="Mit KI überarbeiten"
+                  onClick={openRework}
+                >
+                  <Sparkles size={22} />
+                </button>
+              )}
+            </div>
           </div>
         </BubbleMenu>
       )}
