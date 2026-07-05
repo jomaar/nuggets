@@ -224,10 +224,12 @@ export default function EditPage() {
     savedTimerRef.current = setTimeout(() => setSavedFlash(false), 2000)
   }
 
-  /** Leave the edit view (Abbrechen), confirming first if there are unsaved changes. */
+  /** Leave the edit view (Abbrechen), confirming first if there are unsaved changes.
+   *  Returns to the nugget's reading view so edit ↔ read works as a mode toggle
+   *  (the reading toolbar with markings etc. is immediately available again). */
   const handleLeave = () => {
     if (dirty && !confirm('Ungespeicherte Änderungen verwerfen?')) return
-    router.push('/all')
+    router.push(`/nugget/${id}`)
   }
 
   const inputStyle = {
