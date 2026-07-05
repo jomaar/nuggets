@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
 // POST /api/nuggets
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { content, contentMarkdown, contentHtml: contentHtmlInput, sourceUrl, sourceLabel, aiChatUrl, tags, domainId, reviseContent, aiHint } = body
+  const { content, contentMarkdown, contentHtml: contentHtmlInput, title, sourceUrl, sourceLabel, aiChatUrl, tags, domainId, reviseContent, aiHint } = body
 
   // Canonical content is HTML. Accept HTML (Tiptap) or Markdown/plain (legacy/quick-add);
   // normalizeToHtml passes HTML through and renders Markdown.
@@ -62,8 +62,11 @@ export async function POST(req: NextRequest) {
   const derivedMarkdown = htmlToMarkdown(contentHtml)
   const contentPlain    = htmlToPlain(contentHtml)
 
+  // A caller-provided title (e.g. Bible import) is kept: the concept extractor
+  // only sets its AI title when the nugget's title is still empty.
   const nugget = await prisma.nugget.create({
     data: {
+      title: typeof title === 'string' ? title.trim() : '',
       contentMarkdown: derivedMarkdown,
       contentHtml,
       contentPlain,

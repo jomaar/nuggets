@@ -162,6 +162,23 @@ h1, h2, h3, .serif {
 .nugget-content u[data-color="purple"] { text-decoration-color: var(--ul-purple); }
 .nugget-content u[data-color="teal"]   { text-decoration-color: var(--ul-teal); }
 
+/* Bible verse markers — empty <sup data-verse="C.V"> atoms (VerseMarker node).
+   The visible [C.V] is GENERATED content: it never enters contentPlain/Markdown,
+   isn't copied with a text selection, and sizes in em so it follows the reading
+   font-size control. Toggle: the single view puts .verses-hidden on the content
+   wrapper (session-only, default hidden); edit view + print route never do, so
+   markers stay visible there. The marker is glued to the following word in the
+   HTML — margin-right provides the visual gap, and hiding leaves exactly one
+   space between words. */
+.nugget-content sup[data-verse]::before {
+  content: "[" attr(data-verse) "]";
+  font-size: 0.62em;
+  color: var(--muted);
+  margin-right: 0.25em;
+  white-space: nowrap;
+}
+.verses-hidden sup[data-verse] { display: none; }
+
 /* In-nugget text search (CSS Custom Highlight API) — paints ranges without
    touching the Tiptap DOM. "current" sits on top of "all" via priority.
    NOTE: the ::highlight() rules live in an inline <style> in app/layout.tsx,

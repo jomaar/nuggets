@@ -10,6 +10,13 @@ turndown.addRule('unwrapMarkings', {
   filter: ['mark', 'u'],
   replacement: content => content,
 })
+// Bible verse markers (<sup data-verse>) are empty positional atoms — remove
+// them entirely so the AI's Markdown projection reads as pure flow text
+// (Turndown pre-collapses whitespace, so no double spaces remain).
+turndown.addRule('dropVerseMarkers', {
+  filter: node => node.nodeName === 'SUP' && node.getAttribute('data-verse') !== null,
+  replacement: () => '',
+})
 
 /**
  * Converts Markdown input to sanitized HTML.

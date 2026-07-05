@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { marked } from 'marked'
 import TurndownService from 'turndown'
 import { stripImportBallast } from '@/lib/content'
+import { detectBibleText, convertBibleText, type BibleConversion } from '@/lib/bible'
 import { countPlainText } from '@/lib/textStats'
 import DomainChips from '@/components/DomainChips'
 import TextStatsBar from '@/components/TextStatsBar'
@@ -36,6 +37,9 @@ export default function AddPage() {
   const [tags, setTags]               = useState('')
   const [reviseContent, setReviseContent] = useState(true)
   const [aiHint, setAiHint]           = useState('')
+  const [title, setTitle]             = useState('')
+  // Result of a Bible conversion; non-null also suppresses re-detection.
+  const [bibleConverted, setBibleConverted] = useState<BibleConversion | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
   const [saving, setSaving]           = useState(false)
   const [extracting, setExtracting]   = useState(false)
@@ -149,6 +153,7 @@ export default function AddPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contentMarkdown: content,
+          title: title.trim() || undefined,
           domainId:    domainId    || null,
           sourceUrl:   sourceUrl   || null,
           sourceLabel: sourceLabel || null,
@@ -197,6 +202,25 @@ export default function AddPage() {
 
   const stats = countPlainText(content)
   const tooLong = stats.chars > WARN_CHARS
+
+  // Raw Bible book detection (translation header + inline verse numbers).
+  // Cheap line scan, skipped for short inputs and after a conversion.
+  const bible = useMemo(
+    () => (bibleConverted ? null : detectBibleText(content)),
+    [content, bibleConverted]
+  )
+
+  // Convert to scroll-style flow text with <sup data-verse> markers. AI revision
+  // must go off: the LLM's rewrite overwrites contentHtml and would drop the
+  // markers (lib/concepts.ts).
+  const handleBibleConvert = () => {
+    const res = convertBibleText(content)
+    setContent(res.body)
+    setTitle(res.title)
+    if (res.sourceLabel && !sourceLabel) setSourceLabel(res.sourceLabel)
+    setReviseContent(false)
+    setBibleConverted(res)
+  }
 
   return (
     <>
@@ -279,6 +303,34 @@ export default function AddPage() {
           {/* Live length meter above the field — turns accent once the soft
               threshold is exceeded. */}
           <TextStatsBar stats={stats} warn={tooLong} className="mb-1.5" />
+          {bible && (
+            <div
+              className="mb-2 p-3 rounded-xl flex items-center justify-between gap-3"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+            >
+              <p className="text-xs" style={{ color: 'var(--ink)' }}>
+                📖 <strong>Bibelbuch erkannt</strong>
+                {bible.title ? `: ${bible.title}` : ''}
+                {bible.translation ? ` (${bible.translation})` : ''} — als Fließtext
+                mit Versmarkern übernehmen?
+              </p>
+              <button
+                type="button"
+                onClick={handleBibleConvert}
+                className="text-xs px-3 py-1 rounded-lg shrink-0 transition-all active:scale-95"
+                style={{ background: 'var(--accent)', color: 'white' }}
+              >
+                Umwandeln
+              </button>
+            </div>
+          )}
+          {bibleConverted && (
+            <p className="text-xs mb-2" style={{ color: 'var(--muted)' }}>
+              📖 Umgewandelt: {bibleConverted.title || 'Bibelbuch'} ·{' '}
+              {bibleConverted.chapterCount} Kapitel · {bibleConverted.verseCount} Verse.
+              Die ✨ KI-Überarbeitung wurde deaktiviert, damit die Versmarker erhalten bleiben.
+            </p>
+          )}
           {!preview ? (
             <textarea
               value={content}

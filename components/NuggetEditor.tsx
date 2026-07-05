@@ -9,6 +9,7 @@ import { MessageSquarePlus, Sparkles } from 'lucide-react'
 import { normalizeToHtml } from '@/lib/content'
 import CssVarHighlight from './CssVarHighlight'
 import CssVarUnderline from './CssVarUnderline'
+import VerseMarker from './VerseMarker'
 import AiReworkPopup from './AiReworkPopup'
 import {
   HIGHLIGHT_PALETTE, UNDERLINE_PALETTE,
@@ -118,6 +119,10 @@ export default function NuggetEditor({
       }),
       CssVarHighlight.configure({ multicolor: true }),
       CssVarUnderline,
+      // Bible verse markers — MUST stay registered: Tiptap's schema is an
+      // allowlist, and even the read-only reader re-serializes for the
+      // highlight save, which would erase unregistered <sup data-verse> atoms.
+      VerseMarker,
       Placeholder.configure({ placeholder: placeholder ?? 'Schreibe dein Nugget…' }),
     ],
     content: value,

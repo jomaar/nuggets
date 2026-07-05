@@ -380,6 +380,9 @@ export default function NuggetDetailPage() {
   // Reading font size for nugget text (px). Default first to match SSR, then
   // read the per-device preference on mount to avoid a hydration mismatch.
   const [fontSize, setFontSize]       = useState(DEFAULT_FONT_SIZE)
+  // Bible verse markers ([chapter.verse]) visibility — session-only by design:
+  // default hidden (scroll-style flow text), not persisted anywhere.
+  const [showVerses, setShowVerses]   = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [marksOpen, setMarksOpen]     = useState(false)
   const [marks, setMarks]             = useState<{ text: string; color: string; kind: MarkKind; markIndex: number }[]>([])
@@ -1501,6 +1504,33 @@ export default function NuggetDetailPage() {
               </div>
             </div>
 
+            {/* Bible verse markers toggle — only for nuggets that contain
+                <sup data-verse> atoms (Bible imports). Session-only state. */}
+            {nugget.contentHtml.includes('data-verse=') && (
+              <div>
+                <h2 className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--muted)' }}>
+                  Versangaben
+                </h2>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm" style={{ color: 'var(--ink)' }}>
+                    Kapitel.Vers im Text anzeigen
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowVerses(v => !v)}
+                    className="text-xs px-3 py-1 rounded-lg transition-all"
+                    style={{
+                      background: showVerses ? 'var(--accent)' : 'transparent',
+                      color:      showVerses ? 'white'         : 'var(--muted)',
+                      border: `1px solid ${showVerses ? 'var(--accent)' : 'var(--border)'}`,
+                    }}
+                  >
+                    {showVerses ? 'An' : 'Aus'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Links */}
             {(nugget.sourceUrl || nugget.aiChatUrl) && (
               <div className="flex gap-4 flex-wrap">
@@ -1596,7 +1626,13 @@ export default function NuggetDetailPage() {
           links, cross-nugget deeplinks) re-renders this page WITHOUT remounting,
           but the reader's highlight-save hook seeds its state/baseline only on
           mount — the key forces a clean remount for the new nugget. */}
-      <div ref={contentRef} onClick={handleContentClick}>
+      <div
+        ref={contentRef}
+        onClick={handleContentClick}
+        // Verse markers are hidden by default (scroll-style reading); the edit
+        // view never gets this class, so markers stay visible while editing.
+        className={showVerses ? undefined : 'verses-hidden'}
+      >
         <NuggetReader
           key={nugget.id}
           id={nugget.id}
