@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import NuggetEditor from '@/components/NuggetEditor'
+import AnnotationSheet, { type NuggetAnnotation } from '@/components/AnnotationSheet'
 import ScrollJumpButton from '@/components/ScrollJumpButton'
 import { useHighlightSave } from '@/components/useHighlightSave'
 import DomainIcon from '@/components/DomainIcon'
@@ -21,7 +22,7 @@ import {
   getNuggetFontSize, setNuggetFontSize,
   MIN_FONT_SIZE, MAX_FONT_SIZE, DEFAULT_FONT_SIZE, FONT_SIZE_STEP,
 } from '@/lib/nuggetFontSize'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer, Pencil, Trash2 } from 'lucide-react'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer, Pencil, Trash2, ArrowLeft, MessageSquareText } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -161,6 +162,42 @@ function clearSearchHighlights(): void {
   const reg = highlightRegistry()
   reg?.delete('search-all')
   reg?.delete('search-current')
+}
+
+/**
+ * Paint every comment anchor via the CSS Custom Highlight API — same
+ * no-DOM-mutation approach as the search painting, so the Tiptap reader (and
+ * its highlight-save baseline) stays untouched. Styles live in layout.tsx
+ * (`::highlight(annotation)` — subtle wash + dotted underline).
+ */
+function setAnnotationHighlights(ranges: Range[]): void {
+  const reg = highlightRegistry()
+  const HighlightCtor = (globalThis as unknown as { Highlight?: new (...r: Range[]) => { priority: number } }).Highlight
+  if (!reg || !HighlightCtor) return
+  reg.delete('annotation')
+  if (ranges.length === 0) return
+  const all = new HighlightCtor(...ranges)
+  all.priority = 0
+  reg.set('annotation', all)
+}
+
+/** Stronger wash on the active comment while the sheet is open (null = off). */
+function setActiveAnnotationHighlight(range: Range | null): void {
+  const reg = highlightRegistry()
+  const HighlightCtor = (globalThis as unknown as { Highlight?: new (...r: Range[]) => { priority: number } }).Highlight
+  if (!reg || !HighlightCtor) return
+  reg.delete('annotation-active')
+  if (!range) return
+  const active = new HighlightCtor(range)
+  active.priority = 2
+  reg.set('annotation-active', active)
+}
+
+/** Remove both comment highlight layers. */
+function clearAnnotationHighlights(): void {
+  const reg = highlightRegistry()
+  reg?.delete('annotation')
+  reg?.delete('annotation-active')
 }
 
 /**
@@ -312,7 +349,12 @@ const SCROLL_RESTORE_KEY = 'nugget-restore-scroll'
  * Mounted only once the nugget is loaded so the highlight hook is seeded with
  * the real initial HTML (its baseline is captured at first render).
  */
-function NuggetReader({ id, contentHtml, markScheme }: { id: string; contentHtml: string; markScheme: MarkScheme }) {
+function NuggetReader({ id, contentHtml, markScheme, onComment }: {
+  id: string
+  contentHtml: string
+  markScheme: MarkScheme
+  onComment?: () => void
+}) {
   const { html, handleContentChange, handleEditorReady } = useHighlightSave(id, contentHtml)
   return (
     <NuggetEditor
@@ -321,6 +363,7 @@ function NuggetReader({ id, contentHtml, markScheme }: { id: string; contentHtml
       onChange={handleContentChange}
       onReady={handleEditorReady}
       markScheme={markScheme}
+      onComment={onComment}
     />
   )
 }
@@ -350,6 +393,26 @@ export default function NuggetDetailPage() {
   const [importSource, setImportSource]   = useState<{ id: string; title: string; scheme: MarkScheme } | null>(null)
   // Mark index whose deep-link was just copied (flips that row's icon to a check).
   const [copiedMarkIndex, setCopiedMarkIndex] = useState<number | null>(null)
+  // Margin comments (annotations): anchored the same way as bookmarks
+  // (text-quote anchor), stored as metadata — contentHtml is never touched.
+  const [annotations, setAnnotations] = useState<NuggetAnnotation[]>([])
+  const [annotationsOpen, setAnnotationsOpen] = useState(false)
+  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
+  // Comment ids in document order (anchors resolved against the rendered
+  // content; orphaned ones last). Drives the sheet's prev/next stepping.
+  const [annotationOrder, setAnnotationOrder] = useState<string[]>([])
+  // Live Range per comment id — a ref, not state: ranges are re-resolved after
+  // content mutations and read by scroll-sync/tap hit-testing, none of which
+  // should re-render the reading view.
+  const annotationRanges = useRef<Map<string, Range>>(new Map())
+  // Bumped (debounced) when the reader DOM mutates, to re-resolve anchors.
+  const [annotationResolveTick, setAnnotationResolveTick] = useState(0)
+  // Last non-collapsed DOM selection inside the content (via selectionchange):
+  // the comment button's raw material — reading the selection in its click
+  // handler is too late, iOS may already have collapsed it.
+  const selectionRangeRef = useRef<Range | null>(null)
+  // Debounce timers for comment PATCHes, one per comment id.
+  const annotationSaveTimers = useRef<Map<string, number>>(new Map())
   const [searchOpen, setSearchOpen]   = useState(false)
   const [query, setQuery]             = useState('')
   const [matchCount, setMatchCount]   = useState(0)
@@ -393,6 +456,122 @@ export default function NuggetDetailPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  // Load this nugget's comments. A same-segment hop to another nugget resets
+  // the whole comment state — the sheet must never show the previous nugget's.
+  useEffect(() => {
+    setAnnotations([])
+    setAnnotationOrder([])
+    setActiveAnnotationId(null)
+    setAnnotationsOpen(false)
+    annotationRanges.current = new Map()
+    clearAnnotationHighlights()
+    fetch(`/api/annotations?nuggetId=${id}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((list: NuggetAnnotation[]) => setAnnotations(list))
+      .catch(() => {})
+  }, [id])
+
+  // Track the last non-collapsed selection inside the reading content. The
+  // BubbleMenu's comment button needs the DOM Range to build the anchor, and
+  // by the time its click handler runs the selection may already be collapsed.
+  useEffect(() => {
+    const onSelectionChange = () => {
+      const sel = document.getSelection()
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
+      const range = sel.getRangeAt(0)
+      if (!contentRef.current?.contains(range.commonAncestorContainer)) return
+      selectionRangeRef.current = range.cloneRange()
+    }
+    document.addEventListener('selectionchange', onSelectionChange)
+    return () => document.removeEventListener('selectionchange', onSelectionChange)
+  }, [])
+
+  // Re-resolve comment anchors (debounced) whenever the reader DOM changes:
+  // Tiptap renders async, and adding/removing highlights redraws nodes, which
+  // silently orphans previously resolved Ranges.
+  useEffect(() => {
+    if (!nugget) return
+    const root = contentRef.current
+    if (!root) return
+    let timer = 0
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer)
+      timer = window.setTimeout(() => setAnnotationResolveTick(t => t + 1), 300)
+    })
+    observer.observe(root, { childList: true, characterData: true, subtree: true })
+    return () => { observer.disconnect(); clearTimeout(timer) }
+  }, [nugget])
+
+  // Resolve every comment anchor against the rendered content, establish the
+  // document order, and paint the in-text indicators (CSS Custom Highlight
+  // API — no DOM mutation). Retries across frames while Tiptap is still
+  // rendering, same pattern as the bookmark jump.
+  useEffect(() => {
+    if (!nugget) return
+    let attempts = 0
+    let raf = 0
+    const resolveAll = () => {
+      const root = contentRef.current
+      const ready = !!root && (root.textContent ?? '').trim().length > 0
+      if (!ready && annotations.length > 0 && attempts++ < 40) {
+        raf = requestAnimationFrame(resolveAll)
+        return
+      }
+      const map = new Map<string, Range>()
+      if (root) {
+        for (const a of annotations) {
+          const range = resolveAnchor(root, a.quote, a.prefix, a.suffix)
+          if (range) map.set(a.id, range)
+        }
+      }
+      annotationRanges.current = map
+      const resolvedIds = annotations
+        .filter(a => map.has(a.id))
+        .sort((a, b) => map.get(a.id)!.compareBoundaryPoints(Range.START_TO_START, map.get(b.id)!))
+        .map(a => a.id)
+      const orphanIds = annotations.filter(a => !map.has(a.id)).map(a => a.id)
+      setAnnotationOrder([...resolvedIds, ...orphanIds])
+      setAnnotationHighlights([...map.values()])
+    }
+    raf = requestAnimationFrame(resolveAll)
+    return () => cancelAnimationFrame(raf)
+  }, [annotations, nugget, annotationResolveTick])
+
+  // Stronger wash on the active comment while the sheet is open. The order
+  // dependency re-runs this after a re-resolution, replacing a stale Range.
+  useEffect(() => {
+    const range = annotationsOpen && activeAnnotationId
+      ? annotationRanges.current.get(activeAnnotationId) ?? null
+      : null
+    setActiveAnnotationHighlight(range)
+  }, [annotationsOpen, activeAnnotationId, annotationOrder])
+
+  // While the sheet is open, scrolling the text switches the active comment
+  // to the topmost one visible in the reading area (sticky bar → sheet edge) —
+  // "scroll to a spot and the sheet shows what you noted there".
+  useEffect(() => {
+    if (!annotationsOpen) return
+    let timer = 0
+    const onScroll = () => {
+      clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        const stickyBottom = stickyRef.current?.getBoundingClientRect().bottom ?? 0
+        const viewBottom = window.innerHeight * 0.56 // the sheet covers ~42dvh
+        let best: string | null = null
+        let bestTop = Infinity
+        annotationRanges.current.forEach((range, aid) => {
+          const rect = range.getBoundingClientRect()
+          if (rect.height === 0 && rect.width === 0) return
+          if (rect.bottom < stickyBottom || rect.top > viewBottom) return
+          if (rect.top < bestTop) { bestTop = rect.top; best = aid }
+        })
+        if (best) setActiveAnnotationId(best)
+      }, 150)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => { window.removeEventListener('scroll', onScroll); clearTimeout(timer) }
+  }, [annotationsOpen])
 
   // Remember this nugget as recently opened (per-device, localStorage), so the
   // bookmarks home tab can list current work without an explicit bookmark.
@@ -658,6 +837,166 @@ export default function NuggetDetailPage() {
   }
 
   /**
+   * Create a comment from the captured selection and open the sheet on it.
+   * The anchor is clamped to the selection's first text node — findRanges/
+   * resolveAnchor match within single text nodes, mirroring the bookmark
+   * anchors — so a selection spanning paragraphs anchors at its start.
+   */
+  const addAnnotation = async () => {
+    const root = contentRef.current
+    const sel = selectionRangeRef.current
+    if (!root || !sel) return
+
+    let node: Text | null = null
+    let startOffset = 0
+    if (sel.startContainer.nodeType === Node.TEXT_NODE) {
+      node = sel.startContainer as Text
+      startOffset = sel.startOffset
+    } else {
+      // Selection starts on an element — descend to its first non-empty text node.
+      const walker = document.createTreeWalker(sel.startContainer, NodeFilter.SHOW_TEXT)
+      let t = walker.nextNode() as Text | null
+      while (t && (t.nodeValue ?? '').trim() === '') t = walker.nextNode() as Text | null
+      node = t
+    }
+    if (!node) return
+
+    const nodeText = node.nodeValue ?? ''
+    let endOffset = sel.endContainer === node ? sel.endOffset : nodeText.length
+    let quote = nodeText.slice(startOffset, endOffset).trim()
+    if (!quote) { startOffset = 0; endOffset = nodeText.length; quote = nodeText.trim() }
+    if (!quote) return
+
+    // Context around the quote's boundaries; fuzzy-scored on resolve, so the
+    // trim above not being reflected in the offsets is harmless.
+    const before = document.createRange()
+    before.setStart(root, 0)
+    before.setEnd(node, startOffset)
+    const after = document.createRange()
+    after.setStart(node, Math.min(endOffset, nodeText.length))
+    after.setEnd(root, root.childNodes.length)
+    const prefix = squashWhitespace(before.toString()).slice(-ANCHOR_CONTEXT_LEN)
+    const suffix = squashWhitespace(after.toString()).slice(0, ANCHOR_CONTEXT_LEN)
+
+    const res = await fetch('/api/annotations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nuggetId: id, quote, prefix, suffix, body: '' }),
+    })
+    if (!res.ok) return
+    const created: NuggetAnnotation = await res.json()
+    setAnnotations(prev => [...prev, created])
+    setActiveAnnotationId(created.id)
+    setAnnotationsOpen(true)
+  }
+
+  /** Live-edit a comment: state immediately, PATCH debounced per comment. */
+  const updateAnnotationBody = (annotationId: string, body: string) => {
+    setAnnotations(prev => prev.map(a => (a.id === annotationId ? { ...a, body } : a)))
+    const timers = annotationSaveTimers.current
+    clearTimeout(timers.get(annotationId))
+    timers.set(annotationId, window.setTimeout(() => {
+      timers.delete(annotationId)
+      fetch(`/api/annotations/${annotationId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body }),
+      }).catch(() => {})
+    }, 600))
+  }
+
+  /** Persist a pending comment edit immediately (textarea blur). */
+  const flushAnnotationSave = (annotationId: string) => {
+    const timers = annotationSaveTimers.current
+    const timer = timers.get(annotationId)
+    if (timer === undefined) return
+    clearTimeout(timer)
+    timers.delete(annotationId)
+    const body = annotations.find(a => a.id === annotationId)?.body ?? ''
+    fetch(`/api/annotations/${annotationId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }),
+    }).catch(() => {})
+  }
+
+  /** Delete a comment; the active one hands over to its document-order neighbour. */
+  const deleteAnnotation = async (annotationId: string) => {
+    clearTimeout(annotationSaveTimers.current.get(annotationId))
+    annotationSaveTimers.current.delete(annotationId)
+    setAnnotations(prev => prev.filter(a => a.id !== annotationId))
+    if (activeAnnotationId === annotationId) {
+      const idx = annotationOrder.indexOf(annotationId)
+      const rest = annotationOrder.filter(x => x !== annotationId)
+      setActiveAnnotationId(rest[idx] ?? rest[idx - 1] ?? null)
+    }
+    await fetch(`/api/annotations/${annotationId}`, { method: 'DELETE' })
+  }
+
+  /**
+   * Close the sheet. Comments left empty are junk (created but never written),
+   * so they are deleted — no orphaned indicators linger in the text.
+   */
+  const closeAnnotations = () => {
+    setAnnotationsOpen(false)
+    if (!isOwner) return
+    annotations.filter(a => a.body.trim() === '').forEach(a => deleteAnnotation(a.id))
+  }
+
+  /** Open the sheet from the toolbar (first comment active unless one already is). */
+  const openAnnotations = () => {
+    if (!activeAnnotationId || !annotations.some(a => a.id === activeAnnotationId)) {
+      setActiveAnnotationId(annotationOrder[0] ?? null)
+    }
+    setAnnotationsOpen(true)
+  }
+
+  /** Make a comment active and scroll its anchored spot into the reading area. */
+  const jumpToAnnotation = (annotationId: string) => {
+    setActiveAnnotationId(annotationId)
+    const range = annotationRanges.current.get(annotationId)
+    if (!range) return
+    const stickyBottom = stickyRef.current?.getBoundingClientRect().bottom ?? 0
+    scrollRangeIntoView(range, stickyBottom + 24)
+  }
+
+  /** Step through comments in document order (wrapping), scrolling the text along. */
+  const stepAnnotation = (dir: 1 | -1) => {
+    if (annotationOrder.length === 0) return
+    const idx = annotationOrder.indexOf(activeAnnotationId ?? '')
+    const next = annotationOrder[(idx + dir + annotationOrder.length) % annotationOrder.length]
+    jumpToAnnotation(next)
+  }
+
+  /**
+   * Open the sheet when a tap lands on a commented passage. Hit-testing uses
+   * the resolved Ranges' client rects (with a little slop): no DOM markers
+   * exist — the indicator is painted via the CSS Custom Highlight API.
+   */
+  const handleAnnotationTap = (event: React.MouseEvent) => {
+    // A drag-selection's trailing click must not open the sheet.
+    const sel = document.getSelection()
+    if (sel && !sel.isCollapsed) return
+    const x = event.clientX
+    const y = event.clientY
+    const SLOP = 6
+    let hit: string | null = null
+    annotationRanges.current.forEach((range, aid) => {
+      if (hit) return
+      for (const rect of Array.from(range.getClientRects())) {
+        if (x >= rect.left - SLOP && x <= rect.right + SLOP &&
+            y >= rect.top - SLOP && y <= rect.bottom + SLOP) {
+          hit = aid
+          return
+        }
+      }
+    })
+    if (!hit) return
+    setActiveAnnotationId(hit)
+    setAnnotationsOpen(true)
+  }
+
+  /**
    * Rebuild match ranges for `q`, paint them, and jump to the first hit.
    * Returns whether any match was found. Shared by the live search box and the
    * auto-search seeded from the all-list (`?q=`).
@@ -700,8 +1039,9 @@ export default function NuggetDetailPage() {
     clearSearchHighlights()
   }
 
-  // Drop any lingering search highlights when leaving the page.
+  // Drop any lingering search/comment highlights when leaving the page.
   useEffect(() => clearSearchHighlights, [])
+  useEffect(() => clearAnnotationHighlights, [])
 
   // Guards the one-shot auto-search seeded from the all-list (`?q=`).
   const didInitSearch = useRef(false)
@@ -802,7 +1142,11 @@ export default function NuggetDetailPage() {
   const handleContentClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const anchor = (event.target as HTMLElement).closest('a')
     const href = anchor?.getAttribute('href')
-    if (!href) return
+    if (!href) {
+      // Not a link — maybe a tap on a commented passage.
+      handleAnnotationTap(event)
+      return
+    }
 
     let url: URL
     try { url = new URL(href, window.location.origin) } catch { return }
@@ -856,6 +1200,16 @@ export default function NuggetDetailPage() {
     hasMarkLabel(scheme, r.kind, r.name),
   )
 
+  // Sheet order: resolved anchors in document order, orphans behind them, plus
+  // any comment so fresh the resolve effect hasn't caught up yet, at the end.
+  const orderedAnnotations = [
+    ...annotationOrder
+      .map(aid => annotations.find(a => a.id === aid))
+      .filter((a): a is NuggetAnnotation => a !== undefined),
+    ...annotations.filter(a => !annotationOrder.includes(a.id)),
+  ]
+  const resolvedAnnotationIds = annotationOrder.filter(aid => annotationRanges.current.has(aid))
+
   return (
     <>
       {/* Sticky action bar — back / info / edit / delete reachable at any
@@ -866,12 +1220,15 @@ export default function NuggetDetailPage() {
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
         <div className="flex items-center justify-between gap-3">
+          {/* Icon-only like the action group: with the comments button the bar
+              holds 9 icons, and a text "Zurück" would overflow narrow iPhones. */}
           <button
             onClick={() => router.back()}
-            className="text-sm px-3 py-1 rounded-lg"
+            aria-label="Zurück"
+            className="flex items-center justify-center p-1.5 rounded-lg"
             style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
           >
-            ← Zurück
+            <ArrowLeft size={16} />
           </button>
 
           {/* All actions as uniform icons in one group so the bar never
@@ -911,6 +1268,20 @@ export default function NuggetDetailPage() {
             >
               <Highlighter size={16} />
             </button>
+            {(isOwner || annotations.length > 0) && (
+              <button
+                onClick={() => (annotationsOpen ? closeAnnotations() : openAnnotations())}
+                aria-label="Kommentare"
+                className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+                style={{
+                  color:      annotationsOpen ? 'white'        : 'var(--muted)',
+                  background: annotationsOpen ? 'var(--accent)' : 'transparent',
+                  border: `1px solid ${annotationsOpen ? 'var(--accent)' : 'var(--border)'}`,
+                }}
+              >
+                <MessageSquareText size={16} />
+              </button>
+            )}
             <button
               onClick={() => setInfoOpen(o => !o)}
               aria-label="Details & Konzepte"
@@ -1201,12 +1572,35 @@ export default function NuggetDetailPage() {
           but the reader's highlight-save hook seeds its state/baseline only on
           mount — the key forces a clean remount for the new nugget. */}
       <div ref={contentRef} onClick={handleContentClick}>
-        <NuggetReader key={nugget.id} id={nugget.id} contentHtml={nugget.contentHtml} markScheme={scheme} />
+        <NuggetReader
+          key={nugget.id}
+          id={nugget.id}
+          contentHtml={nugget.contentHtml}
+          markScheme={scheme}
+          onComment={isOwner ? addAnnotation : undefined}
+        />
       </div>
 
       {/* Floating jump-to-end / jump-back button (keyed like the reader so a
           same-segment hop to another nugget resets any pending return jump). */}
       <ScrollJumpButton key={`jump-${nugget.id}`} />
+
+      {/* Margin comments — bottom half sheet, no backdrop: the text above
+          stays scrollable, and scrolling switches the active comment. */}
+      {annotationsOpen && (
+        <AnnotationSheet
+          annotations={orderedAnnotations}
+          resolvedIds={resolvedAnnotationIds}
+          activeId={activeAnnotationId}
+          isOwner={isOwner}
+          onStep={stepAnnotation}
+          onJump={jumpToAnnotation}
+          onChangeBody={updateAnnotationBody}
+          onFlush={flushAnnotationSave}
+          onDelete={deleteAnnotation}
+          onClose={closeAnnotations}
+        />
+      )}
 
       {/* Related nuggets — proximity over shared abstract concepts (lib/graph.ts).
           Each row names the shared concepts: the reason the two nuggets are close. */}

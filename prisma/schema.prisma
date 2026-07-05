@@ -47,10 +47,11 @@ model Nugget {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  domain    Domain?         @relation(fields: [domainId], references: [id])
-  reviews   Review[]
-  concepts  NuggetConcept[]
-  bookmarks Bookmark[]
+  domain      Domain?         @relation(fields: [domainId], references: [id])
+  reviews     Review[]
+  concepts    NuggetConcept[]
+  bookmarks   Bookmark[]
+  annotations Annotation[]
 
   @@map("nuggets")
 }
@@ -74,6 +75,28 @@ model Bookmark {
 
   @@index([nuggetId])
   @@map("bookmarks")
+}
+
+/**
+ * A margin comment attached to a spot in a nugget's text. Anchored the same
+ * way as bookmarks — a text-quote anchor (W3C Web Annotation style: quote +
+ * prefix/suffix context) — NOT stored inline in contentHtml, so the reading
+ * text stays untouched and the comment survives reflow and edits elsewhere.
+ */
+model Annotation {
+  id        String   @id @default(cuid())
+  nuggetId  String
+  quote     String // the commented text span (within one text node), used for matching
+  prefix    String // ~30 chars immediately before the quote (disambiguating context)
+  suffix    String // ~30 chars immediately after the quote (disambiguating context)
+  body      String // the comment text itself
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  nugget Nugget @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
+
+  @@index([nuggetId])
+  @@map("annotations")
 }
 
 model Concept {

@@ -53,6 +53,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             __html: `
 ::highlight(search-all) { background: var(--hl-yellow); color: var(--ink); }
 ::highlight(search-current) { background: var(--accent); color: #fff; }
+::highlight(annotation) { background: color-mix(in srgb, var(--accent) 12%, transparent); text-decoration: underline dotted var(--accent); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
+::highlight(annotation-active) { background: color-mix(in srgb, var(--accent) 26%, transparent); }
 `,
           }}
         />

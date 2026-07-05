@@ -5,7 +5,7 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useEffect, useRef, useState } from 'react'
-import { Sparkles } from 'lucide-react'
+import { MessageSquarePlus, Sparkles } from 'lucide-react'
 import { normalizeToHtml } from '@/lib/content'
 import CssVarHighlight from './CssVarHighlight'
 import CssVarUnderline from './CssVarUnderline'
@@ -32,6 +32,13 @@ interface NuggetEditorProps {
   editable?: boolean
   /** Opt-in: show a "rework with AI" action in the selection menu (edit view). */
   enableAiRework?: boolean
+  /**
+   * Opt-in: show a "comment" action in the selection menu (reading view). The
+   * handler reads the live DOM selection itself (the single view tracks it via
+   * selectionchange); afterwards the editor selection is collapsed so the menu
+   * closes.
+   */
+  onComment?: () => void
   /**
    * Per-nugget colour meanings (lib/marking.ts). Named colours show their name
    * as a mini label under the swatch (iOS has no hover tooltips).
@@ -81,6 +88,7 @@ export default function NuggetEditor({
   placeholder,
   editable = true,
   enableAiRework = false,
+  onComment,
   markScheme = {},
 }: NuggetEditorProps) {
   // The selected passage handed to the AI rework popup (null = popup closed).
@@ -184,6 +192,19 @@ export default function NuggetEditor({
     const chain = editor.chain()
     if (editor.isEditable) chain.focus()
     chain.unsetHighlight().unsetUnderline().run()
+  }
+
+  /**
+   * Hand the current selection to the comment handler (reading view only),
+   * then collapse the editor selection so the BubbleMenu closes. The DOM
+   * selection is cleared too — the caller has already captured it.
+   */
+  const commentSelection = () => {
+    if (!editor || !onComment) return
+    const { to } = editor.state.selection
+    onComment()
+    editor.chain().setTextSelection(to).run()
+    window.getSelection()?.removeAllRanges()
   }
 
   /** Open the AI rework popup for the current selection (edit view only). */
@@ -290,6 +311,21 @@ export default function NuggetEditor({
                   </div>
                 )
               })}
+              {/* Reading view only: attach a margin comment to the selection. */}
+              {onComment && (
+                <div className="swatch-cell">
+                  <button
+                    type="button"
+                    className="highlight-ai"
+                    aria-label="Kommentar hinzufügen"
+                    title="Kommentar hinzufügen"
+                    onClick={commentSelection}
+                  >
+                    <MessageSquarePlus size={22} />
+                  </button>
+                  {ulRowNamed && <span className="swatch-label">{'\u00a0'}</span>}
+                </div>
+              )}
               {/* Edit view only: rework the selected passage with the AI. */}
               {enableAiRework && editor.isEditable && (
                 <div className="swatch-cell">
