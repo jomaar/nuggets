@@ -163,19 +163,29 @@ export default function EditPage() {
     const offset = Number(raw)
     if (Number.isNaN(offset)) return
 
-    let cancelled = false
+    // Re-apply the target each frame until we reach it and hold briefly, or a
+    // safety cap elapses (same pattern as the single view's scroll restore):
+    // Tiptap grows the page async, so a fixed short window under-scrolls on
+    // long documents / slow devices.
     const start = performance.now()
+    let reachedAt = 0
+    let raf = 0
     const tick = () => {
-      if (cancelled) return
       const box = editorBoxRef.current
       if (box) {
         const editorTop = box.getBoundingClientRect().top + window.scrollY
-        window.scrollTo({ top: Math.max(0, editorTop + offset) })
-      }
-      if (performance.now() - start < 600) requestAnimationFrame(tick)
+        const maxScroll = document.documentElement.scrollHeight - window.innerHeight
+        const goal = Math.min(Math.max(0, editorTop + offset), Math.max(0, maxScroll))
+        window.scrollTo({ top: goal })
+        const reached = Math.abs(window.scrollY - goal) <= 2
+        reachedAt = reached ? (reachedAt || performance.now()) : 0
+        const held = reachedAt && performance.now() - reachedAt > 150
+        if (held || performance.now() - start > 2500) return
+      } else if (performance.now() - start > 2500) return
+      raf = requestAnimationFrame(tick)
     }
-    requestAnimationFrame(tick)
-    return () => { cancelled = true }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
   }, [loading, id])
 
   const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -226,9 +236,16 @@ export default function EditPage() {
 
   /** Leave the edit view (Abbrechen), confirming first if there are unsaved changes.
    *  Returns to the nugget's reading view so edit ↔ read works as a mode toggle
-   *  (the reading toolbar with markings etc. is immediately available again). */
+   *  (the reading toolbar with markings etc. is immediately available again).
+   *  Stashes the scroll depth *within the content* (mirror of the single view's
+   *  goEdit) so the reading view reopens at the spot the user was editing. */
   const handleLeave = () => {
     if (dirty && !confirm('Ungespeicherte Änderungen verwerfen?')) return
+    const box = editorBoxRef.current
+    if (box) {
+      const editorTop = box.getBoundingClientRect().top + window.scrollY
+      sessionStorage.setItem(`nugget-read-scroll-${id}`, String(window.scrollY - editorTop))
+    }
     router.push(`/nugget/${id}`)
   }
 

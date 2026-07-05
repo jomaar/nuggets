@@ -680,8 +680,11 @@ export default function NuggetDetailPage() {
   const restoredScrollFor = useRef<string | null>(null)
 
   /**
-   * Restore the saved scroll position when the recent list asked for it. A
-   * bookmark target (URL `?bm=` or a stashed jump) takes precedence, so a
+   * Restore the saved scroll position when the recent list asked for it (absolute
+   * window offset from localStorage) OR when the user returns from the edit view
+   * (content-relative offset stashed by the editor's Schließen — the two pages
+   * have different chrome above the text, so absolute offsets don't transfer).
+   * A bookmark target (URL `?bm=` or a stashed jump) takes precedence, so a
    * deliberate jump always wins. Tiptap renders async and grows the page, so we
    * re-apply the target across animation frames until it fits (or time out).
    */
@@ -689,23 +692,40 @@ export default function NuggetDetailPage() {
     if (!nugget || restoredScrollFor.current === nugget.id) return
     if (new URLSearchParams(window.location.search).get('bm')) return
     if (sessionStorage.getItem(BOOKMARK_JUMP_KEY)) return
-    if (sessionStorage.getItem(SCROLL_RESTORE_KEY) !== nugget.id) return
+
+    const editReturnRaw = sessionStorage.getItem(`nugget-read-scroll-${nugget.id}`)
+    const fromRecent = sessionStorage.getItem(SCROLL_RESTORE_KEY) === nugget.id
+    if (editReturnRaw === null && !fromRecent) return
 
     restoredScrollFor.current = nugget.id
-    sessionStorage.removeItem(SCROLL_RESTORE_KEY)
-    const target = getRecentScroll(nugget.id)
-    if (!target) return
+    sessionStorage.removeItem(`nugget-read-scroll-${nugget.id}`)
+    if (fromRecent) sessionStorage.removeItem(SCROLL_RESTORE_KEY)
+
+    // Edit return wins over the recent-list target: it is the fresher position.
+    const contentOffset = editReturnRaw !== null ? Number(editReturnRaw) : NaN
+    const absoluteTarget = Number.isNaN(contentOffset) ? getRecentScroll(nugget.id) : undefined
+    if (Number.isNaN(contentOffset) && !absoluteTarget) return
 
     // Re-apply the target each frame until we reach it and hold briefly, or a
     // safety cap elapses. Tiptap renders async and grows the page (so the target
     // may be unreachable for a while on a slow device), and a late scroll-to-top
-    // can strand us at 0 — holding past first contact beats both.
+    // can strand us at 0 — holding past first contact beats both. The content-
+    // relative target is re-measured every frame for the same reason.
     const start = performance.now()
     let reachedAt = 0
     let raf = 0
     const tick = () => {
+      let target = absoluteTarget ?? 0
+      if (!Number.isNaN(contentOffset)) {
+        const content = contentRef.current
+        if (!content) {
+          if (performance.now() - start < 2500) raf = requestAnimationFrame(tick)
+          return
+        }
+        target = content.getBoundingClientRect().top + window.scrollY + contentOffset
+      }
       const maxScroll = document.documentElement.scrollHeight - window.innerHeight
-      const goal = Math.min(target, Math.max(0, maxScroll))
+      const goal = Math.min(Math.max(0, target), Math.max(0, maxScroll))
       window.scrollTo({ top: goal })
       const reached = Math.abs(window.scrollY - goal) <= 2
       reachedAt = reached ? (reachedAt || performance.now()) : 0
