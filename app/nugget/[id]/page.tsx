@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import NuggetEditor from '@/components/NuggetEditor'
+import ScrollJumpButton from '@/components/ScrollJumpButton'
 import { useHighlightSave } from '@/components/useHighlightSave'
 import DomainIcon from '@/components/DomainIcon'
 import TextStatsBar from '@/components/TextStatsBar'
@@ -1202,6 +1203,10 @@ export default function NuggetDetailPage() {
       <div ref={contentRef} onClick={handleContentClick}>
         <NuggetReader key={nugget.id} id={nugget.id} contentHtml={nugget.contentHtml} markScheme={scheme} />
       </div>
+
+      {/* Floating jump-to-end / jump-back button (keyed like the reader so a
+          same-segment hop to another nugget resets any pending return jump). */}
+      <ScrollJumpButton key={`jump-${nugget.id}`} />
 
       {/* Related nuggets — proximity over shared abstract concepts (lib/graph.ts).
           Each row names the shared concepts: the reason the two nuggets are close. */}
