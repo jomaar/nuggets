@@ -151,22 +151,23 @@ export default function EditPage() {
 
   /**
    * Restore the reading scroll position: if the single view stashed how far the
-   * user had scrolled into the content, scroll the editor box to the same depth.
-   * The Tiptap editor renders asynchronously and grows the page height, so we
-   * keep re-applying the target for a short window until the layout settles.
+   * user had scrolled into the content (as a fraction of the content height —
+   * the two views wrap lines differently, so pixel offsets don't transfer),
+   * scroll the editor box to the same relative depth.
    */
   useEffect(() => {
     if (loading) return
-    const raw = sessionStorage.getItem(`nugget-edit-scroll-${id}`)
+    const raw = sessionStorage.getItem(`nugget-edit-pos-${id}`)
     if (raw === null) return
-    sessionStorage.removeItem(`nugget-edit-scroll-${id}`)
-    const offset = Number(raw)
-    if (Number.isNaN(offset)) return
+    sessionStorage.removeItem(`nugget-edit-pos-${id}`)
+    const ratio = Number(raw)
+    if (Number.isNaN(ratio)) return
 
     // Re-apply the target each frame until we reach it and hold briefly, or a
     // safety cap elapses (same pattern as the single view's scroll restore):
     // Tiptap grows the page async, so a fixed short window under-scrolls on
-    // long documents / slow devices.
+    // long documents / slow devices. The ratio is re-applied to the CURRENT
+    // editor height each frame, so the goal converges as the layout settles.
     const start = performance.now()
     let reachedAt = 0
     let raf = 0
@@ -174,6 +175,7 @@ export default function EditPage() {
       const box = editorBoxRef.current
       if (box) {
         const editorTop = box.getBoundingClientRect().top + window.scrollY
+        const offset = ratio * box.offsetHeight
         const maxScroll = document.documentElement.scrollHeight - window.innerHeight
         const goal = Math.min(Math.max(0, editorTop + offset), Math.max(0, maxScroll))
         window.scrollTo({ top: goal })
@@ -237,14 +239,17 @@ export default function EditPage() {
   /** Leave the edit view (Abbrechen), confirming first if there are unsaved changes.
    *  Returns to the nugget's reading view so edit ↔ read works as a mode toggle
    *  (the reading toolbar with markings etc. is immediately available again).
-   *  Stashes the scroll depth *within the content* (mirror of the single view's
-   *  goEdit) so the reading view reopens at the spot the user was editing. */
+   *  Stashes the scroll depth *within the content* as a fraction of the editor
+   *  height (mirror of the single view's goEdit — the views wrap lines
+   *  differently, so pixel offsets don't transfer) so the reading view reopens
+   *  at the spot the user was editing. */
   const handleLeave = () => {
     if (dirty && !confirm('Ungespeicherte Änderungen verwerfen?')) return
     const box = editorBoxRef.current
     if (box) {
       const editorTop = box.getBoundingClientRect().top + window.scrollY
-      sessionStorage.setItem(`nugget-read-scroll-${id}`, String(window.scrollY - editorTop))
+      const ratio = (window.scrollY - editorTop) / Math.max(1, box.offsetHeight)
+      sessionStorage.setItem(`nugget-read-pos-${id}`, String(ratio))
     }
     router.push(`/nugget/${id}`)
   }

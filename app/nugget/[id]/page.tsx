@@ -682,47 +682,49 @@ export default function NuggetDetailPage() {
   /**
    * Restore the saved scroll position when the recent list asked for it (absolute
    * window offset from localStorage) OR when the user returns from the edit view
-   * (content-relative offset stashed by the editor's Schließen — the two pages
-   * have different chrome above the text, so absolute offsets don't transfer).
-   * A bookmark target (URL `?bm=` or a stashed jump) takes precedence, so a
-   * deliberate jump always wins. Tiptap renders async and grows the page, so we
-   * re-apply the target across animation frames until it fits (or time out).
+   * (position stashed by the editor's Schließen as a FRACTION of the content
+   * height — the two pages have different chrome above the text and a different
+   * text-column width, i.e. different line wrapping, so pixel offsets don't
+   * transfer). A bookmark target (URL `?bm=` or a stashed jump) takes precedence,
+   * so a deliberate jump always wins. Tiptap renders async and grows the page, so
+   * we re-apply the target across animation frames until it fits (or time out).
    */
   useEffect(() => {
     if (!nugget || restoredScrollFor.current === nugget.id) return
     if (new URLSearchParams(window.location.search).get('bm')) return
     if (sessionStorage.getItem(BOOKMARK_JUMP_KEY)) return
 
-    const editReturnRaw = sessionStorage.getItem(`nugget-read-scroll-${nugget.id}`)
+    const editReturnRaw = sessionStorage.getItem(`nugget-read-pos-${nugget.id}`)
     const fromRecent = sessionStorage.getItem(SCROLL_RESTORE_KEY) === nugget.id
     if (editReturnRaw === null && !fromRecent) return
 
     restoredScrollFor.current = nugget.id
-    sessionStorage.removeItem(`nugget-read-scroll-${nugget.id}`)
+    sessionStorage.removeItem(`nugget-read-pos-${nugget.id}`)
     if (fromRecent) sessionStorage.removeItem(SCROLL_RESTORE_KEY)
 
     // Edit return wins over the recent-list target: it is the fresher position.
-    const contentOffset = editReturnRaw !== null ? Number(editReturnRaw) : NaN
-    const absoluteTarget = Number.isNaN(contentOffset) ? getRecentScroll(nugget.id) : undefined
-    if (Number.isNaN(contentOffset) && !absoluteTarget) return
+    const contentRatio = editReturnRaw !== null ? Number(editReturnRaw) : NaN
+    const absoluteTarget = Number.isNaN(contentRatio) ? getRecentScroll(nugget.id) : undefined
+    if (Number.isNaN(contentRatio) && !absoluteTarget) return
 
     // Re-apply the target each frame until we reach it and hold briefly, or a
     // safety cap elapses. Tiptap renders async and grows the page (so the target
     // may be unreachable for a while on a slow device), and a late scroll-to-top
-    // can strand us at 0 — holding past first contact beats both. The content-
-    // relative target is re-measured every frame for the same reason.
+    // can strand us at 0 — holding past first contact beats both. The ratio is
+    // re-applied to the CURRENT content height each frame for the same reason.
     const start = performance.now()
     let reachedAt = 0
     let raf = 0
     const tick = () => {
       let target = absoluteTarget ?? 0
-      if (!Number.isNaN(contentOffset)) {
+      if (!Number.isNaN(contentRatio)) {
         const content = contentRef.current
         if (!content) {
           if (performance.now() - start < 2500) raf = requestAnimationFrame(tick)
           return
         }
-        target = content.getBoundingClientRect().top + window.scrollY + contentOffset
+        const contentTop = content.getBoundingClientRect().top + window.scrollY
+        target = contentTop + contentRatio * content.offsetHeight
       }
       const maxScroll = document.documentElement.scrollHeight - window.innerHeight
       const goal = Math.min(Math.max(0, target), Math.max(0, maxScroll))
@@ -745,14 +747,17 @@ export default function NuggetDetailPage() {
 
   /**
    * Open the editor, remembering the current scroll depth *within the content*
-   * (not the absolute page offset, since the edit page has different chrome
-   * above the text). The edit view reads this back and scrolls to the same spot.
+   * as a FRACTION of the content height (not the absolute page offset): the edit
+   * page has different chrome above the text AND a narrower text column (editor
+   * padding + border), so the same spot sits at a different pixel offset there —
+   * a proportional position transfers across the differing line wrapping.
    */
   const goEdit = () => {
     const content = contentRef.current
     if (content) {
       const contentTop = content.getBoundingClientRect().top + window.scrollY
-      sessionStorage.setItem(`nugget-edit-scroll-${id}`, String(window.scrollY - contentTop))
+      const ratio = (window.scrollY - contentTop) / Math.max(1, content.offsetHeight)
+      sessionStorage.setItem(`nugget-edit-pos-${id}`, String(ratio))
     }
     router.push(`/edit/${id}`)
   }
