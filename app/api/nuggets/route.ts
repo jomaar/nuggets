@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
       id:          true,
       title:       true,
       contentHtml: true, // server-only: used to derive the fallback title, stripped before the response
+      markScheme:  true, // small JSON string; feeds the Etappe-3 "Schema übernehmen von …" picker
       domain:      { select: { id: true, name: true, slug: true, icon: true, color: true } },
     },
     orderBy: { createdAt: 'desc' },

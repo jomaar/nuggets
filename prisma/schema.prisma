@@ -40,6 +40,7 @@ model Nugget {
   sourceLabel     String?
   aiChatUrl       String?
   tags            String   @default("[]")
+  markScheme      String   @default("{}") // per-nugget colour meanings: JSON { "hl:yellow": "These", … } (see lib/marking.ts)
   domainId        String?
   aiInputTokens   Int      @default(0)
   aiOutputTokens  Int      @default(0)

@@ -9,6 +9,7 @@ import DomainChips from '@/components/DomainChips'
 import TextStatsBar from '@/components/TextStatsBar'
 import { stripImportBallast } from '@/lib/content'
 import { countHtml } from '@/lib/textStats'
+import { parseMarkScheme, type MarkScheme } from '@/lib/marking'
 
 interface Domain {
   id: string
@@ -33,6 +34,9 @@ export default function EditPage() {
   const [loading, setLoading]         = useState(true)
   const [saving, setSaving]           = useState(false)
   const [dirty, setDirty]             = useState(false)   // unsaved edits since load/save
+  // Colour meanings for the swatch labels (read-only here; edited via the
+  // single view's legend) — not part of the dirty tracking.
+  const [markScheme, setMarkScheme]   = useState<MarkScheme>({})
   const [savedFlash, setSavedFlash]   = useState(false)   // brief "Gespeichert ✓" confirmation
   const [focus, setFocus]             = useState(false)   // hide metadata fields, maximize editor
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -72,6 +76,7 @@ export default function EditPage() {
     baselineRef.current = { ...initial }
 
     setDomains(domList)
+    setMarkScheme(parseMarkScheme(nugget.markScheme))
     setTitle(initial.title)
     setContent(initial.content)
     setDomainId(initial.domainId)
@@ -362,6 +367,7 @@ export default function EditPage() {
               // live value, so mount-time re-serialization isn't mistaken for an edit.
               onReady={(html) => { baselineRef.current.content = html; setContent(html) }}
               enableAiRework
+              markScheme={markScheme}
             />
           </div>
         </div>

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import NuggetEditor from './NuggetEditor'
 import { useHighlightSave } from './useHighlightSave'
 import DomainIcon from './DomainIcon'
+import { parseMarkScheme } from '@/lib/marking'
 
 interface Domain {
   id: string
@@ -38,6 +39,8 @@ interface NuggetCardProps {
   sourceLabel?: string | null
   aiChatUrl?: string | null
   tags: string[]
+  /** Per-nugget colour meanings as stored (JSON string, see lib/marking.ts). */
+  markScheme?: string
   domain?: Domain | null
   concepts?: NuggetConceptEntry[]
   nextReview?: Date | null
@@ -65,7 +68,7 @@ function fallbackTitle(contentHtml: string): string {
 
 export default function NuggetCard({
   id, title, contentHtml, sourceUrl, sourceLabel, aiChatUrl,
-  tags, domain, concepts, onReview, onDelete,
+  tags, markScheme, domain, concepts, onReview, onDelete,
   showReviewButtons = false, defaultExpanded = true,
 }: NuggetCardProps) {
   const [expanded, setExpanded]       = useState(defaultExpanded)
@@ -162,6 +165,7 @@ export default function NuggetCard({
             editable={false}
             onChange={handleContentChange}
             onReady={handleEditorReady}
+            markScheme={parseMarkScheme(markScheme)}
           />
 
           {/* Tags */}

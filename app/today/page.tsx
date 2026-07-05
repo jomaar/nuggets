@@ -25,6 +25,7 @@ interface Nugget {
   sourceLabel: string | null
   aiChatUrl: string | null
   tags: string
+  markScheme: string
   domain: Domain | null
   concepts: NuggetConceptEntry[]
 }

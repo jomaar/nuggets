@@ -10,7 +10,11 @@ import TextStatsBar from '@/components/TextStatsBar'
 import { countHtml } from '@/lib/textStats'
 import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, type AnchorToken } from '@/lib/bookmarkLink'
 import { recordRecentNugget, updateRecentScroll, getRecentScroll } from '@/lib/recentNuggets'
-import { markColorVar, type MarkKind } from '@/lib/marking'
+import {
+  HIGHLIGHT_PALETTE, UNDERLINE_PALETTE, MARK_LABEL_MAX,
+  markColorVar, markKey, markLabel, hasMarkLabel, parseMarkScheme,
+  type MarkKind, type MarkScheme,
+} from '@/lib/marking'
 import { useOwner } from '@/components/OwnerContext'
 import {
   getNuggetFontSize, setNuggetFontSize,
@@ -58,6 +62,7 @@ interface Nugget {
   sourceLabel: string | null
   aiChatUrl: string | null
   tags: string
+  markScheme: string
   domain: Domain | null
   concepts: NuggetConceptEntry[]
   reviews: Review[]
@@ -306,7 +311,7 @@ const SCROLL_RESTORE_KEY = 'nugget-restore-scroll'
  * Mounted only once the nugget is loaded so the highlight hook is seeded with
  * the real initial HTML (its baseline is captured at first render).
  */
-function NuggetReader({ id, contentHtml }: { id: string; contentHtml: string }) {
+function NuggetReader({ id, contentHtml, markScheme }: { id: string; contentHtml: string; markScheme: MarkScheme }) {
   const { html, handleContentChange, handleEditorReady } = useHighlightSave(id, contentHtml)
   return (
     <NuggetEditor
@@ -314,6 +319,7 @@ function NuggetReader({ id, contentHtml }: { id: string; contentHtml: string }) 
       editable={false}
       onChange={handleContentChange}
       onReady={handleEditorReady}
+      markScheme={markScheme}
     />
   )
 }
@@ -333,6 +339,14 @@ export default function NuggetDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [marksOpen, setMarksOpen]     = useState(false)
   const [marks, setMarks]             = useState<{ text: string; color: string; kind: MarkKind; markIndex: number }[]>([])
+  // Per-nugget colour meanings (legend), parsed from nugget.markScheme and kept
+  // as live state so legend edits reflect immediately in swatches + popup rows.
+  const [scheme, setScheme]           = useState<MarkScheme>({})
+  // Scheme import ("Schema übernehmen von …"): dialog open, candidate nuggets
+  // (null = loading), and the picked source while the replace/merge question shows.
+  const [importOpen, setImportOpen]       = useState(false)
+  const [importSources, setImportSources] = useState<{ id: string; title: string; scheme: MarkScheme }[] | null>(null)
+  const [importSource, setImportSource]   = useState<{ id: string; title: string; scheme: MarkScheme } | null>(null)
   // Mark index whose deep-link was just copied (flips that row's icon to a check).
   const [copiedMarkIndex, setCopiedMarkIndex] = useState<number | null>(null)
   const [searchOpen, setSearchOpen]   = useState(false)
@@ -388,6 +402,68 @@ export default function NuggetDetailPage() {
   // Sync the control to the stored reading size on mount (the CSS var itself is
   // already applied flash-free by the boot script in layout.tsx).
   useEffect(() => { setFontSize(getNuggetFontSize()) }, [])
+
+  // Seed the live colour-meaning scheme whenever a (new) nugget arrives.
+  useEffect(() => {
+    if (nugget) setScheme(parseMarkScheme(nugget.markScheme))
+  }, [nugget])
+
+  /**
+   * Rename a (style, colour) combination in the legend: update the live scheme
+   * and persist it. Metadata only — contentHtml is never touched, so this can't
+   * collide with the debounced highlight save.
+   */
+  const commitMarkLabel = async (kind: MarkKind, color: string, value: string) => {
+    const key = markKey(kind, color)
+    const label = value.trim().slice(0, MARK_LABEL_MAX)
+    if ((scheme[key] ?? '') === label) return
+    const next = { ...scheme }
+    if (label) next[key] = label
+    else delete next[key]
+    setScheme(next)
+    await fetch(`/api/nuggets/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markScheme: next }),
+    })
+  }
+
+  /**
+   * Open the scheme-import dialog and (re)load the candidates: every other
+   * nugget with at least one named colour (list GET ships markScheme).
+   */
+  const openImport = () => {
+    setImportOpen(true)
+    setImportSource(null)
+    setImportSources(null)
+    fetch('/api/nuggets')
+      .then(r => (r.ok ? r.json() : []))
+      .then((rows: { id: string; title: string; markScheme?: string }[]) =>
+        setImportSources(rows
+          .map(r => ({ id: r.id, title: r.title, scheme: parseMarkScheme(r.markScheme) }))
+          .filter(r => r.id !== id && Object.keys(r.scheme).length > 0)))
+      .catch(() => setImportSources([]))
+  }
+
+  /**
+   * A source nugget was picked. With no local names the import is unambiguous
+   * (plain copy); otherwise hold the source and ask replace vs. merge.
+   */
+  const pickImportSource = (source: { id: string; title: string; scheme: MarkScheme }) => {
+    if (Object.keys(scheme).length === 0) applyImport(source.scheme)
+    else setImportSource(source)
+  }
+
+  /** Persist an imported scheme — metadata copy only, contentHtml untouched. */
+  const applyImport = async (next: MarkScheme) => {
+    setImportOpen(false)
+    setScheme(next)
+    await fetch(`/api/nuggets/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markScheme: next }),
+    })
+  }
 
   /** Step the reading font size by `delta` px (clamped + persisted + applied). */
   const changeFontSize = (delta: number) => setFontSize(setNuggetFontSize(fontSize + delta))
@@ -769,6 +845,16 @@ export default function NuggetDetailPage() {
   )
   const latestReview = nugget.reviews[0]
 
+  // Legend rows: every (style, colour) that occurs in the document or carries a
+  // custom name — palette order, highlights first (marks is filled by openMarks).
+  const legendRows = [
+    ...HIGHLIGHT_PALETTE.map(c => ({ kind: 'hl' as MarkKind, ...c })),
+    ...UNDERLINE_PALETTE.map(c => ({ kind: 'ul' as MarkKind, ...c })),
+  ].filter(r =>
+    marks.some(m => m.kind === r.kind && m.color === r.name) ||
+    hasMarkLabel(scheme, r.kind, r.name),
+  )
+
   return (
     <>
       {/* Sticky action bar — back / info / edit / delete reachable at any
@@ -1114,7 +1200,7 @@ export default function NuggetDetailPage() {
           but the reader's highlight-save hook seeds its state/baseline only on
           mount — the key forces a clean remount for the new nugget. */}
       <div ref={contentRef} onClick={handleContentClick}>
-        <NuggetReader key={nugget.id} id={nugget.id} contentHtml={nugget.contentHtml} />
+        <NuggetReader key={nugget.id} id={nugget.id} contentHtml={nugget.contentHtml} markScheme={scheme} />
       </div>
 
       {/* Related nuggets — proximity over shared abstract concepts (lib/graph.ts).
@@ -1177,6 +1263,66 @@ export default function NuggetDetailPage() {
               className="overflow-y-auto px-3 py-3 flex flex-col gap-2"
               style={{ overscrollBehavior: 'contain' }}
             >
+              {/* Legend — name what each used (style, colour) means in THIS
+                  nugget. Inputs are uncontrolled (committed on blur/Enter);
+                  the popup remounts them fresh each time it opens. */}
+              {(legendRows.length > 0 || isOwner) && (
+                <div className="flex flex-col gap-1.5 pb-2 mb-1" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
+                      Legende
+                    </h3>
+                    {/* Scheme import — copy another nugget's colour meanings here. */}
+                    {isOwner && (
+                      <button
+                        onClick={openImport}
+                        className="text-xs px-2.5 py-1 rounded-full"
+                        style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+                      >
+                        Übernehmen von …
+                      </button>
+                    )}
+                  </div>
+                  {legendRows.map(r => (
+                    <div key={markKey(r.kind, r.name)} className="flex items-center gap-2.5">
+                      <span
+                        className="flex-shrink-0"
+                        style={r.kind === 'hl'
+                          ? {
+                              width: 20, height: 20, borderRadius: '50%',
+                              background: markColorVar('hl', r.name),
+                              border: '1px solid rgba(0,0,0,0.18)',
+                            }
+                          : {
+                              width: 20, height: 20, borderRadius: 6,
+                              background: 'var(--surface)',
+                              border: '1px solid rgba(0,0,0,0.18)',
+                              boxShadow: `inset 0 -5px 0 ${markColorVar('ul', r.name)}`,
+                            }}
+                      />
+                      {isOwner ? (
+                        <input
+                          // Value in the key: uncontrolled inputs must remount when
+                          // the scheme changes underneath them (import, rename).
+                          key={`${markKey(r.kind, r.name)}=${scheme[markKey(r.kind, r.name)] ?? ''}`}
+                          defaultValue={scheme[markKey(r.kind, r.name)] ?? ''}
+                          placeholder={r.label}
+                          maxLength={MARK_LABEL_MAX}
+                          onBlur={e => commitMarkLabel(r.kind, r.name, e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                          className="flex-1 min-w-0 text-sm px-2.5 py-1.5 rounded-lg outline-none"
+                          style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                        />
+                      ) : (
+                        <span className="text-sm" style={{ color: 'var(--ink)' }}>
+                          {markLabel(scheme, r.kind, r.name)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {marks.length === 0 ? (
                 <p className="text-sm text-center py-6" style={{ color: 'var(--muted)' }}>
                   Keine Markierungen in diesem Nugget.
@@ -1193,19 +1339,32 @@ export default function NuggetDetailPage() {
                   >
                     <button
                       onClick={() => scrollToMark(m.markIndex)}
-                      className="flex-1 min-w-0 text-left text-sm px-3 py-2 line-clamp-2 break-words transition-all active:scale-[0.99]"
-                      style={{
-                        color: 'var(--ink)',
-                        ...(m.kind === 'ul' && {
+                      className="flex-1 min-w-0 text-left text-sm px-3 py-2 transition-all active:scale-[0.99]"
+                      style={{ color: 'var(--ink)' }}
+                    >
+                      {/* Custom colour meaning, when this nugget has named the colour. */}
+                      {hasMarkLabel(scheme, m.kind, m.color) && (
+                        <span
+                          className="block text-[10px] tracking-wide uppercase mb-0.5"
+                          style={{ color: 'var(--muted)' }}
+                        >
+                          {markLabel(scheme, m.kind, m.color)}
+                        </span>
+                      )}
+                      {/* Underline rows carry the thick coloured line on the text
+                          itself (not the row background) — keep line-clamp here. */}
+                      <span
+                        className="block line-clamp-2 break-words"
+                        style={m.kind === 'ul' ? {
                           textDecoration: 'underline',
                           textDecorationThickness: '0.18em',
                           textDecorationColor: markColorVar('ul', m.color),
                           textUnderlineOffset: '0.14em',
                           textDecorationSkipInk: 'none',
-                        }),
-                      }}
-                    >
-                      {m.text || '—'}
+                        } : undefined}
+                      >
+                        {m.text || '—'}
+                      </span>
                     </button>
                     <button
                       onClick={() => copyMarkLink(m.markIndex)}
@@ -1216,6 +1375,124 @@ export default function NuggetDetailPage() {
                       {copiedMarkIndex === m.markIndex ? <Check size={15} /> : <Link2 size={15} />}
                     </button>
                   </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Scheme-import dialog — pick a source nugget with named colours, then
+          (only if THIS nugget already has names) choose replace vs. merge.
+          Metadata copy only: contentHtml is never touched. Sits above the
+          marks popup so the legend stays visible behind it. */}
+      {importOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          style={{ background: 'rgba(28,28,30,0.4)' }}
+          onClick={() => setImportOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
+            style={{ background: 'var(--surface)', maxHeight: '70vh', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+              style={{ borderBottom: '1px solid var(--border)' }}
+            >
+              <h2 className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                Schema übernehmen
+              </h2>
+              <button onClick={() => setImportOpen(false)} aria-label="Schließen" style={{ color: 'var(--muted)' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div
+              className="overflow-y-auto px-3 py-3 flex flex-col gap-2"
+              style={{ overscrollBehavior: 'contain' }}
+            >
+              {importSource ? (
+                /* Local names exist — resolve the conflict: replace or fill gaps. */
+                <>
+                  <p className="text-sm" style={{ color: 'var(--ink)' }}>
+                    Dieses Nugget hat bereits benannte Farben. Wie soll das Schema von
+                    „{importSource.title}“ übernommen werden?
+                  </p>
+                  <button
+                    onClick={() => applyImport(importSource.scheme)}
+                    className="text-left text-sm px-3 py-2.5 rounded-lg transition-all active:scale-[0.99]"
+                    style={{ background: 'var(--accent)', color: 'white' }}
+                  >
+                    Ersetzen — Schema des Quell-Nuggets 1:1 übernehmen
+                  </button>
+                  <button
+                    // Merge: local names win; the source only fills unnamed colours.
+                    onClick={() => applyImport({ ...importSource.scheme, ...scheme })}
+                    className="text-left text-sm px-3 py-2.5 rounded-lg transition-all active:scale-[0.99]"
+                    style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+                  >
+                    Ergänzen — nur Farben ohne eigenen Namen füllen
+                  </button>
+                  <button
+                    onClick={() => setImportSource(null)}
+                    className="text-sm px-3 py-2 rounded-lg"
+                    style={{ color: 'var(--muted)' }}
+                  >
+                    ← Zurück zur Auswahl
+                  </button>
+                </>
+              ) : importSources === null ? (
+                <p className="text-sm text-center py-6" style={{ color: 'var(--muted)' }}>
+                  Lädt…
+                </p>
+              ) : importSources.length === 0 ? (
+                <p className="text-sm text-center py-6" style={{ color: 'var(--muted)' }}>
+                  Kein anderes Nugget hat benannte Farben.
+                </p>
+              ) : (
+                importSources.map(src => (
+                  <button
+                    key={src.id}
+                    onClick={() => pickImportSource(src)}
+                    className="text-left px-3 py-2.5 rounded-lg flex flex-col gap-1.5 transition-all active:scale-[0.99]"
+                    style={{ background: 'var(--warm)' }}
+                  >
+                    <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                      {src.title}
+                    </span>
+                    {/* Mini preview: every named colour as swatch + name. */}
+                    <span className="flex flex-wrap gap-x-3 gap-y-1">
+                      {Object.entries(src.scheme).map(([key, label]) => {
+                        const [kind, color] = key.split(':') as [MarkKind, string]
+                        return (
+                          <span
+                            key={key}
+                            className="inline-flex items-center gap-1.5 text-xs"
+                            style={{ color: 'var(--muted)' }}
+                          >
+                            <span
+                              className="flex-shrink-0"
+                              style={kind === 'hl'
+                                ? {
+                                    width: 12, height: 12, borderRadius: '50%',
+                                    background: markColorVar('hl', color),
+                                    border: '1px solid rgba(0,0,0,0.18)',
+                                  }
+                                : {
+                                    width: 12, height: 12, borderRadius: 4,
+                                    background: 'var(--surface)',
+                                    border: '1px solid rgba(0,0,0,0.18)',
+                                    boxShadow: `inset 0 -3px 0 ${markColorVar('ul', color)}`,
+                                  }}
+                            />
+                            {label}
+                          </span>
+                        )
+                      })}
+                    </span>
+                  </button>
                 ))
               )}
             </div>

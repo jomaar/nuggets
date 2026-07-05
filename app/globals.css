@@ -213,6 +213,24 @@ h1, h2, h3, .serif {
 .underline-swatch:hover {
   transform: scale(1.18);
 }
+/* One swatch plus its optional mini name label (custom colour meanings —
+   lib/marking.ts MarkScheme). The label is kept no wider than the swatch so
+   six named cells still fit a narrow iPhone; the legend shows full names. */
+.swatch-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.swatch-label {
+  font-size: 8.5px;
+  line-height: 1.2;
+  max-width: 2rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted, #888);
+}
 .highlight-remove {
   width: 1.65rem;
   height: 1.65rem;

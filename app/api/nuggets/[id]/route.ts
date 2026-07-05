@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { normalizeToHtml, htmlToMarkdown, htmlToPlain } from '@/lib/content'
+import { sanitizeMarkScheme } from '@/lib/marking'
 
 // GET /api/nuggets/:id  (?edit=1 to also return the Markdown/plain projections)
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -20,6 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       sourceLabel: true,
       aiChatUrl:   true,
       tags:        true,
+      markScheme:  true,
       domainId:    true,
       createdAt:   true,
       reviews: { orderBy: { createdAt: 'desc' }, take: 1 },
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json()
-  const { content, contentMarkdown, contentHtml: contentHtmlInput, title, sourceUrl, sourceLabel, aiChatUrl, tags, domainId } = body
+  const { content, contentMarkdown, contentHtml: contentHtmlInput, title, sourceUrl, sourceLabel, aiChatUrl, tags, domainId, markScheme } = body
 
   const data: Record<string, unknown> = {}
   // Canonical content is HTML (includes highlight <mark>s); Markdown is derived for the AI.
@@ -59,6 +61,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (aiChatUrl   !== undefined) data.aiChatUrl   = aiChatUrl
   if (tags        !== undefined) data.tags        = JSON.stringify(tags)
   if (domainId    !== undefined) data.domainId    = domainId || null
+  // Per-nugget colour meanings: only known keys / non-empty string labels survive.
+  if (markScheme  !== undefined) {
+    const scheme = sanitizeMarkScheme(markScheme)
+    if (!scheme) return NextResponse.json({ error: 'invalid markScheme' }, { status: 400 })
+    data.markScheme = JSON.stringify(scheme)
+  }
 
   const nugget = await prisma.nugget.update({
     where: { id },

@@ -50,3 +50,70 @@ export function markColorVar(kind: MarkKind, name: string): string {
   const palette = kind === 'hl' ? HIGHLIGHT_PALETTE : UNDERLINE_PALETTE
   return (palette.find(c => c.name === name) ?? palette[0]).cssVar
 }
+
+// --- Named colour schemes (per nugget) ---------------------------------------
+// A nugget can give each (style, colour) combination its own meaning ("These",
+// "Gegenargument", …). The scheme is stored on the nugget as a JSON string
+// (`Nugget.markScheme`, same pattern as `tags`): only combinations with a
+// custom name are present, keyed `"hl:yellow"` / `"ul:blue"`.
+
+/** Per-nugget colour meanings: markKey → custom label. Sparse (named entries only). */
+export type MarkScheme = Record<string, string>
+
+/** Maximum length of one custom colour name (also enforced by the API). */
+export const MARK_LABEL_MAX = 60
+
+/** The scheme key for a (style, colour) combination, e.g. "hl:yellow". */
+export function markKey(kind: MarkKind, name: string): string {
+  return `${kind}:${name}`
+}
+
+/**
+ * Display label for a (style, colour): the nugget's custom name when one is
+ * set, otherwise the palette's default colour label.
+ */
+export function markLabel(scheme: MarkScheme, kind: MarkKind, name: string): string {
+  const custom = scheme[markKey(kind, name)]
+  if (custom) return custom
+  const palette = kind === 'hl' ? HIGHLIGHT_PALETTE : UNDERLINE_PALETTE
+  return palette.find(c => c.name === name)?.label ?? name
+}
+
+/** Whether the scheme holds a custom name for this (style, colour). */
+export function hasMarkLabel(scheme: MarkScheme, kind: MarkKind, name: string): boolean {
+  return Boolean(scheme[markKey(kind, name)])
+}
+
+/** Parse a stored `markScheme` JSON string, tolerating null/malformed input. */
+export function parseMarkScheme(json: string | null | undefined): MarkScheme {
+  if (!json) return {}
+  try {
+    const parsed = JSON.parse(json)
+    return sanitizeMarkScheme(parsed) ?? {}
+  } catch {
+    return {}
+  }
+}
+
+/** Every key a scheme may contain — the cross product of style × palette. */
+const VALID_MARK_KEYS = new Set<string>([
+  ...HIGHLIGHT_PALETTE.map(c => markKey('hl', c.name)),
+  ...UNDERLINE_PALETTE.map(c => markKey('ul', c.name)),
+])
+
+/**
+ * Validate an untrusted scheme value (API input / stored JSON): must be a plain
+ * object with known keys and non-empty string values (trimmed, length-capped).
+ * Unknown keys and empty names are dropped; a non-object returns null so the
+ * API can reject it.
+ */
+export function sanitizeMarkScheme(input: unknown): MarkScheme | null {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return null
+  const scheme: MarkScheme = {}
+  for (const [key, value] of Object.entries(input)) {
+    if (!VALID_MARK_KEYS.has(key) || typeof value !== 'string') continue
+    const label = value.trim().slice(0, MARK_LABEL_MAX)
+    if (label) scheme[key] = label
+  }
+  return scheme
+}

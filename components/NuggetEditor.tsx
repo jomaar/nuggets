@@ -9,7 +9,10 @@ import { Sparkles } from 'lucide-react'
 import CssVarHighlight from './CssVarHighlight'
 import CssVarUnderline from './CssVarUnderline'
 import AiReworkPopup from './AiReworkPopup'
-import { HIGHLIGHT_PALETTE, UNDERLINE_PALETTE } from '@/lib/marking'
+import {
+  HIGHLIGHT_PALETTE, UNDERLINE_PALETTE,
+  markLabel, hasMarkLabel, type MarkScheme,
+} from '@/lib/marking'
 
 interface NuggetEditorProps {
   /** Current content as HTML (canonical format). */
@@ -28,6 +31,11 @@ interface NuggetEditorProps {
   editable?: boolean
   /** Opt-in: show a "rework with AI" action in the selection menu (edit view). */
   enableAiRework?: boolean
+  /**
+   * Per-nugget colour meanings (lib/marking.ts). Named colours show their name
+   * as a mini label under the swatch (iOS has no hover tooltips).
+   */
+  markScheme?: MarkScheme
 }
 
 /**
@@ -59,6 +67,7 @@ export default function NuggetEditor({
   placeholder,
   editable = true,
   enableAiRework = false,
+  markScheme = {},
 }: NuggetEditorProps) {
   // The selected passage handed to the AI rework popup (null = popup closed).
   const [reworkText, setReworkText] = useState<string | null>(null)
@@ -162,6 +171,11 @@ export default function NuggetEditor({
     setReworkText(null)
   }
 
+  // Whether a swatch row contains any custom-named colour (label slots are
+  // rendered row-wide so the swatches stay on one baseline).
+  const hlRowNamed = HIGHLIGHT_PALETTE.some(c => hasMarkLabel(markScheme, 'hl', c.name))
+  const ulRowNamed = UNDERLINE_PALETTE.some(c => hasMarkLabel(markScheme, 'ul', c.name))
+
   return (
     <div className={`tiptap-editor nugget-content${editable ? '' : ' tiptap-readonly'}`}>
       {editor && (
@@ -186,53 +200,74 @@ export default function NuggetEditor({
           shouldShow={({ from, to }) => from !== to}
         >
           <div className="highlight-menu">
+            {/* Custom colour names show as a mini label under the swatch. When a
+                row has at least one name, EVERY cell in it gets a label slot
+                (blank if unnamed) so all swatches keep the same baseline. */}
             {/* Row 1: highlight (background) colours + remove-both. */}
             <div className="highlight-menu-row">
-              {HIGHLIGHT_PALETTE.map((color) => (
+              {HIGHLIGHT_PALETTE.map((color) => {
+                const label = markLabel(markScheme, 'hl', color.name)
+                const named = hasMarkLabel(markScheme, 'hl', color.name)
+                return (
+                  <div key={color.name} className="swatch-cell">
+                    <button
+                      type="button"
+                      className="highlight-swatch"
+                      style={{ background: color.cssVar }}
+                      aria-label={`Markieren: ${label}`}
+                      title={label}
+                      onClick={() => applyHighlight(color.name)}
+                    />
+                    {hlRowNamed && <span className="swatch-label">{named ? label : '\u00a0'}</span>}
+                  </div>
+                )
+              })}
+              <div className="swatch-cell">
                 <button
-                  key={color.name}
                   type="button"
-                  className="highlight-swatch"
-                  style={{ background: color.cssVar }}
-                  aria-label={`Markieren: ${color.label}`}
-                  title={color.label}
-                  onClick={() => applyHighlight(color.name)}
-                />
-              ))}
-              <button
-                type="button"
-                className="highlight-remove"
-                aria-label="Markierung entfernen"
-                title="Markierung entfernen"
-                onClick={removeMarks}
-              >
-                ✕
-              </button>
+                  className="highlight-remove"
+                  aria-label="Markierung entfernen"
+                  title="Markierung entfernen"
+                  onClick={removeMarks}
+                >
+                  ✕
+                </button>
+                {hlRowNamed && <span className="swatch-label">{'\u00a0'}</span>}
+              </div>
             </div>
             {/* Row 2: underline colours (swatch = thick colour bar at the base). */}
             <div className="highlight-menu-row">
-              {UNDERLINE_PALETTE.map((color) => (
-                <button
-                  key={color.name}
-                  type="button"
-                  className="underline-swatch"
-                  style={{ boxShadow: `inset 0 -0.34rem 0 ${color.cssVar}` }}
-                  aria-label={`Unterstreichen: ${color.label}`}
-                  title={color.label}
-                  onClick={() => applyUnderline(color.name)}
-                />
-              ))}
+              {UNDERLINE_PALETTE.map((color) => {
+                const label = markLabel(markScheme, 'ul', color.name)
+                const named = hasMarkLabel(markScheme, 'ul', color.name)
+                return (
+                  <div key={color.name} className="swatch-cell">
+                    <button
+                      type="button"
+                      className="underline-swatch"
+                      style={{ boxShadow: `inset 0 -0.34rem 0 ${color.cssVar}` }}
+                      aria-label={`Unterstreichen: ${label}`}
+                      title={label}
+                      onClick={() => applyUnderline(color.name)}
+                    />
+                    {ulRowNamed && <span className="swatch-label">{named ? label : '\u00a0'}</span>}
+                  </div>
+                )
+              })}
               {/* Edit view only: rework the selected passage with the AI. */}
               {enableAiRework && editor.isEditable && (
-                <button
-                  type="button"
-                  className="highlight-ai"
-                  aria-label="Mit KI überarbeiten"
-                  title="Mit KI überarbeiten"
-                  onClick={openRework}
-                >
-                  <Sparkles size={22} />
-                </button>
+                <div className="swatch-cell">
+                  <button
+                    type="button"
+                    className="highlight-ai"
+                    aria-label="Mit KI überarbeiten"
+                    title="Mit KI überarbeiten"
+                    onClick={openRework}
+                  >
+                    <Sparkles size={22} />
+                  </button>
+                  {ulRowNamed && <span className="swatch-label">{'\u00a0'}</span>}
+                </div>
               )}
             </div>
           </div>
