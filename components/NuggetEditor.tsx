@@ -1,11 +1,12 @@
 'use client'
 
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useEffect, useRef, useState } from 'react'
 import { Sparkles } from 'lucide-react'
+import { normalizeToHtml } from '@/lib/content'
 import CssVarHighlight from './CssVarHighlight'
 import CssVarUnderline from './CssVarUnderline'
 import AiReworkPopup from './AiReworkPopup'
@@ -53,6 +54,19 @@ function reworkToContent(text: string): string {
 }
 
 /**
+ * Heuristic: does pasted plain text look like block-level Markdown?
+ * Inline-only markdown (**bold**, *italic*) is left to Tiptap's built-in
+ * bold/italic paste rules; we only take over when block syntax (headings,
+ * blockquotes, lists, code fences) would otherwise land as literal text.
+ * Requires a multi-line paste so a fragment like "5. Mose" pasted into a
+ * sentence is never mistaken for an ordered list.
+ */
+function looksLikeMarkdownBlocks(text: string): boolean {
+  if (!text.includes('\n')) return false
+  return /^\s{0,3}(#{1,6}\s|>\s|[-*+]\s|\d+[.)]\s|```)/m.test(text)
+}
+
+/**
  * Shared Tiptap rich-text editor for nuggets.
  *
  * The canonical content format is HTML (stored in `contentHtml`); Markdown is only
@@ -75,6 +89,8 @@ export default function NuggetEditor({
   // opens, because focusing the popup's inputs drops the visible DOM selection —
   // ProseMirror keeps its state, but we replace by explicit range to be safe.
   const reworkRange = useRef<{ from: number; to: number } | null>(null)
+  // Lets handlePaste (captured once by useEditor) reach the live editor instance.
+  const editorRef = useRef<Editor | null>(null)
   const editor = useEditor({
     // Avoid SSR hydration mismatch in the Next.js App Router.
     immediatelyRender: false,
@@ -97,11 +113,31 @@ export default function NuggetEditor({
       Placeholder.configure({ placeholder: placeholder ?? 'Schreibe dein Nugget…' }),
     ],
     content: value,
+    editorProps: {
+      // Markdown pasted as plain text (e.g. via a chat app's copy button) used
+      // to land literally: Tiptap only parses HTML on paste, and its built-in
+      // bold/italic paste rules made the result look half-converted. Route
+      // block-level markdown through the same marked+sanitize pipeline the
+      // add form uses. Clipboard HTML keeps native handling untouched.
+      handlePaste: (_view, event) => {
+        const clipboard = event.clipboardData
+        if (!clipboard || clipboard.getData('text/html').trim()) return false
+        const text = clipboard.getData('text/plain')
+        if (!text || !looksLikeMarkdownBlocks(text)) return false
+        editorRef.current?.chain().focus().insertContent(normalizeToHtml(text)).run()
+        return true
+      },
+    },
     // Report the normalized baseline so callers can detect real edits vs. mount-time
     // re-serialization (see NuggetCard's no-op-save suppression).
     onCreate: ({ editor }) => onReady?.(editor.getHTML()),
     onUpdate: ({ editor }) => onChange?.(editor.getHTML()),
   })
+
+  // Keep the paste handler's editor reference current.
+  useEffect(() => {
+    editorRef.current = editor
+  }, [editor])
 
   // Keep the editor in sync when the value is replaced from the outside
   // (e.g. after the nugget finishes loading), without clobbering user typing.
