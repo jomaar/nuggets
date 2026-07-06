@@ -35,6 +35,14 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+/**
+ * A numbered book title without a dot ("2 Korinther", "1 Mose") LOOKS like a
+ * verse line. Accept it as a title anyway when it is short and the NEXT line
+ * starts with verse 1 — a real verse line in title position would be verse 1
+ * itself (long, and never followed by another "1 " line).
+ */
+const NUMBERED_TITLE_MAX = 48
+
 /** Split the raw file into optional header lines + body lines (trimmed, non-empty). */
 function splitHeader(text: string): { translation: string; title: string; bodyLines: string[] } {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
@@ -45,9 +53,18 @@ function splitHeader(text: string): { translation: string; title: string; bodyLi
     i++
   }
   let title = ''
-  if (lines[i] && !VERSE_LINE_RE.test(lines[i])) {
-    title = lines[i]
-    i++
+  if (lines[i]) {
+    const candidate = lines[i]
+    const next = lines[i + 1]
+    const numberedTitle =
+      VERSE_LINE_RE.test(candidate) &&
+      candidate.length <= NUMBERED_TITLE_MAX &&
+      next !== undefined &&
+      /^1\s/.test(next)
+    if (!VERSE_LINE_RE.test(candidate) || numberedTitle) {
+      title = candidate
+      i++
+    }
   }
   return { translation, title, bodyLines: lines.slice(i) }
 }
