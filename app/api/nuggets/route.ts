@@ -75,9 +75,10 @@ export async function POST(req: NextRequest) {
       aiChatUrl:   aiChatUrl   || null,
       tags:        JSON.stringify(tags ?? []),
       domainId:    domainId    || null,
-      reviews: { create: {} },
+      // No reviews:{create:{}} anymore — the SM-2 repetition feature was
+      // removed from the app; new nuggets get no review row.
     },
-    include: { reviews: true, domain: true },
+    include: { domain: true },
   })
 
   await extractAndLinkConcepts(nugget.id, nugget.contentMarkdown || nugget.contentPlain, {

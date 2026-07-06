@@ -22,7 +22,7 @@ import {
   getNuggetFontSize, setNuggetFontSize,
   MIN_FONT_SIZE, MAX_FONT_SIZE, DEFAULT_FONT_SIZE, FONT_SIZE_STEP,
 } from '@/lib/nuggetFontSize'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer, Pencil, Trash2, ArrowLeft, MessageSquareText } from 'lucide-react'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer, Pencil, Trash2, ArrowLeft, MessageSquareText, ALargeSmall } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -50,12 +50,6 @@ interface NuggetConceptEntry {
   concept: Concept
 }
 
-interface Review {
-  nextReview: string
-  intervalDays: number
-  repetitions: number
-}
-
 interface Nugget {
   id: string
   title: string
@@ -67,7 +61,6 @@ interface Nugget {
   markScheme: string
   domain: Domain | null
   concepts: NuggetConceptEntry[]
-  reviews: Review[]
   createdAt: string
 }
 
@@ -377,11 +370,15 @@ export default function NuggetDetailPage() {
   const [loading, setLoading] = useState(true)
   const { isOwner } = useOwner()
   const [infoOpen, setInfoOpen]       = useState(false)
+  // View-settings row in the sticky bar (font size + verse markers): reachable
+  // at any scroll depth, unlike the info panel above the content.
+  const [viewOpen, setViewOpen]       = useState(false)
   // Reading font size for nugget text (px). Default first to match SSR, then
   // read the per-device preference on mount to avoid a hydration mismatch.
   const [fontSize, setFontSize]       = useState(DEFAULT_FONT_SIZE)
-  // Bible verse markers ([chapter.verse]) visibility — session-only by design:
-  // default hidden (scroll-style flow text), not persisted anywhere.
+  // Bible verse markers ([chapter.verse]) visibility — default hidden
+  // (scroll-style flow text), kept per nugget in sessionStorage so the edit
+  // round-trip (this view unmounts) doesn't silently switch markers off again.
   const [showVerses, setShowVerses]   = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [marksOpen, setMarksOpen]     = useState(false)
@@ -585,6 +582,19 @@ export default function NuggetDetailPage() {
   // Sync the control to the stored reading size on mount (the CSS var itself is
   // already applied flash-free by the boot script in layout.tsx).
   useEffect(() => { setFontSize(getNuggetFontSize()) }, [])
+
+  // Restore the per-nugget verse-marker visibility (keyed on id: a same-segment
+  // hop to another nugget must pick up THAT nugget's stored state).
+  useEffect(() => {
+    setShowVerses(sessionStorage.getItem(`nugget-verses-${id}`) === '1')
+  }, [id])
+
+  /** Toggle the verse markers and remember the choice for this nugget. */
+  const toggleVerses = () => {
+    const next = !showVerses
+    setShowVerses(next)
+    sessionStorage.setItem(`nugget-verses-${id}`, next ? '1' : '0')
+  }
 
   // Seed the live colour-meaning scheme whenever a (new) nugget arrives.
   useEffect(() => {
@@ -1216,7 +1226,8 @@ export default function NuggetDetailPage() {
   const concepts = [...nugget.concepts].sort(
     (a, b) => b.concept._count.nuggets - a.concept._count.nuggets,
   )
-  const latestReview = nugget.reviews[0]
+  // Bible imports carry <sup data-verse> atoms — only they get the verse toggle.
+  const hasVerses = nugget.contentHtml.includes('data-verse=')
 
   // Legend rows: every (style, colour) that occurs in the document or carries a
   // custom name — palette order, highlights first (marks is filled by openMarks).
@@ -1247,13 +1258,14 @@ export default function NuggetDetailPage() {
         className="sticky top-0 z-30 -mx-4 px-4 pt-10 pb-3"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
-        <div className="flex items-center justify-between gap-3">
-          {/* Icon-only like the action group: with the comments button the bar
-              holds 9 icons, and a text "Zurück" would overflow narrow iPhones. */}
+        <div className="flex items-center justify-between gap-2">
+          {/* Icon-only like the action group: with the comments + view-settings
+              buttons the bar holds 10 icons — a text "Zurück" (or the previous
+              p-1.5/gap-1.5 spacing) would overflow narrow iPhones. */}
           <button
             onClick={() => router.back()}
             aria-label="Zurück"
-            className="flex items-center justify-center p-1.5 rounded-lg"
+            className="flex items-center justify-center p-1 rounded-lg"
             style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
           >
             <ArrowLeft size={16} />
@@ -1261,12 +1273,12 @@ export default function NuggetDetailPage() {
 
           {/* All actions as uniform icons in one group so the bar never
               overflows on narrow iPhones (edit = blue pencil, delete = red trash). */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             {isOwner && (
               <button
                 onClick={addBookmark}
                 aria-label="Lesezeichen setzen"
-                className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+                className="flex items-center justify-center p-1 rounded-lg transition-colors"
                 style={{
                   color:      bookmarkSaved ? 'white'        : 'var(--muted)',
                   background:  bookmarkSaved ? 'var(--accent)' : 'transparent',
@@ -1279,7 +1291,7 @@ export default function NuggetDetailPage() {
             <button
               onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
               aria-label="Im Text suchen"
-              className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+              className="flex items-center justify-center p-1 rounded-lg transition-colors"
               style={{
                 color:      searchOpen ? 'white'        : 'var(--muted)',
                 background: searchOpen ? 'var(--accent)' : 'transparent',
@@ -1291,7 +1303,7 @@ export default function NuggetDetailPage() {
             <button
               onClick={openMarks}
               aria-label="Markierungen"
-              className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+              className="flex items-center justify-center p-1 rounded-lg transition-colors"
               style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
             >
               <Highlighter size={16} />
@@ -1300,7 +1312,7 @@ export default function NuggetDetailPage() {
               <button
                 onClick={() => (annotationsOpen ? closeAnnotations() : openAnnotations())}
                 aria-label="Kommentare"
-                className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+                className="flex items-center justify-center p-1 rounded-lg transition-colors"
                 style={{
                   color:      annotationsOpen ? 'white'        : 'var(--muted)',
                   background: annotationsOpen ? 'var(--accent)' : 'transparent',
@@ -1311,9 +1323,21 @@ export default function NuggetDetailPage() {
               </button>
             )}
             <button
+              onClick={() => setViewOpen(o => !o)}
+              aria-label="Ansicht: Schriftgröße & Versangaben"
+              className="flex items-center justify-center p-1 rounded-lg transition-colors"
+              style={{
+                color:      viewOpen ? 'white'        : 'var(--muted)',
+                background: viewOpen ? 'var(--accent)' : 'transparent',
+                border: `1px solid ${viewOpen ? 'var(--accent)' : 'var(--border)'}`,
+              }}
+            >
+              <ALargeSmall size={16} />
+            </button>
+            <button
               onClick={() => setInfoOpen(o => !o)}
               aria-label="Details & Konzepte"
-              className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+              className="flex items-center justify-center p-1 rounded-lg transition-colors"
               style={{
                 color:      infoOpen ? 'white'        : 'var(--muted)',
                 background: infoOpen ? 'var(--accent)' : 'transparent',
@@ -1325,7 +1349,7 @@ export default function NuggetDetailPage() {
             <Link
               href={`/nugget/${nugget.id}/print`}
               aria-label="Als PDF exportieren"
-              className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+              className="flex items-center justify-center p-1 rounded-lg transition-colors"
               style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
             >
               <Printer size={16} />
@@ -1334,7 +1358,7 @@ export default function NuggetDetailPage() {
               <button
                 onClick={goEdit}
                 aria-label="Bearbeiten"
-                className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+                className="flex items-center justify-center p-1 rounded-lg transition-colors"
                 style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
               >
                 <Pencil size={16} />
@@ -1344,7 +1368,7 @@ export default function NuggetDetailPage() {
               <button
                 onClick={handleDelete}
                 aria-label={confirmDelete ? 'Wirklich löschen?' : 'Löschen'}
-                className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
+                className="flex items-center justify-center p-1 rounded-lg transition-colors"
                 style={{
                   background: confirmDelete ? '#c0392b' : 'transparent',
                   color: confirmDelete ? 'white' : '#c0392b',
@@ -1358,7 +1382,7 @@ export default function NuggetDetailPage() {
               <button
                 onClick={() => setConfirmDelete(false)}
                 aria-label="Löschen abbrechen"
-                className="flex items-center justify-center p-1.5 rounded-lg"
+                className="flex items-center justify-center p-1 rounded-lg"
                 style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
               >
                 <X size={16} />
@@ -1393,7 +1417,7 @@ export default function NuggetDetailPage() {
               onClick={() => stepMatch(-1)}
               disabled={!matchCount}
               aria-label="Vorheriger Treffer"
-              className="flex items-center justify-center p-1.5 rounded-lg disabled:opacity-40"
+              className="flex items-center justify-center p-1 rounded-lg disabled:opacity-40"
               style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
             >
               <ChevronUp size={16} />
@@ -1402,7 +1426,7 @@ export default function NuggetDetailPage() {
               onClick={() => stepMatch(1)}
               disabled={!matchCount}
               aria-label="Nächster Treffer"
-              className="flex items-center justify-center p-1.5 rounded-lg disabled:opacity-40"
+              className="flex items-center justify-center p-1 rounded-lg disabled:opacity-40"
               style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
             >
               <ChevronDown size={16} />
@@ -1410,11 +1434,62 @@ export default function NuggetDetailPage() {
             <button
               onClick={closeSearch}
               aria-label="Suche schließen"
-              className="flex items-center justify-center p-1.5 rounded-lg"
+              className="flex items-center justify-center p-1 rounded-lg"
               style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
             >
               <X size={16} />
             </button>
+          </div>
+        )}
+
+        {/* View-settings row — font size (+ verse markers for Bible imports)
+            live in the sticky bar so adjusting them never costs the reading
+            position; the info panel sits above the content and would. */}
+        {viewOpen && (
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => changeFontSize(-FONT_SIZE_STEP)}
+              disabled={fontSize <= MIN_FONT_SIZE}
+              aria-label="Schrift verkleinern"
+              className="flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-40"
+              style={{ color: 'var(--ink)', border: '1px solid var(--border)', fontSize: '12px' }}
+            >
+              A
+            </button>
+            <span className="text-xs tabular-nums w-10 text-center" style={{ color: 'var(--ink)' }}>
+              {fontSize} px
+            </span>
+            <button
+              onClick={() => changeFontSize(FONT_SIZE_STEP)}
+              disabled={fontSize >= MAX_FONT_SIZE}
+              aria-label="Schrift vergrößern"
+              className="flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-40"
+              style={{ color: 'var(--ink)', border: '1px solid var(--border)', fontSize: '17px' }}
+            >
+              A
+            </button>
+            <button
+              onClick={resetFontSize}
+              disabled={fontSize === DEFAULT_FONT_SIZE}
+              className="text-xs px-2.5 py-1.5 rounded-lg disabled:opacity-40"
+              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+            >
+              Zurücksetzen
+            </button>
+            {hasVerses && (
+              <button
+                type="button"
+                onClick={toggleVerses}
+                className="text-xs px-2.5 py-1.5 rounded-lg ml-auto transition-all"
+                style={{
+                  background: showVerses ? 'var(--accent)' : 'transparent',
+                  color:      showVerses ? 'white'         : 'var(--muted)',
+                  border: `1px solid ${showVerses ? 'var(--accent)' : 'var(--border)'}`,
+                }}
+              >
+                Versangaben {showVerses ? 'an' : 'aus'}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1453,17 +1528,6 @@ export default function NuggetDetailPage() {
               <p className="text-sm" style={{ color: 'var(--ink)' }}>
                 Erstellt: {formatDate(nugget.createdAt)}
               </p>
-              {latestReview ? (
-                <p className="text-sm" style={{ color: 'var(--ink)' }}>
-                  Nächste Wiederholung: {formatDate(latestReview.nextReview)}
-                  {' · '}Intervall {Math.round(latestReview.intervalDays)} T
-                  {' · '}{latestReview.repetitions}× wiederholt
-                </p>
-              ) : (
-                <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                  Noch nicht wiederholt.
-                </p>
-              )}
             </div>
 
             {/* Reading font size — scopes to nugget text only (--nugget-font-size). */}
@@ -1505,8 +1569,9 @@ export default function NuggetDetailPage() {
             </div>
 
             {/* Bible verse markers toggle — only for nuggets that contain
-                <sup data-verse> atoms (Bible imports). Session-only state. */}
-            {nugget.contentHtml.includes('data-verse=') && (
+                <sup data-verse> atoms (Bible imports). Same state as the
+                sticky-bar view row; persisted per nugget in sessionStorage. */}
+            {hasVerses && (
               <div>
                 <h2 className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--muted)' }}>
                   Versangaben
@@ -1517,7 +1582,7 @@ export default function NuggetDetailPage() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => setShowVerses(v => !v)}
+                    onClick={toggleVerses}
                     className="text-xs px-3 py-1 rounded-lg transition-all"
                     style={{
                       background: showVerses ? 'var(--accent)' : 'transparent',

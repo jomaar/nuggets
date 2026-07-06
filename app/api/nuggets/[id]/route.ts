@@ -24,7 +24,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       markScheme:  true,
       domainId:    true,
       createdAt:   true,
-      reviews: { orderBy: { createdAt: 'desc' }, take: 1 },
       domain: true,
       concepts: {
         // _count.nuggets = how many other nuggets share this concept; the

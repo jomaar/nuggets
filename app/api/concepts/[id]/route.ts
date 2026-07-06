@@ -11,12 +11,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       labels: true,
       nuggets: {
         include: {
-          nugget: {
-            include: {
-              domain: true,
-              reviews: { orderBy: { createdAt: 'desc' }, take: 1 },
-            },
-          },
+          nugget: { include: { domain: true } },
         },
         orderBy: { relevance: 'desc' },
       },
