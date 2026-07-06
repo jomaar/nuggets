@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ChevronUp, ChevronDown, X, Trash2 } from 'lucide-react'
+import { ChevronUp, ChevronDown, X, Trash2, Maximize2, Minimize2 } from 'lucide-react'
 import { commentMarkdownToHtml } from '@/lib/content'
 
 /**
@@ -61,6 +61,12 @@ export default function AnnotationSheet({
   // Two-tap delete confirmation, mirroring the single view's delete button.
   const [confirmDelete, setConfirmDelete] = useState(false)
 
+  // Fullscreen mode: the sheet grows from the 42dvh peek to the full viewport
+  // for focused reading/editing of a long comment. Deliberately a toggle, not
+  // the default — fullscreen covers the text, so the scroll-sync with the
+  // reading view only works in the peek state. Resets on close (unmount).
+  const [expanded, setExpanded] = useState(false)
+
   // Tap-to-edit: the body is stored as Markdown and shown RENDERED; tapping it
   // (owner only) swaps in the textarea. Tracking the id — not a boolean — means
   // stepping to another comment implicitly leaves edit mode. An empty body
@@ -94,13 +100,15 @@ export default function AnnotationSheet({
       aria-label="Kommentare"
       className="fixed left-0 right-0 bottom-0 z-[60] flex flex-col sheet-enter"
       style={{
-        height: '42dvh',
+        height: expanded ? '100dvh' : '42dvh',
         background: 'var(--surface)',
         border: '1px solid var(--border)',
         borderBottom: 'none',
-        borderRadius: '20px 20px 0 0',
+        borderRadius: expanded ? 0 : '20px 20px 0 0',
         boxShadow: '0 -8px 40px rgba(0,0,0,0.18)',
+        paddingTop: expanded ? 'env(safe-area-inset-top)' : undefined,
         paddingBottom: 'env(safe-area-inset-bottom)',
+        transition: 'height 0.2s ease, border-radius 0.2s ease',
       }}
     >
       <div
@@ -132,6 +140,17 @@ export default function AnnotationSheet({
           style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
         >
           <ChevronDown size={16} />
+        </button>
+        <button
+          onClick={() => setExpanded(e => !e)}
+          aria-pressed={expanded}
+          aria-label={expanded ? 'Vollbild verlassen' : 'Vollbild'}
+          className="flex items-center justify-center p-1.5 rounded-lg"
+          style={expanded
+            ? { color: 'white', background: 'var(--accent)', border: '1px solid var(--accent)' }
+            : { color: 'var(--muted)', border: '1px solid var(--border)' }}
+        >
+          {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         </button>
         <button
           onClick={onClose}
