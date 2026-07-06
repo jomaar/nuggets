@@ -1170,12 +1170,37 @@ export default function NuggetDetailPage() {
   }, [nugget, id, jumpToAnchor])
 
   /**
+   * Follow a same-origin `/nugget/<id>?bm=…` deep-link in app: a link to
+   * another nugget navigates (the target view resolves `?bm=`), a link within
+   * THIS nugget jumps directly — no remount would re-run the load-jump effect.
+   * Returns true when the link was handled (caller must preventDefault);
+   * external / non-nugget links return false and stay with the browser.
+   * Shared by the reading-content click handler and the comment sheet's
+   * rendered Markdown bodies.
+   */
+  const followNuggetLink = useCallback((href: string): boolean => {
+    let url: URL
+    try { url = new URL(href, window.location.origin) } catch { return false }
+    if (url.origin !== window.location.origin) return false
+
+    const match = url.pathname.match(/^\/nugget\/([^/]+)\/?$/)
+    if (!match) return false
+
+    const targetId = match[1]
+    if (targetId === id) {
+      const token = url.searchParams.get('bm')
+      const target = token ? decodeAnchorToken(token) : null
+      if (target) jumpToAnchor(target)
+      return true
+    }
+    router.push(url.pathname + url.search)
+    return true
+  }, [id, jumpToAnchor, router])
+
+  /**
    * Intercept clicks on cross-nugget deep-links inside the reading content.
    * Tiptap renders pasted links as plain `<a>` (openOnClick is off), so the DOM
-   * click bubbles up here. A same-origin `/nugget/<id>?bm=…` link is handled in
-   * app: a link to another nugget navigates (the target view resolves `?bm=`),
-   * a link within THIS nugget jumps directly — no remount would re-run the
-   * load-jump effect. Everything else (external links) is left to the browser.
+   * click bubbles up here and is routed through followNuggetLink.
    */
   const handleContentClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const anchor = (event.target as HTMLElement).closest('a')
@@ -1185,23 +1210,7 @@ export default function NuggetDetailPage() {
       handleAnnotationTap(event)
       return
     }
-
-    let url: URL
-    try { url = new URL(href, window.location.origin) } catch { return }
-    if (url.origin !== window.location.origin) return
-
-    const match = url.pathname.match(/^\/nugget\/([^/]+)\/?$/)
-    if (!match) return
-
-    event.preventDefault()
-    const targetId = match[1]
-    if (targetId === id) {
-      const token = url.searchParams.get('bm')
-      const target = token ? decodeAnchorToken(token) : null
-      if (target) jumpToAnchor(target)
-      return
-    }
-    router.push(url.pathname + url.search)
+    if (followNuggetLink(href)) event.preventDefault()
   }
 
   if (loading) {
@@ -1725,6 +1734,7 @@ export default function NuggetDetailPage() {
           onFlush={flushAnnotationSave}
           onDelete={deleteAnnotation}
           onClose={closeAnnotations}
+          onNuggetLink={followNuggetLink}
         />
       )}
 

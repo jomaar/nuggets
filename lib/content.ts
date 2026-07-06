@@ -35,6 +35,16 @@ export function normalizeToHtml(input: string): string {
 }
 
 /**
+ * Renders a margin-comment body (stored as Markdown plain text) to sanitized
+ * HTML for display. Unlike normalizeToHtml the input is ALWAYS treated as
+ * Markdown (a comment is never authored as HTML), and single line breaks are
+ * kept (`breaks: true`) — comments are casual notes, not documents.
+ */
+export function commentMarkdownToHtml(markdown: string): string {
+  return sanitizeHtml(marked(markdown.trim(), { breaks: true, async: false }) as string)
+}
+
+/**
  * Derives Markdown from canonical HTML, stripping highlight marks.
  * Used as the projection sent to the AI, which works in Markdown.
  */

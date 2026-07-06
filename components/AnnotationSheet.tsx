@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { ChevronUp, ChevronDown, X, Trash2 } from 'lucide-react'
+import { commentMarkdownToHtml } from '@/lib/content'
 
 /**
  * A margin comment as the API ships it. Anchored to the text via a text-quote
@@ -37,6 +38,12 @@ interface AnnotationSheetProps {
   onFlush: (id: string) => void
   onDelete: (id: string) => void
   onClose: () => void
+  /**
+   * Follow an in-app nugget deep-link clicked inside a rendered comment body;
+   * returns true when handled (the sheet then suppresses browser navigation).
+   * External links stay with the browser.
+   */
+  onNuggetLink?: (href: string) => boolean
 }
 
 /**
@@ -49,10 +56,17 @@ interface AnnotationSheetProps {
  */
 export default function AnnotationSheet({
   annotations, resolvedIds, activeId, isOwner,
-  onStep, onJump, onChangeBody, onFlush, onDelete, onClose,
+  onStep, onJump, onChangeBody, onFlush, onDelete, onClose, onNuggetLink,
 }: AnnotationSheetProps) {
   // Two-tap delete confirmation, mirroring the single view's delete button.
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  // Tap-to-edit: the body is stored as Markdown and shown RENDERED; tapping it
+  // (owner only) swaps in the textarea. Tracking the id — not a boolean — means
+  // stepping to another comment implicitly leaves edit mode. An empty body
+  // (brand-new comment) always starts in the editor; onFocus pins the id so the
+  // editor doesn't fall back to the rendered view after the first keystroke.
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   // A pending confirmation must not carry over to another comment.
   useEffect(() => setConfirmDelete(false), [activeId])
@@ -60,6 +74,18 @@ export default function AnnotationSheet({
   const active = annotations.find(a => a.id === activeId) ?? null
   const index = active ? annotations.findIndex(a => a.id === active.id) : -1
   const resolved = active !== null && resolvedIds.includes(active.id)
+  const editing = isOwner && active !== null && (editingId === active.id || active.body === '')
+
+  /** Clicks in the rendered body: links are followed, anything else edits. */
+  const handleBodyClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const anchor = (event.target as HTMLElement).closest('a')
+    const href = anchor?.getAttribute('href')
+    if (href) {
+      if (onNuggetLink?.(href)) event.preventDefault()
+      return
+    }
+    if (isOwner && active) setEditingId(active.id)
+  }
 
   return (
     <div
@@ -148,19 +174,35 @@ export default function AnnotationSheet({
             </p>
           )}
 
-          {/* Keyed by comment id so switching comments remounts the field
-              (fresh autofocus for a brand-new, still-empty comment). */}
-          <textarea
-            key={active.id}
-            value={active.body}
-            onChange={e => onChangeBody(active.id, e.target.value)}
-            onBlur={() => onFlush(active.id)}
-            readOnly={!isOwner}
-            autoFocus={isOwner && active.body === ''}
-            placeholder="Kommentar…"
-            className="flex-1 min-h-0 w-full text-sm px-3 py-2.5 rounded-lg outline-none resize-none"
-            style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)', lineHeight: 1.6 }}
-          />
+          {editing ? (
+            /* Keyed by comment id so switching comments remounts the field
+               (fresh autofocus for a brand-new, still-empty comment). */
+            <textarea
+              key={active.id}
+              value={active.body}
+              onChange={e => onChangeBody(active.id, e.target.value)}
+              onFocus={() => setEditingId(active.id)}
+              onBlur={() => { onFlush(active.id); setEditingId(null) }}
+              autoFocus
+              placeholder="Kommentar… (Markdown)"
+              className="flex-1 min-h-0 w-full text-sm px-3 py-2.5 rounded-lg outline-none resize-none"
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)', lineHeight: 1.6 }}
+            />
+          ) : (
+            /* Rendered Markdown view — same box as the textarea so tapping into
+               edit mode feels like focusing the field, not switching screens. */
+            <div
+              onClick={handleBodyClick}
+              className="annotation-body flex-1 min-h-0 w-full text-sm px-3 py-2.5 rounded-lg overflow-y-auto"
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)', lineHeight: 1.6 }}
+            >
+              {active.body === '' ? (
+                <span style={{ color: 'var(--muted)' }}>Kein Kommentartext.</span>
+              ) : (
+                <div dangerouslySetInnerHTML={{ __html: commentMarkdownToHtml(active.body) }} />
+              )}
+            </div>
+          )}
 
           {isOwner && (
             <div className="flex items-center justify-end gap-1.5 flex-shrink-0">

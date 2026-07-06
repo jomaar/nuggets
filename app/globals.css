@@ -321,6 +321,50 @@ h1, h2, h3, .serif {
   padding: 0;
 }
 
+/* Margin-comment body (AnnotationSheet): comments are stored as Markdown and
+   shown rendered. Compact typography — the sheet is ~42dvh, so block margins
+   stay tight and headings barely outsize the body text. */
+.annotation-body p { margin: 0 0 0.5em; }
+.annotation-body p:last-child { margin-bottom: 0; }
+.annotation-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  word-break: break-word;
+}
+/* Tailwind's preflight strips list styling — restore it inside comments. */
+.annotation-body ul, .annotation-body ol { margin: 0.3em 0 0.5em; padding-left: 1.3em; }
+.annotation-body ul { list-style: disc; }
+.annotation-body ol { list-style: decimal; }
+.annotation-body li { margin: 0.15em 0; }
+.annotation-body h1, .annotation-body h2, .annotation-body h3 {
+  font-size: 1.05em;
+  font-weight: 600;
+  margin: 0.6em 0 0.3em;
+}
+.annotation-body blockquote {
+  margin: 0.4em 0;
+  padding-left: 0.7em;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+}
+.annotation-body code {
+  font-size: 0.88em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05em 0.3em;
+}
+.annotation-body pre {
+  margin: 0.4em 0;
+  padding: 0.5em 0.7em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.annotation-body pre code { background: none; border: none; padding: 0; }
+
 /* Ego-network view (/graph) — fresh nodes fade in on mount; edges remount on
    every focus change and fade in late, after the node glide has settled. */
 @keyframes ego-fade-in {
