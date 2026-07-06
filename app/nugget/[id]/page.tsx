@@ -380,6 +380,12 @@ export default function NuggetDetailPage() {
   // (scroll-style flow text), kept per nugget in sessionStorage so the edit
   // round-trip (this view unmounts) doesn't silently switch markers off again.
   const [showVerses, setShowVerses]   = useState(false)
+  // Comment indicators (dotted underline + wash) visibility — default shown,
+  // per nugget in sessionStorage like the verse toggle. Hiding only skips
+  // painting the 'annotation' highlight layer; the anchors keep resolving, so
+  // the sheet, its ordering and jumps still work (the active-comment wash
+  // stays visible while the sheet is open — it is functional, not decoration).
+  const [showAnnotationMarks, setShowAnnotationMarks] = useState(true)
   // Hidden marking styles — markKeys ("hl:yellow", "ul:red") whose styling is
   // switched off in the reading view (plain text; contentHtml untouched).
   // Viewing preference like the verse toggle: per nugget in sessionStorage,
@@ -537,11 +543,13 @@ export default function NuggetDetailPage() {
         .map(a => a.id)
       const orphanIds = annotations.filter(a => !map.has(a.id)).map(a => a.id)
       setAnnotationOrder([...resolvedIds, ...orphanIds])
-      setAnnotationHighlights([...map.values()])
+      // Ranges are always resolved (sheet order/jumps need them); only the
+      // painted indicator layer follows the visibility toggle.
+      setAnnotationHighlights(showAnnotationMarks ? [...map.values()] : [])
     }
     raf = requestAnimationFrame(resolveAll)
     return () => cancelAnimationFrame(raf)
-  }, [annotations, nugget, annotationResolveTick])
+  }, [annotations, nugget, annotationResolveTick, showAnnotationMarks])
 
   // Stronger wash on the active comment while the sheet is open. The order
   // dependency re-runs this after a re-resolution, replacing a stale Range.
@@ -599,6 +607,18 @@ export default function NuggetDetailPage() {
     const next = !showVerses
     setShowVerses(next)
     sessionStorage.setItem(`nugget-verses-${id}`, next ? '1' : '0')
+  }
+
+  // Restore the per-nugget comment-indicator visibility (default shown).
+  useEffect(() => {
+    setShowAnnotationMarks(sessionStorage.getItem(`nugget-annotation-marks-${id}`) !== '0')
+  }, [id])
+
+  /** Toggle the in-text comment indicators and remember the choice. */
+  const toggleAnnotationMarks = () => {
+    const next = !showAnnotationMarks
+    setShowAnnotationMarks(next)
+    sessionStorage.setItem(`nugget-annotation-marks-${id}`, next ? '1' : '0')
   }
 
   // Restore the per-nugget hidden marking styles (keyed on id like the verse
@@ -1047,6 +1067,9 @@ export default function NuggetDetailPage() {
    * exist — the indicator is painted via the CSS Custom Highlight API.
    */
   const handleAnnotationTap = (event: React.MouseEvent) => {
+    // Hidden indicators are invisible tap targets — taps must not surprise-
+    // open the sheet (the toolbar button still does).
+    if (!showAnnotationMarks) return
     // A drag-selection's trailing click must not open the sheet.
     const sel = document.getSelection()
     if (sel && !sel.isCollapsed) return
@@ -1371,7 +1394,7 @@ export default function NuggetDetailPage() {
             )}
             <button
               onClick={() => setViewOpen(o => !o)}
-              aria-label="Ansicht: Schriftgröße & Versangaben"
+              aria-label="Ansicht: Schriftgröße, Versangaben & Kommentarstellen"
               className="flex items-center justify-center p-1 rounded-lg transition-colors"
               style={{
                 color:      viewOpen ? 'white'        : 'var(--muted)',
@@ -1535,6 +1558,20 @@ export default function NuggetDetailPage() {
                 }}
               >
                 Versangaben {showVerses ? 'an' : 'aus'}
+              </button>
+            )}
+            {annotations.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleAnnotationMarks}
+                className={`text-xs px-2.5 py-1.5 rounded-lg transition-all${hasVerses ? '' : ' ml-auto'}`}
+                style={{
+                  background: showAnnotationMarks ? 'var(--accent)' : 'transparent',
+                  color:      showAnnotationMarks ? 'white'         : 'var(--muted)',
+                  border: `1px solid ${showAnnotationMarks ? 'var(--accent)' : 'var(--border)'}`,
+                }}
+              >
+                Kommentarstellen {showAnnotationMarks ? 'an' : 'aus'}
               </button>
             )}
           </div>
