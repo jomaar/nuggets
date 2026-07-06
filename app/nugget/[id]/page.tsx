@@ -22,7 +22,7 @@ import {
   getNuggetFontSize, setNuggetFontSize,
   MIN_FONT_SIZE, MAX_FONT_SIZE, DEFAULT_FONT_SIZE, FONT_SIZE_STEP,
 } from '@/lib/nuggetFontSize'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer, Pencil, Trash2, ArrowLeft, MessageSquareText, ALargeSmall } from 'lucide-react'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer, Pencil, Trash2, ArrowLeft, MessageSquareText, ALargeSmall, Eye, EyeOff } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -380,6 +380,11 @@ export default function NuggetDetailPage() {
   // (scroll-style flow text), kept per nugget in sessionStorage so the edit
   // round-trip (this view unmounts) doesn't silently switch markers off again.
   const [showVerses, setShowVerses]   = useState(false)
+  // Hidden marking styles — markKeys ("hl:yellow", "ul:red") whose styling is
+  // switched off in the reading view (plain text; contentHtml untouched).
+  // Viewing preference like the verse toggle: per nugget in sessionStorage,
+  // toggled via the eye buttons in the marks popup's legend.
+  const [hiddenMarks, setHiddenMarks] = useState<string[]>([])
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [marksOpen, setMarksOpen]     = useState(false)
   const [marks, setMarks]             = useState<{ text: string; color: string; kind: MarkKind; markIndex: number }[]>([])
@@ -594,6 +599,36 @@ export default function NuggetDetailPage() {
     const next = !showVerses
     setShowVerses(next)
     sessionStorage.setItem(`nugget-verses-${id}`, next ? '1' : '0')
+  }
+
+  // Restore the per-nugget hidden marking styles (keyed on id like the verse
+  // toggle — a same-segment hop must pick up THAT nugget's stored state).
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(`nugget-hidden-marks-${id}`) ?? '[]')
+      setHiddenMarks(Array.isArray(stored) ? stored.filter(k => typeof k === 'string') : [])
+    } catch {
+      setHiddenMarks([])
+    }
+  }, [id])
+
+  /** Apply a new hidden-markings set and remember it for this nugget. */
+  const applyHiddenMarks = (next: string[]) => {
+    setHiddenMarks(next)
+    sessionStorage.setItem(`nugget-hidden-marks-${id}`, JSON.stringify(next))
+  }
+
+  /** Show/hide one (style, colour) pair's styling in the reading view. */
+  const toggleMarkHidden = (kind: MarkKind, color: string) => {
+    const key = markKey(kind, color)
+    applyHiddenMarks(hiddenMarks.includes(key)
+      ? hiddenMarks.filter(k => k !== key)
+      : [...hiddenMarks, key])
+  }
+
+  /** Hide/show ALL marking styles of the legend at once. */
+  const setAllMarksHidden = (hidden: boolean, keys: string[]) => {
+    applyHiddenMarks(hidden ? keys : [])
   }
 
   // Seed the live colour-meaning scheme whenever a (new) nugget arrives.
@@ -1247,6 +1282,9 @@ export default function NuggetDetailPage() {
     marks.some(m => m.kind === r.kind && m.color === r.name) ||
     hasMarkLabel(scheme, r.kind, r.name),
   )
+  // Master eye state: every legend row's marking style is currently hidden.
+  const allLegendHidden = legendRows.length > 0 &&
+    legendRows.every(r => hiddenMarks.includes(markKey(r.kind, r.name)))
 
   // Sheet order: resolved anchors in document order, orphans behind them, plus
   // any comment so fresh the resolve effect hasn't caught up yet, at the end.
@@ -1703,9 +1741,14 @@ export default function NuggetDetailPage() {
       <div
         ref={contentRef}
         onClick={handleContentClick}
-        // Verse markers are hidden by default (scroll-style reading); the edit
-        // view never gets this class, so markers stay visible while editing.
-        className={showVerses ? undefined : 'verses-hidden'}
+        // Verse markers are hidden by default (scroll-style reading); hidden
+        // marking styles map to .mark-hidden-<kind>-<colour> classes (rules in
+        // globals.css). The edit view never gets these classes, so markers and
+        // markings stay visible while editing.
+        className={[
+          showVerses ? '' : 'verses-hidden',
+          ...hiddenMarks.map(k => `mark-hidden-${k.replace(':', '-')}`),
+        ].filter(Boolean).join(' ') || undefined}
       >
         <NuggetReader
           key={nugget.id}
@@ -1803,23 +1846,46 @@ export default function NuggetDetailPage() {
                   the popup remounts them fresh each time it opens. */}
               {(legendRows.length > 0 || isOwner) && (
                 <div className="flex flex-col gap-1.5 pb-2 mb-1" style={{ borderBottom: '1px solid var(--border)' }}>
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-xs tracking-widest uppercase flex-1" style={{ color: 'var(--muted)' }}>
                       Legende
                     </h3>
+                    {/* Master visibility toggle — hide/show ALL marking styles
+                        at once (viewing preference, available to any reader). */}
+                    {legendRows.length > 0 && (
+                      <button
+                        onClick={() => setAllMarksHidden(
+                          !allLegendHidden,
+                          legendRows.map(r => markKey(r.kind, r.name)),
+                        )}
+                        aria-label={allLegendHidden ? 'Alle Markierungen einblenden' : 'Alle Markierungen ausblenden'}
+                        title={allLegendHidden ? 'Alle einblenden' : 'Alle ausblenden'}
+                        className="flex items-center justify-center p-1.5 rounded-lg flex-shrink-0"
+                        style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+                      >
+                        {allLegendHidden ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    )}
                     {/* Scheme import — copy another nugget's colour meanings here. */}
                     {isOwner && (
                       <button
                         onClick={openImport}
-                        className="text-xs px-2.5 py-1 rounded-full"
+                        className="text-xs px-2.5 py-1 rounded-full flex-shrink-0"
                         style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
                       >
                         Übernehmen von …
                       </button>
                     )}
                   </div>
-                  {legendRows.map(r => (
-                    <div key={markKey(r.kind, r.name)} className="flex items-center gap-2.5">
+                  {legendRows.map(r => {
+                    const rowHidden = hiddenMarks.includes(markKey(r.kind, r.name))
+                    return (
+                    <div
+                      key={markKey(r.kind, r.name)}
+                      className="flex items-center gap-2.5"
+                      // Dim the whole row while its marking style is hidden.
+                      style={{ opacity: rowHidden ? 0.45 : 1 }}
+                    >
                       <span
                         className="flex-shrink-0"
                         style={r.kind === 'hl'
@@ -1849,12 +1915,24 @@ export default function NuggetDetailPage() {
                           style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
                         />
                       ) : (
-                        <span className="text-sm" style={{ color: 'var(--ink)' }}>
+                        <span className="flex-1 min-w-0 text-sm" style={{ color: 'var(--ink)' }}>
                           {markLabel(scheme, r.kind, r.name)}
                         </span>
                       )}
+                      {/* Per-style visibility toggle (eye = shown, slashed = hidden). */}
+                      <button
+                        onClick={() => toggleMarkHidden(r.kind, r.name)}
+                        aria-pressed={rowHidden}
+                        aria-label={rowHidden ? 'Markierung einblenden' : 'Markierung ausblenden'}
+                        title={rowHidden ? 'Einblenden' : 'Ausblenden'}
+                        className="flex items-center justify-center p-1.5 rounded-lg flex-shrink-0"
+                        style={{ color: 'var(--muted)' }}
+                      >
+                        {rowHidden ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
 
@@ -1869,8 +1947,12 @@ export default function NuggetDetailPage() {
                     className="flex items-start gap-1 rounded-lg flex-shrink-0 overflow-hidden"
                     // Row look mirrors the marking style: highlights get their
                     // background wash, underlines a neutral fill with the text
-                    // carrying the thick coloured line.
-                    style={{ background: m.kind === 'hl' ? markColorVar('hl', m.color) : 'var(--warm)' }}
+                    // carrying the thick coloured line. Dimmed while the style
+                    // is hidden in the text (jump still works).
+                    style={{
+                      background: m.kind === 'hl' ? markColorVar('hl', m.color) : 'var(--warm)',
+                      opacity: hiddenMarks.includes(markKey(m.kind, m.color)) ? 0.45 : 1,
+                    }}
                   >
                     <button
                       onClick={() => scrollToMark(m.markIndex)}

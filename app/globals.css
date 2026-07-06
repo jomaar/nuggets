@@ -162,6 +162,34 @@ h1, h2, h3, .serif {
 .nugget-content u[data-color="purple"] { text-decoration-color: var(--ul-purple); }
 .nugget-content u[data-color="teal"]   { text-decoration-color: var(--ul-teal); }
 
+/* Hidden markings — the single view puts .mark-hidden-<kind>-<colour> classes
+   on its content wrapper (per-nugget viewing preference, toggled via the eye
+   buttons in the marks popup's legend). Hiding removes ONLY the styling — the
+   text renders plain, contentHtml/DOM stay untouched. The selectors route
+   through .nugget-content so they out-specify the base rules above. A <mark>
+   without data-color renders yellow, so hiding yellow must cover it too.
+   Edit view and print route never get these classes — markings always show
+   there (same principle as .verses-hidden). */
+.mark-hidden-hl-yellow .nugget-content mark[data-color="yellow"],
+.mark-hidden-hl-yellow .nugget-content mark:not([data-color]),
+.mark-hidden-hl-blue   .nugget-content mark[data-color="blue"],
+.mark-hidden-hl-green  .nugget-content mark[data-color="green"],
+.mark-hidden-hl-pink   .nugget-content mark[data-color="pink"],
+.mark-hidden-hl-orange .nugget-content mark[data-color="orange"],
+.mark-hidden-hl-purple .nugget-content mark[data-color="purple"] {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+.mark-hidden-ul-red    .nugget-content u[data-color="red"],
+.mark-hidden-ul-blue   .nugget-content u[data-color="blue"],
+.mark-hidden-ul-green  .nugget-content u[data-color="green"],
+.mark-hidden-ul-orange .nugget-content u[data-color="orange"],
+.mark-hidden-ul-purple .nugget-content u[data-color="purple"],
+.mark-hidden-ul-teal   .nugget-content u[data-color="teal"] {
+  text-decoration: none;
+}
+
 /* Bible verse markers — empty <sup data-verse="C.V"> atoms (VerseMarker node).
    The visible [C.V] is GENERATED content: it never enters contentPlain/Markdown,
    isn't copied with a text selection, and sizes in em so it follows the reading
