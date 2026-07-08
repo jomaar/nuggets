@@ -16,7 +16,11 @@ export async function GET() {
       nugget: { select: { id: true, title: true } },
     },
   })
-  return NextResponse.json(bookmarks)
+  // Defensive: a delete past the app (sqlite3 CLI has foreign_keys OFF, so
+  // ON DELETE CASCADE is inert there) can leave orphaned bookmarks whose
+  // joined nugget is null at runtime despite the required relation — hide
+  // them instead of listing dead entries. Cleanup: scripts/cleanup-orphan-anchors.ts.
+  return NextResponse.json(bookmarks.filter(b => b.nugget !== null))
 }
 
 // POST /api/bookmarks — create a reading bookmark from a text-quote anchor.
