@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect } from 'react'
 import { ArrowLeft, Printer } from 'lucide-react'
+import { renderMermaidBlocks } from '@/lib/mermaidRender'
 
 /**
  * Screen-only action bar for the PDF print view.
@@ -13,6 +14,9 @@ import { ArrowLeft, Printer } from 'lucide-react'
  * - Renders a back link plus a "Save as PDF" button that triggers the system
  *   print dialog. The whole bar carries the `no-print` class so it never shows
  *   up in the generated PDF (hidden via the @media print rule in globals.css).
+ * - Renders ```mermaid code blocks in the (otherwise static, server-rendered)
+ *   document as diagrams, matching the reading view. Runs on mount, so the
+ *   diagrams are long done before the user reaches the print dialog.
  */
 export default function PrintControls({ title, backHref }: { title: string; backHref: string }) {
   useEffect(() => {
@@ -22,6 +26,13 @@ export default function PrintControls({ title, backHref }: { title: string; back
       document.title = previous
     }
   }, [title])
+
+  useEffect(() => {
+    const content = document.querySelector<HTMLElement>('.pdf-doc .nugget-content')
+    if (content?.querySelector('pre > code.language-mermaid')) {
+      void renderMermaidBlocks(content)
+    }
+  }, [])
 
   return (
     <div className="no-print flex items-center justify-between gap-2 mb-6">

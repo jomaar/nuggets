@@ -51,7 +51,8 @@ Additionally, revise the note's content and return it as "revisedContent" (Markd
 - Eliminate redundancy and conversational artifacts (questions, repetitions) without losing information
 - Restructure for clarity (headings, paragraphs, lists where helpful)
 - Shorten without information loss
-- Preserve technical terms, direct quotes, and source references verbatim`
+- Preserve technical terms, direct quotes, and source references verbatim
+- Preserve fenced code blocks (\`\`\` … \`\`\`) EXACTLY as they are, including their language tag — never rewrite, reformat, shorten or drop them. This applies especially to \`\`\`mermaid diagram blocks: the app renders them as diagrams, and any change to the code changes or breaks the diagram`
 
 interface ExtractionOptions {
   domainId?: string | null

@@ -357,6 +357,7 @@ function NuggetReader({ id, contentHtml, markScheme, onComment }: {
       onReady={handleEditorReady}
       markScheme={markScheme}
       onComment={onComment}
+      renderMermaid
     />
   )
 }

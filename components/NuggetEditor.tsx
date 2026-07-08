@@ -10,6 +10,7 @@ import { normalizeToHtml } from '@/lib/content'
 import CssVarHighlight from './CssVarHighlight'
 import CssVarUnderline from './CssVarUnderline'
 import VerseMarker from './VerseMarker'
+import MermaidCodeBlock from './MermaidCodeBlock'
 import AiReworkPopup from './AiReworkPopup'
 import {
   HIGHLIGHT_PALETTE, UNDERLINE_PALETTE,
@@ -45,6 +46,11 @@ interface NuggetEditorProps {
    * as a mini label under the swatch (iOS has no hover tooltips).
    */
   markScheme?: MarkScheme
+  /**
+   * Opt-in: render ```mermaid code blocks as diagrams (single reading view).
+   * Off by default so the edit view and card previews keep the editable code.
+   */
+  renderMermaid?: boolean
 }
 
 /**
@@ -91,6 +97,7 @@ export default function NuggetEditor({
   enableAiRework = false,
   onComment,
   markScheme = {},
+  renderMermaid = false,
 }: NuggetEditorProps) {
   // The selected passage handed to the AI rework popup (null = popup closed).
   const [reworkText, setReworkText] = useState<string | null>(null)
@@ -116,7 +123,11 @@ export default function NuggetEditor({
         // CssVarUnderline (colour via data-color) replaces it; two copies of
         // the same mark would trigger the duplicate-extension warning.
         underline: false,
+        // Same pattern for CodeBlock: replaced by MermaidCodeBlock below
+        // (identical document model, adds diagram rendering in the reading view).
+        codeBlock: false,
       }),
+      MermaidCodeBlock.configure({ renderDiagram: renderMermaid }),
       CssVarHighlight.configure({ multicolor: true }),
       CssVarUnderline,
       // Bible verse markers — MUST stay registered: Tiptap's schema is an

@@ -409,6 +409,22 @@ h1, h2, h3, .serif {
 }
 .sheet-enter { animation: sheet-up 320ms cubic-bezier(0.32, 0.72, 0, 1); }
 
+/* ── Mermaid diagrams ──────────────────────────────────────────────────────
+   Rendered from ```mermaid code blocks: NodeView in the reading view
+   (components/MermaidCodeBlock.ts) and post-render replacement on the print
+   route (lib/mermaidRender.ts). Wide diagrams scroll horizontally inside the
+   wrapper instead of blowing up the page (cf. root overflow-x: clip). */
+.mermaid-diagram {
+  margin: 0.8em 0;
+  overflow-x: auto;
+  text-align: center;
+}
+.mermaid-diagram svg {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--warm); }
@@ -483,4 +499,9 @@ h1, h2, h3, .serif {
   .pdf-doc h1, .pdf-doc h2, .pdf-doc h3 { break-after: avoid; }
   .pdf-doc blockquote, .pdf-doc li, .pdf-doc pre, .pdf-doc img { break-inside: avoid; }
   .pdf-doc p { orphans: 2; widows: 2; }
+
+  /* Mermaid diagrams: print whole (no mid-diagram page break) and unclipped —
+     the on-screen horizontal scroll wrapper would otherwise cut wide diagrams
+     off at the page edge; max-width: 100% already scales them down instead. */
+  .pdf-doc .mermaid-diagram { break-inside: avoid; overflow: visible; }
 }
