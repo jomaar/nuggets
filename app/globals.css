@@ -437,6 +437,9 @@ h1, h2, h3, .serif {
   z-index: 100;
   background: var(--bg);
   overflow: hidden;
+  /* Belt and braces: even a touch that misses the stage (panned aside at the
+     edges) must never hand the gesture to Safari's native page zoom. */
+  touch-action: none;
 }
 .mermaid-lightbox-stage {
   touch-action: none;
@@ -453,8 +456,9 @@ h1, h2, h3, .serif {
   position: fixed;
   top: calc(env(safe-area-inset-top) + 10px);
   right: 14px;
-  width: 40px;
-  height: 40px;
+  z-index: 10; /* above the transformed stage, whatever its paint order */
+  width: 44px;  /* Apple HIG minimum tap target */
+  height: 44px;
   border-radius: 50%;
   background: var(--parchment);
   border: 1px solid var(--border);

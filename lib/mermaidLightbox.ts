@@ -34,15 +34,21 @@ export async function openMermaidLightbox(svg: string): Promise<void> {
   stage.innerHTML = svg
   overlay.appendChild(stage)
 
-  // Mermaid emits `width="100%"` plus an inline max-width — both would keep
-  // the SVG fitted instead of at natural size. Pin it to its viewBox pixel
-  // size so zoom level 1 means "text at full rendered size".
+  // Size the SVG itself to fit the viewport (never scaled up past natural
+  // size), so zoom level 1 = "whole diagram visible". Crucially the STAGE is
+  // never scaled below the viewport: minZoom is 1, so the gesture surface
+  // always covers the whole screen. (The first version scaled the stage down
+  // to fit instead — fingers landing outside the shrunken stage then went to
+  // Safari's native page zoom, which killed the pinch mid-gesture, let the
+  // diagram drift, and displaced the fixed ✕ button's hit area.)
   const svgElement = stage.querySelector('svg')
   const viewBox = svgElement?.viewBox?.baseVal
-  if (svgElement && viewBox && viewBox.width > 0) {
+  if (svgElement && viewBox && viewBox.width > 0 && viewBox.height > 0) {
+    const fit =
+      Math.min(window.innerWidth / viewBox.width, window.innerHeight / viewBox.height, 1) * 0.92
     svgElement.style.maxWidth = 'none'
-    svgElement.style.width = `${viewBox.width}px`
-    svgElement.style.height = `${viewBox.height}px`
+    svgElement.style.width = `${viewBox.width * fit}px`
+    svgElement.style.height = `${viewBox.height * fit}px`
   }
 
   const closeButton = document.createElement('button')
@@ -57,34 +63,42 @@ export async function openMermaidLightbox(svg: string): Promise<void> {
   document.body.style.overflow = 'hidden'
 
   const zoomer = panzoom(stage, {
-    maxZoom: 8,
-    minZoom: 0.15,
-    bounds: true,
-    boundsPadding: 0.1,
+    maxZoom: 10,
+    // Never below the fitted overview — this both gives "zoom fully out" a
+    // natural resting point and keeps the stage covering the viewport (see
+    // the sizing comment above).
+    minZoom: 1,
+    // No kinetic momentum: on iOS a pinch can lose a touch mid-gesture
+    // (system edge gestures), and leftover momentum then made the diagram
+    // drift away on its own. Direct 1:1 gestures only.
+    smoothScroll: false,
   })
-
-  // Start fitted to the viewport (never scaled up past natural size), so the
-  // whole diagram is visible before the user zooms in. The stage is a
-  // viewport-sized flex box with the SVG centered, so zooming around the
-  // viewport center keeps it centered.
-  const svgWidth = viewBox?.width ?? 0
-  const svgHeight = viewBox?.height ?? 0
-  if (svgWidth > 0 && svgHeight > 0) {
-    const fit = Math.min(window.innerWidth / svgWidth, window.innerHeight / svgHeight, 1) * 0.92
-    zoomer.zoomAbs(window.innerWidth / 2, window.innerHeight / 2, fit)
-  }
 
   /** Tear the overlay down and restore page scrolling. */
   const close = () => {
-    zoomer.dispose()
+    // Overlay removal first — if panzoom's dispose ever throws, the user must
+    // still get their page back.
     overlay.remove()
     document.body.style.overflow = previousOverflow
     window.removeEventListener('keydown', onKeyDown)
     isOpen = false
+    try {
+      zoomer.dispose()
+    } catch {
+      /* already torn down with the DOM */
+    }
   }
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') close()
   }
+  // iOS Safari doesn't reliably synthesize a click here (gesture handling on
+  // the fullscreen stage interferes), so close directly on touchend too. The
+  // touchend targets the button only if the touch also STARTED on it, so a
+  // pan released over the ✕ can't close the lightbox by accident.
+  closeButton.addEventListener('touchend', event => {
+    event.preventDefault()
+    close()
+  })
   closeButton.addEventListener('click', close)
   window.addEventListener('keydown', onKeyDown)
 }
