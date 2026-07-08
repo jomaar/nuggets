@@ -1,5 +1,6 @@
 import CodeBlock, { type CodeBlockOptions } from '@tiptap/extension-code-block'
 import { renderMermaidSvg } from '@/lib/mermaidRender'
+import { openMermaidLightbox } from '@/lib/mermaidLightbox'
 
 export interface MermaidCodeBlockOptions extends CodeBlockOptions {
   /**
@@ -51,17 +52,26 @@ const MermaidCodeBlock = CodeBlock.extend<MermaidCodeBlockOptions>({
       dom.className = 'mermaid-diagram'
       let source = node.textContent
       let drawToken = 0
+      // The last successfully rendered SVG; a tap opens it in the fullscreen
+      // pan/zoom lightbox (inline diagrams are fitted to the text column,
+      // which makes labels unreadably small on phones).
+      let renderedSvg: string | null = null
 
       /** Render the source async; on parse errors fall back to the raw code. */
       const draw = (code: string) => {
         const token = ++drawToken
         renderMermaidSvg(code)
           .then(svg => {
-            if (token === drawToken) dom.innerHTML = svg
+            if (token !== drawToken) return
+            dom.innerHTML = svg
+            renderedSvg = svg
+            dom.classList.add('mermaid-zoomable')
           })
           .catch(() => {
             if (token !== drawToken) return
             dom.innerHTML = ''
+            renderedSvg = null
+            dom.classList.remove('mermaid-zoomable')
             const pre = document.createElement('pre')
             const codeElement = document.createElement('code')
             codeElement.textContent = code
@@ -70,6 +80,10 @@ const MermaidCodeBlock = CodeBlock.extend<MermaidCodeBlockOptions>({
           })
       }
       draw(source)
+
+      dom.addEventListener('click', () => {
+        if (renderedSvg) void openMermaidLightbox(renderedSvg)
+      })
 
       return {
         dom,

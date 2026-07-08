@@ -424,6 +424,45 @@ h1, h2, h3, .serif {
   max-width: 100%;
   height: auto;
 }
+/* Reading view only (set by the NodeView after a successful render): a tap
+   opens the fullscreen pan/zoom lightbox — inline labels are tiny on phones. */
+.mermaid-zoomable { cursor: zoom-in; }
+
+/* Fullscreen diagram lightbox (lib/mermaidLightbox.ts, vanilla-DOM overlay).
+   The stage carries the panzoom transform; touch-action: none hands pinch and
+   drag gestures to panzoom instead of the page. */
+.mermaid-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--bg);
+  overflow: hidden;
+}
+.mermaid-lightbox-stage {
+  touch-action: none;
+  /* Fill the viewport so pinch/drag gestures register ANYWHERE, not just on
+     the diagram itself; the SVG sits centered inside. */
+  width: 100vw;
+  height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: 0 0;
+}
+.mermaid-lightbox-close {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 10px);
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--parchment);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  font-size: 1.05rem;
+  line-height: 1;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+}
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
