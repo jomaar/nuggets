@@ -246,16 +246,31 @@ function caretTextNodeAtPoint(x: number, y: number): Text | null {
   return t
 }
 
-/** Text of the nearest block ancestor (the readable "line"), for list display. */
+/**
+ * A readable "line" for the bookmark list, starting AT the captured node.
+ *
+ * We take the text from the captured node's start to the end of its nearest
+ * block ancestor (or `root` when there is none), squashed and capped. Starting
+ * at the node — rather than at the block's beginning — matters when a whole
+ * document lives in a single block (e.g. an entire chapter in one `<p>`, verses
+ * split only by inline markers): the old "block text from the top" then made
+ * every bookmark show the document's opening line. Anchoring at the node makes
+ * the label begin with the bookmarked spot and stay local.
+ */
 function nearestBlockText(node: Node, root: HTMLElement): string {
+  let block: Node = root
   let el: Node | null = node
   while (el && el !== root) {
     if (el.nodeType === Node.ELEMENT_NODE && BLOCK_TAGS.has((el as Element).tagName)) {
-      return squashWhitespace(el.textContent ?? '').trim().slice(0, ANCHOR_LINE_LEN)
+      block = el
+      break
     }
     el = el.parentNode
   }
-  return squashWhitespace(node.textContent ?? '').trim().slice(0, ANCHOR_LINE_LEN)
+  const range = document.createRange()
+  range.setStartBefore(node)
+  range.setEnd(block, block.childNodes.length)
+  return squashWhitespace(range.toString()).trim().slice(0, ANCHOR_LINE_LEN)
 }
 
 /** Capture-time context: the text immediately before/after a whole text node. */
