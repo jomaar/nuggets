@@ -9,6 +9,7 @@ import { detectBibleText, convertBibleText, type BibleConversion } from '@/lib/b
 import { countPlainText } from '@/lib/textStats'
 import DomainChips from '@/components/DomainChips'
 import TextStatsBar from '@/components/TextStatsBar'
+import { getLastDomainSlug, setLastDomainSlug } from '@/lib/lastDomain'
 
 interface Domain {
   id: string
@@ -47,13 +48,17 @@ export default function AddPage() {
   const [saveError, setSaveError]     = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Default the domain picker to the last domain worked in (shared with
+  // app/all's filter, see lib/lastDomain.ts). If the last state was "Alle"
+  // (no domain), fall back to "Glaube & Bibel".
   useEffect(() => {
     fetch('/api/domains')
       .then(r => r.json())
       .then((data: Domain[]) => {
         setDomains(data)
-        const books = data.find(d => d.slug === 'books')
-        if (books) setDomainId(books.id)
+        const lastSlug = getLastDomainSlug()
+        const fallback = data.find(d => d.slug === (lastSlug || 'faith'))
+        if (fallback) setDomainId(fallback.id)
       })
       .catch(() => {})
   }, [])
@@ -89,6 +94,11 @@ export default function AddPage() {
       setSourceUrl(resolvedUrl)
     }
   }, [])
+
+  const handleDomainSelect = (id: string) => {
+    setDomainId(id)
+    setLastDomainSlug(domains.find(d => d.id === id)?.slug ?? '')
+  }
 
   const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -237,7 +247,7 @@ export default function AddPage() {
             <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
               Domain
             </label>
-            <DomainChips domains={domains} selectedId={domainId} onSelect={setDomainId} />
+            <DomainChips domains={domains} selectedId={domainId} onSelect={handleDomainSelect} />
           </div>
         )}
 
@@ -473,7 +483,7 @@ export default function AddPage() {
               <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
                 Domain
               </label>
-              <DomainChips domains={domains} selectedId={domainId} onSelect={setDomainId} variant="full" />
+              <DomainChips domains={domains} selectedId={domainId} onSelect={handleDomainSelect} variant="full" />
             </div>
 
             {/* Per-note AI instruction (Phase 5c) */}

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import DomainIcon from '@/components/DomainIcon'
 import { shortName } from '@/components/DomainChips'
 import { useOwner } from '@/components/OwnerContext'
+import { getLastDomainSlug, setLastDomainSlug } from '@/lib/lastDomain'
 import { Settings } from 'lucide-react'
 
 interface Domain {
@@ -36,6 +37,13 @@ export default function AllPage() {
   const [loading, setLoading]           = useState(true)
   const { isOwner, setIsOwner }         = useOwner()
   const [stats, setStats]               = useState<Stats | null>(null)
+
+  // Restore the last used domain filter (shared with app/add's domain default,
+  // see lib/lastDomain.ts) so a user working in one domain for a while doesn't
+  // have to re-select it after every restart. '' means "Alle".
+  useEffect(() => {
+    setActiveDomain(getLastDomainSlug())
+  }, [])
 
   useEffect(() => {
     fetch('/api/domains')
@@ -125,7 +133,7 @@ export default function AllPage() {
         {domains.length > 0 && (
           <div className="flex gap-2 mb-3 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             <button
-              onClick={() => setActiveDomain('')}
+              onClick={() => { setActiveDomain(''); setLastDomainSlug('') }}
               className="px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-all flex-shrink-0"
               style={{
                 background: activeDomain === '' ? 'var(--accent)' : 'var(--surface)',
@@ -138,7 +146,11 @@ export default function AllPage() {
             {domains.map(d => (
               <button
                 key={d.id}
-                onClick={() => setActiveDomain(activeDomain === d.slug ? '' : d.slug)}
+                onClick={() => {
+                  const next = activeDomain === d.slug ? '' : d.slug
+                  setActiveDomain(next)
+                  setLastDomainSlug(next)
+                }}
                 className="px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-all flex-shrink-0"
                 style={{
                   background: activeDomain === d.slug ? 'var(--accent)' : 'var(--surface)',
