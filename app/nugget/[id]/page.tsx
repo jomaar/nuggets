@@ -199,6 +199,13 @@ function clearAnnotationHighlights(): void {
  * range's top edge to that offset — used by the bookmark jump so the line
  * reappears just below the sticky bar, exactly where it was when captured.
  */
+/** Computed line-height (px) of a range's text, falling back to a sane default. */
+function lineHeightOf(range: Range): number {
+  const el = range.startContainer.parentElement
+  const lh = el ? parseFloat(getComputedStyle(el).lineHeight) : NaN
+  return Number.isFinite(lh) ? lh : 24
+}
+
 function scrollRangeIntoView(range: Range, topOffset?: number): void {
   const rect = range.getBoundingClientRect()
   if (rect.height === 0 && rect.width === 0) return
@@ -1127,7 +1134,10 @@ export default function NuggetDetailPage() {
     const idx = ranges.length ? 0 : -1
     setCurrentMatch(idx)
     setSearchHighlights(ranges, idx)
-    if (idx >= 0) scrollRangeIntoView(ranges[idx])
+    if (idx >= 0) {
+      const stickyBottom = stickyRef.current?.getBoundingClientRect().bottom ?? 0
+      scrollRangeIntoView(ranges[idx], stickyBottom + lineHeightOf(ranges[idx]))
+    }
     return ranges.length > 0
   }
 
@@ -1144,7 +1154,8 @@ export default function NuggetDetailPage() {
     const next = (currentMatch + dir + ranges.length) % ranges.length
     setCurrentMatch(next)
     setSearchHighlights(ranges, next)
-    scrollRangeIntoView(ranges[next])
+    const stickyBottom = stickyRef.current?.getBoundingClientRect().bottom ?? 0
+    scrollRangeIntoView(ranges[next], stickyBottom + lineHeightOf(ranges[next]))
   }
 
   /** Close the search bar and clear its state and highlights. */

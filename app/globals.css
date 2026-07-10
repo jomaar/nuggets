@@ -106,7 +106,7 @@ h1, h2, h3, .serif {
 .nugget-content h1 { font-size: 1.3em; }
 .nugget-content h2 { font-size: 1.15em; }
 .nugget-content h3 { font-size: 1.05em; }
-.nugget-content p  { margin: 0.45em 0; line-height: 1.55; }
+.nugget-content p  { margin: 0.45em 0; line-height: 1.3; }  /* nugget content Zeilenabstand (line-height) is slightly tighter than the default 1.7 in the editor, so the reading view is more compact. */
 /* Tailwind v4's preflight resets `list-style: none` on every ul/ol, so the
    bullets/numbers vanish even though the Tiptap BulletList/OrderedList nodes
    exist. Re-assert the markers explicitly (both lists, not just ul). */
@@ -151,7 +151,7 @@ h1, h2, h3, .serif {
    data-color (e.g. from imported HTML) keeps the browser default. */
 .nugget-content u[data-color] {
   text-decoration: underline;
-  text-decoration-thickness: 0.15em;
+  text-decoration-thickness: 0.15em;   /* Thickness Underlining */
   text-underline-offset: 0.12em;
   text-decoration-skip-ink: none;
 }
