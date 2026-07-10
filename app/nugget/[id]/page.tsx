@@ -11,7 +11,7 @@ import DomainIcon from '@/components/DomainIcon'
 import TextStatsBar from '@/components/TextStatsBar'
 import { countHtml } from '@/lib/textStats'
 import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, type AnchorToken } from '@/lib/bookmarkLink'
-import { recordRecentNugget, updateRecentScroll, getRecentScroll } from '@/lib/recentNuggets'
+import { recordRecentNugget, removeRecentNugget, updateRecentScroll, getRecentScroll } from '@/lib/recentNuggets'
 import {
   HIGHLIGHT_PALETTE, UNDERLINE_PALETTE, MARK_LABEL_MAX,
   markColorVar, markKey, markLabel, hasMarkLabel, parseMarkScheme,
@@ -459,6 +459,9 @@ export default function NuggetDetailPage() {
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/nuggets/${id}`)
+      // Gone for good (deleted, possibly on another device): drop the stale
+      // entry from this device's recent list so it stops offering a dead link.
+      if (res.status === 404) removeRecentNugget(id)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setNugget(await res.json())
     } catch (e) {
@@ -826,6 +829,9 @@ export default function NuggetDetailPage() {
   const handleDelete = async () => {
     if (!confirmDelete) { setConfirmDelete(true); return }
     await fetch(`/api/nuggets/${id}`, { method: 'DELETE' })
+    // This device just opened the nugget to delete it, so it sits at the top
+    // of the recent list — remove it or the list offers a dead link.
+    removeRecentNugget(id)
     router.push('/all')
   }
 

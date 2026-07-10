@@ -64,6 +64,22 @@ export function getRecentNuggets(limit = 3): RecentNugget[] {
 }
 
 /**
+ * Drop a nugget from the recent list. Called when the nugget is deleted on
+ * this device, and self-healingly when opening it 404s (deleted elsewhere —
+ * the server can't reach into a device's localStorage, so a stale entry would
+ * otherwise keep leading to "Nugget nicht gefunden" forever).
+ */
+export function removeRecentNugget(id: string): void {
+  if (typeof window === 'undefined' || !id) return
+  const remaining = readAll().filter(entry => entry.id !== id)
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remaining))
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
  * Remember the reading scroll position for a nugget, updating its entry in place
  * (no reorder — recency is about opens, not scrolling). No-op if the nugget is
  * not in the list, which only happens before its open was recorded.

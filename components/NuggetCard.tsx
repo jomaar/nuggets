@@ -6,6 +6,7 @@ import NuggetEditor from './NuggetEditor'
 import { useHighlightSave } from './useHighlightSave'
 import DomainIcon from './DomainIcon'
 import { parseMarkScheme } from '@/lib/marking'
+import { removeRecentNugget } from '@/lib/recentNuggets'
 
 interface Domain {
   id: string
@@ -92,6 +93,7 @@ export default function NuggetCard({
   const handleDelete = async () => {
     if (!confirmDelete) { setConfirmDelete(true); return }
     await fetch(`/api/nuggets/${id}`, { method: 'DELETE' })
+    removeRecentNugget(id)
     onDelete?.(id)
   }
 
