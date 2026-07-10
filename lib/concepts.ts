@@ -1,5 +1,5 @@
 import { prisma } from './prisma'
-import { anthropic } from './anthropic'
+import { anthropic, CLAUDE_MODEL, isModelNotFoundError } from './anthropic'
 import { normalizeToHtml, htmlToPlain } from './content'
 
 const SYSTEM_PROMPT = `You are a knowledge graph assistant for a personal knowledge management app.
@@ -186,7 +186,7 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
       systemPrompt += `\n\nADDITIONAL INSTRUCTION FROM THE USER for THIS specific note. This instruction has the HIGHEST PRIORITY: it OVERRIDES every other content instruction above (the revision rules, the domain prompt and the global addition) wherever they conflict. Treat it as the primary directive when revising, condensing or filtering the content, and strictly honor any length or content limits it states — even if that contradicts the generic rules. The ONLY thing it may NOT change is the structural output contract: you must still return your result through the save_concepts tool with all of its required fields. User instruction: ${aiHint.trim()}`
 
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-8',
+      model: CLAUDE_MODEL,
       max_tokens: 4096,
       system: systemPrompt,
       tools: [
@@ -339,6 +339,10 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
 
     console.log(`[concepts] nugget ${nuggetId}: title="${result.title}", tags=${JSON.stringify(result.tags)}, ${existingToLink.length}/${result.existingConcepts?.length ?? 0} matched, ${newToCreate.length}/${result.newConcepts?.length ?? 0} new (budget ${maxTotal} total / ${maxNew} new)`)
   } catch (err) {
-    console.error('[concepts] extraction failed:', err)
+    if (isModelNotFoundError(err)) {
+      console.error(`[concepts] model "${CLAUDE_MODEL}" not found — likely retired by Anthropic; update CLAUDE_MODEL in lib/anthropic.ts`, err)
+    } else {
+      console.error('[concepts] extraction failed:', err)
+    }
   }
 }

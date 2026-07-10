@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { anthropic } from '@/lib/anthropic'
+import { anthropic, CLAUDE_MODEL, isModelNotFoundError } from '@/lib/anthropic'
 
 /** Returns true if the request carries a valid owner session cookie. */
 function isOwner(req: NextRequest): boolean {
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-8',
+      model: CLAUDE_MODEL,
       max_tokens: MAX_TOKENS,
       system: SYSTEM_PROMPT,
       messages: [
@@ -69,6 +69,10 @@ export async function POST(req: NextRequest) {
     if (!result) return NextResponse.json({ error: 'Leeres Ergebnis' }, { status: 502 })
     return NextResponse.json({ result })
   } catch (error) {
+    if (isModelNotFoundError(error)) {
+      console.error(`[rework] model "${CLAUDE_MODEL}" not found — likely retired by Anthropic; update CLAUDE_MODEL in lib/anthropic.ts`, error)
+      return NextResponse.json({ error: 'KI-Modell nicht mehr verfügbar (evtl. von Anthropic zurückgezogen)' }, { status: 502 })
+    }
     console.error('[rework] failed:', error)
     return NextResponse.json({ error: 'KI-Anfrage fehlgeschlagen' }, { status: 502 })
   }
