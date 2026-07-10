@@ -151,7 +151,7 @@ h1, h2, h3, .serif {
    data-color (e.g. from imported HTML) keeps the browser default. */
 .nugget-content u[data-color] {
   text-decoration: underline;
-  text-decoration-thickness: 0.2em;
+  text-decoration-thickness: 0.15em;
   text-underline-offset: 0.12em;
   text-decoration-skip-ink: none;
 }
