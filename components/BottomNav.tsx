@@ -15,12 +15,14 @@ export default function BottomNav() {
   const path = usePathname()
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 flex justify-around items-center px-4 pt-2 z-50"
+      className="fixed bottom-0 left-0 right-0 flex justify-around items-center px-4 pt-1 z-50"
       style={{
         background: 'var(--surface)',
         borderTop: '1px solid var(--border)',
         boxShadow: '0 -1px 8px rgba(0,0,0,0.04)',
-        paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))',
+        // Keep the home-indicator inset itself (taps there trigger the iOS
+        // home gesture) but trim the extra padding to a minimum.
+        paddingBottom: 'calc(0.25rem + env(safe-area-inset-bottom))',
       }}
     >
       {links.map(({ href, label, Icon }) => {

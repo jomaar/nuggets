@@ -234,7 +234,7 @@ export default function AddPage() {
 
   return (
     <>
-      <header className="pt-10 pb-6">
+      <header className="pt-3 pb-6">
         <h1 className="text-3xl">
           Neuer Nugget
         </h1>

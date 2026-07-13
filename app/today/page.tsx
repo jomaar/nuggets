@@ -55,7 +55,7 @@ export default function TodayPage() {
 
   return (
     <>
-      <header className="pt-10 pb-6">
+      <header className="pt-3 pb-6">
         <p className="text-xs tracking-widest uppercase mb-1" style={{ color: 'var(--muted)' }}>
           {new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}
         </p>

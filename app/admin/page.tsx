@@ -60,7 +60,7 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div className="pt-10">
+      <div className="pt-3">
         <p className="text-sm" style={{ color: 'var(--muted)' }}>Lädt…</p>
       </div>
     )
@@ -68,7 +68,7 @@ export default function AdminPage() {
 
   return (
     <>
-      <header className="pt-10 pb-6">
+      <header className="pt-3 pb-6">
         <h1 className="text-3xl">
           KI-Prompts
         </h1>

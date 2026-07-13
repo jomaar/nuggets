@@ -268,7 +268,7 @@ export default function EditPage() {
 
   if (loading) {
     return (
-      <div className="pt-10">
+      <div className="pt-3">
         <p className="text-sm" style={{ color: 'var(--muted)' }}>Lädt…</p>
       </div>
     )
@@ -279,7 +279,7 @@ export default function EditPage() {
       {/* Sticky action bar — Abbrechen / Speichern stay reachable while scrolling
           a long nugget, instead of sitting far below the content. */}
       <header
-        className="sticky top-0 z-30 -mx-4 px-4 pt-10 pb-3 flex items-center justify-between gap-3"
+        className="sticky top-0 z-30 -mx-4 px-4 pt-3 pb-3 flex items-center justify-between gap-3"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
         <h1 className="text-xl" style={{ color: 'var(--ink)' }}>

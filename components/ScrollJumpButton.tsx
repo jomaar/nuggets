@@ -88,8 +88,8 @@ export default function ScrollJumpButton() {
       aria-label={mode === 'down' ? 'Ans Ende springen' : 'Zurück zur Leseposition'}
       className="fixed right-4 z-40 flex items-center justify-center w-10 h-10 rounded-full opacity-60 transition-opacity active:opacity-100"
       style={{
-        // Clear the fixed BottomNav (~64px) plus the iOS home-bar inset.
-        bottom: 'calc(76px + env(safe-area-inset-bottom))',
+        // Clear the fixed BottomNav (~56px) plus the iOS home-bar inset.
+        bottom: 'calc(68px + env(safe-area-inset-bottom))',
         background: 'var(--surface)',
         border: '1px solid var(--border)',
         boxShadow: '0 2px 10px rgba(0,0,0,0.12)',

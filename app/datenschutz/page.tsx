@@ -1,6 +1,6 @@
 export default function DatenschutzPage() {
   return (
-    <main className="pt-10 pb-24 max-w-lg">
+    <main className="pt-3 pb-24 max-w-lg">
       <h1 className="text-3xl mb-8">
         Datenschutz&shy;erklärung
       </h1>

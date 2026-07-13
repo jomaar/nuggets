@@ -179,7 +179,7 @@ export default function GraphPage() {
 
   return (
     <>
-      <header className="pt-10 pb-4">
+      <header className="pt-3 pb-4">
         <button
           onClick={() => router.back()}
           className="text-xs mb-4 flex items-center gap-1"

@@ -71,14 +71,14 @@ export default function ConceptPage() {
   useEffect(() => { load() }, [load])
 
   if (loading) return (
-    <div className="pt-10">
+    <div className="pt-3">
       <p className="text-sm" style={{ color: 'var(--muted)' }}>Lädt…</p>
 
     </div>
   )
 
   if (!concept) return (
-    <div className="pt-10">
+    <div className="pt-3">
       <p className="text-sm" style={{ color: 'var(--muted)' }}>Konzept nicht gefunden.</p>
 
     </div>
@@ -91,7 +91,7 @@ export default function ConceptPage() {
 
   return (
     <>
-      <header className="pt-10 pb-6">
+      <header className="pt-3 pb-6">
         <button
           onClick={() => router.back()}
           className="text-xs mb-4 flex items-center gap-1"

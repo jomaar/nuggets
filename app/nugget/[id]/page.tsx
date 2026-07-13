@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, type CSSProperties } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import NuggetEditor from '@/components/NuggetEditor'
@@ -88,6 +88,28 @@ function primaryLabel(labels: ConceptLabel[]): string {
  * (querySelectorAll returns document order regardless of tag).
  */
 const MARK_SELECTOR = 'mark, u[data-color]'
+
+/**
+ * Equal fixed box for every sticky-bar action button — sizing via padding only
+ * left the coloured buttons looking slightly larger than their neighbours.
+ */
+const ACTION_BTN = 'flex items-center justify-center w-8 h-8 rounded-lg transition-colors shrink-0'
+
+/**
+ * Look of the sticky-bar action buttons: each action carries its own colour
+ * (CSS var --act-*) as a soft wash behind the saturated icon so the icons are
+ * distinguishable at a glance; `active` flips to a solid fill with a white
+ * icon. Without a colour the button keeps the neutral muted/border look.
+ */
+function actionStyle(color?: string, active?: boolean): CSSProperties {
+  if (!color) return { color: 'var(--muted)', border: '1px solid var(--border)' }
+  if (active) return { color: '#fff', background: color, border: `1px solid ${color}` }
+  return {
+    color,
+    background: `color-mix(in srgb, ${color} 12%, transparent)`,
+    border: `1px solid color-mix(in srgb, ${color} 30%, transparent)`,
+  }
+}
 
 /** Formats an ISO date as a short German date (e.g. 9. Juni 2026). */
 function formatDate(iso: string): string {
@@ -1306,7 +1328,7 @@ export default function NuggetDetailPage() {
 
   if (loading) {
     return (
-      <div className="pt-10">
+      <div className="pt-3">
         <p className="text-sm" style={{ color: 'var(--muted)' }}>Lädt…</p>
       </div>
     )
@@ -1314,7 +1336,7 @@ export default function NuggetDetailPage() {
 
   if (!nugget) {
     return (
-      <div className="pt-10">
+      <div className="pt-3">
         <p className="text-sm" style={{ color: 'var(--muted)' }}>Nugget nicht gefunden.</p>
         <Link href="/all" className="text-sm" style={{ color: 'var(--accent)' }}>← Zurück</Link>
       </div>
@@ -1358,140 +1380,116 @@ export default function NuggetDetailPage() {
           scroll position, so editing a long nugget never means scrolling up. */}
       <div
         ref={stickyRef}
-        className="sticky top-0 z-30 -mx-4 px-4 pt-10 pb-3"
+        className="sticky top-0 z-30 -mx-4 px-4 pt-3 pb-3"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
-        <div className="flex items-center justify-between gap-2">
-          {/* Icon-only like the action group: with the comments + view-settings
-              buttons the bar holds 10 icons — a text "Zurück" (or the previous
-              p-1.5/gap-1.5 spacing) would overflow narrow iPhones. */}
+        {/* All actions as equal-sized icon buttons in ONE flat row, spread
+            evenly across the full bar width (justify-between) — a right-packed
+            group left dead space next to the back arrow and made the tight
+            targets easy to mistap. gap-0.5 is the minimum spacing so ten
+            32px boxes still fit a 375px iPhone. */}
+        <div className="flex items-center justify-between gap-0.5">
           <button
             onClick={() => router.back()}
             aria-label="Zurück"
-            className="flex items-center justify-center p-1 rounded-lg"
-            style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+            className={ACTION_BTN}
+            style={actionStyle()}
           >
             <ArrowLeft size={16} />
           </button>
 
-          {/* All actions as uniform icons in one group so the bar never
-              overflows on narrow iPhones (edit = blue pencil, delete = red trash). */}
-          <div className="flex items-center gap-1">
-            {isOwner && (
-              <button
-                onClick={addBookmark}
-                aria-label="Lesezeichen setzen"
-                className="flex items-center justify-center p-1 rounded-lg transition-colors"
-                style={{
-                  color:      bookmarkSaved ? 'white'        : 'var(--muted)',
-                  background:  bookmarkSaved ? 'var(--accent)' : 'transparent',
-                  border: `1px solid ${bookmarkSaved ? 'var(--accent)' : 'var(--border)'}`,
-                }}
-              >
-                {bookmarkSaved ? <Check size={16} /> : <Bookmark size={16} />}
-              </button>
-            )}
+          {isOwner && (
             <button
-              onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
-              aria-label="Im Text suchen"
-              className="flex items-center justify-center p-1 rounded-lg transition-colors"
-              style={{
-                color:      searchOpen ? 'white'        : 'var(--muted)',
-                background: searchOpen ? 'var(--accent)' : 'transparent',
-                border: `1px solid ${searchOpen ? 'var(--accent)' : 'var(--border)'}`,
-              }}
+              onClick={addBookmark}
+              aria-label="Lesezeichen setzen"
+              className={ACTION_BTN}
+              style={actionStyle('var(--act-bookmark)', bookmarkSaved)}
             >
-              <Search size={16} />
+              {bookmarkSaved ? <Check size={16} /> : <Bookmark size={16} />}
             </button>
+          )}
+          <button
+            onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+            aria-label="Im Text suchen"
+            className={ACTION_BTN}
+            style={actionStyle('var(--act-search)', searchOpen)}
+          >
+            <Search size={16} />
+          </button>
+          <button
+            onClick={openMarks}
+            aria-label="Markierungen"
+            className={ACTION_BTN}
+            style={actionStyle('var(--act-marks)')}
+          >
+            <Highlighter size={16} />
+          </button>
+          {(isOwner || annotations.length > 0) && (
             <button
-              onClick={openMarks}
-              aria-label="Markierungen"
-              className="flex items-center justify-center p-1 rounded-lg transition-colors"
-              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              onClick={() => (annotationsOpen ? closeAnnotations() : openAnnotations())}
+              aria-label="Kommentare"
+              className={ACTION_BTN}
+              style={actionStyle('var(--act-comments)', annotationsOpen)}
             >
-              <Highlighter size={16} />
+              <MessageSquareText size={16} />
             </button>
-            {(isOwner || annotations.length > 0) && (
-              <button
-                onClick={() => (annotationsOpen ? closeAnnotations() : openAnnotations())}
-                aria-label="Kommentare"
-                className="flex items-center justify-center p-1 rounded-lg transition-colors"
-                style={{
-                  color:      annotationsOpen ? 'white'        : 'var(--muted)',
-                  background: annotationsOpen ? 'var(--accent)' : 'transparent',
-                  border: `1px solid ${annotationsOpen ? 'var(--accent)' : 'var(--border)'}`,
-                }}
-              >
-                <MessageSquareText size={16} />
-              </button>
-            )}
+          )}
+          <button
+            onClick={() => setViewOpen(o => !o)}
+            aria-label="Ansicht: Schriftgröße, Versangaben & Kommentarstellen"
+            className={ACTION_BTN}
+            style={actionStyle('var(--act-view)', viewOpen)}
+          >
+            <ALargeSmall size={16} />
+          </button>
+          {/* Info + PDF stay neutral on purpose — colouring every single icon
+              would drown out the meaningful hues. */}
+          <button
+            onClick={() => setInfoOpen(o => !o)}
+            aria-label="Details & Konzepte"
+            className={ACTION_BTN}
+            style={infoOpen ? actionStyle('var(--accent)', true) : actionStyle()}
+          >
+            <Info size={16} />
+          </button>
+          <Link
+            href={`/nugget/${nugget.id}/print`}
+            aria-label="Als PDF exportieren"
+            className={ACTION_BTN}
+            style={actionStyle()}
+          >
+            <Printer size={16} />
+          </Link>
+          {isOwner && !confirmDelete && (
             <button
-              onClick={() => setViewOpen(o => !o)}
-              aria-label="Ansicht: Schriftgröße, Versangaben & Kommentarstellen"
-              className="flex items-center justify-center p-1 rounded-lg transition-colors"
-              style={{
-                color:      viewOpen ? 'white'        : 'var(--muted)',
-                background: viewOpen ? 'var(--accent)' : 'transparent',
-                border: `1px solid ${viewOpen ? 'var(--accent)' : 'var(--border)'}`,
-              }}
+              onClick={goEdit}
+              aria-label="Bearbeiten"
+              className={ACTION_BTN}
+              style={actionStyle('var(--accent)')}
             >
-              <ALargeSmall size={16} />
+              <Pencil size={16} />
             </button>
+          )}
+          {isOwner && (
             <button
-              onClick={() => setInfoOpen(o => !o)}
-              aria-label="Details & Konzepte"
-              className="flex items-center justify-center p-1 rounded-lg transition-colors"
-              style={{
-                color:      infoOpen ? 'white'        : 'var(--muted)',
-                background: infoOpen ? 'var(--accent)' : 'transparent',
-                border: `1px solid ${infoOpen ? 'var(--accent)' : 'var(--border)'}`,
-              }}
+              onClick={handleDelete}
+              aria-label={confirmDelete ? 'Wirklich löschen?' : 'Löschen'}
+              className={ACTION_BTN}
+              style={actionStyle('var(--act-delete)', confirmDelete)}
             >
-              <Info size={16} />
+              <Trash2 size={16} />
             </button>
-            <Link
-              href={`/nugget/${nugget.id}/print`}
-              aria-label="Als PDF exportieren"
-              className="flex items-center justify-center p-1 rounded-lg transition-colors"
-              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+          )}
+          {isOwner && confirmDelete && (
+            <button
+              onClick={() => setConfirmDelete(false)}
+              aria-label="Löschen abbrechen"
+              className={ACTION_BTN}
+              style={actionStyle()}
             >
-              <Printer size={16} />
-            </Link>
-            {isOwner && !confirmDelete && (
-              <button
-                onClick={goEdit}
-                aria-label="Bearbeiten"
-                className="flex items-center justify-center p-1 rounded-lg transition-colors"
-                style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
-              >
-                <Pencil size={16} />
-              </button>
-            )}
-            {isOwner && (
-              <button
-                onClick={handleDelete}
-                aria-label={confirmDelete ? 'Wirklich löschen?' : 'Löschen'}
-                className="flex items-center justify-center p-1 rounded-lg transition-colors"
-                style={{
-                  background: confirmDelete ? '#c0392b' : 'transparent',
-                  color: confirmDelete ? 'white' : '#c0392b',
-                  border: '1px solid #c0392b',
-                }}
-              >
-                <Trash2 size={16} />
-              </button>
-            )}
-            {isOwner && confirmDelete && (
-              <button
-                onClick={() => setConfirmDelete(false)}
-                aria-label="Löschen abbrechen"
-                className="flex items-center justify-center p-1 rounded-lg"
-                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-              >
-                <X size={16} />
-              </button>
-            )}
-          </div>
+              <X size={16} />
+            </button>
+          )}
         </div>
 
         {/* In-text search bar — kept inside the sticky bar so it (and the match

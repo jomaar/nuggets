@@ -33,6 +33,17 @@
   --ul-orange:  #e8830c;
   --ul-purple:  #8e5bc9;
   --ul-teal:    #129d9d;
+
+  /* Single-view action-bar accents — one colour per action so the icons are
+     distinguishable at a glance on a phone. Values match the saturated --ul-*
+     tones but are deliberately separate vars: retuning the marking palette
+     must not silently restyle the toolbar. */
+  --act-bookmark: #e8830c;
+  --act-search:   #2f7fd1;
+  --act-marks:    #c99a06;
+  --act-comments: #129d9d;
+  --act-view:     #8e5bc9;
+  --act-delete:   #c0392b;
 }
 
 * { box-sizing: border-box; }
@@ -74,7 +85,7 @@ h1, h2, h3, .serif {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(64px + env(safe-area-inset-bottom));
+  bottom: calc(56px + env(safe-area-inset-bottom));
   z-index: 40;
   display: flex;
   gap: 0.5rem;

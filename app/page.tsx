@@ -78,7 +78,7 @@ export default function BookmarksPage() {
 
   return (
     <>
-      <header className="pt-10 pb-6">
+      <header className="pt-3 pb-6">
         <p className="text-xs tracking-widest uppercase mb-1" style={{ color: 'var(--muted)' }}>
           Gemerkte Stellen
         </p>

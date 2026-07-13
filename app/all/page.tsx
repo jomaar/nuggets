@@ -84,7 +84,7 @@ export default function AllPage() {
 
   return (
     <>
-      <header className="pt-10 pb-4">
+      <header className="pt-3 pb-4">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-3xl">
