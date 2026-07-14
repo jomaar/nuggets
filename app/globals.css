@@ -201,6 +201,19 @@ h1, h2, h3, .serif {
   text-decoration: none;
 }
 
+/* "Nur Text" master switch — blankets ALL marking styles at once (the single
+   view combines it with .verses-hidden and skips the annotation-indicator
+   layer). Same neutralisation as the per-colour rules above; the bare `mark`
+   selector also covers <mark> without data-color (default yellow). */
+.marks-hidden-all .nugget-content mark {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+.marks-hidden-all .nugget-content u[data-color] {
+  text-decoration: none;
+}
+
 /* Bible verse markers — empty <sup data-verse="C.V"> atoms (VerseMarker node).
    The visible [C.V] is GENERATED content: it never enters contentPlain/Markdown,
    isn't copied with a text selection, and sizes in em so it follows the reading

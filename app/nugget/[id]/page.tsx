@@ -436,6 +436,12 @@ export default function NuggetDetailPage() {
   // Viewing preference like the verse toggle: per nugget in sessionStorage,
   // toggled via the eye buttons in the marks popup's legend.
   const [hiddenMarks, setHiddenMarks] = useState<string[]>([])
+  // "Nur Text" master switch: reads the document completely unannotated (verse
+  // markers, marking styles AND comment indicators off at once). A pure
+  // OVERRIDE — the three individual settings above keep their stored values,
+  // so switching back restores the exact fine-grained state. Per nugget in
+  // sessionStorage like its siblings.
+  const [pureText, setPureText] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [marksOpen, setMarksOpen]     = useState(false)
   const [marks, setMarks]             = useState<{ text: string; color: string; kind: MarkKind; markIndex: number }[]>([])
@@ -592,12 +598,13 @@ export default function NuggetDetailPage() {
       const orphanIds = annotations.filter(a => !map.has(a.id)).map(a => a.id)
       setAnnotationOrder([...resolvedIds, ...orphanIds])
       // Ranges are always resolved (sheet order/jumps need them); only the
-      // painted indicator layer follows the visibility toggle.
-      setAnnotationHighlights(showAnnotationMarks ? [...map.values()] : [])
+      // painted indicator layer follows the visibility toggle — or the
+      // "Nur Text" master switch, which overrides it.
+      setAnnotationHighlights(showAnnotationMarks && !pureText ? [...map.values()] : [])
     }
     raf = requestAnimationFrame(resolveAll)
     return () => cancelAnimationFrame(raf)
-  }, [annotations, nugget, annotationResolveTick, showAnnotationMarks])
+  }, [annotations, nugget, annotationResolveTick, showAnnotationMarks, pureText])
 
   // Stronger wash on the active comment while the sheet is open. The order
   // dependency re-runs this after a re-resolution, replacing a stale Range.
@@ -655,6 +662,18 @@ export default function NuggetDetailPage() {
     const next = !showVerses
     setShowVerses(next)
     sessionStorage.setItem(`nugget-verses-${id}`, next ? '1' : '0')
+  }
+
+  // Restore the per-nugget "Nur Text" master switch (default off).
+  useEffect(() => {
+    setPureText(sessionStorage.getItem(`nugget-pure-${id}`) === '1')
+  }, [id])
+
+  /** Toggle the "Nur Text" master switch and remember the choice. */
+  const togglePureText = () => {
+    const next = !pureText
+    setPureText(next)
+    sessionStorage.setItem(`nugget-pure-${id}`, next ? '1' : '0')
   }
 
   // Restore the per-nugget comment-indicator visibility (default shown).
@@ -1120,7 +1139,7 @@ export default function NuggetDetailPage() {
   const handleAnnotationTap = (event: React.MouseEvent) => {
     // Hidden indicators are invisible tap targets — taps must not surprise-
     // open the sheet (the toolbar button still does).
-    if (!showAnnotationMarks) return
+    if (!showAnnotationMarks || pureText) return
     // A drag-selection's trailing click must not open the sheet.
     const sel = document.getSelection()
     if (sel && !sel.isCollapsed) return
@@ -1548,6 +1567,21 @@ export default function NuggetDetailPage() {
             position; the info panel sits above the content and would. */}
         {viewOpen && (
           <div className="mt-3 flex items-center gap-2 flex-wrap">
+            {/* "Nur Text" master switch — completely unannotated reading in one
+                tap. While on, the individual visibility toggles below (and the
+                legend eyes in the marks popup) are dimmed: the master wins. */}
+            <button
+              type="button"
+              onClick={togglePureText}
+              className="text-xs px-2.5 py-1.5 rounded-lg transition-all"
+              style={{
+                background: pureText ? 'var(--accent)' : 'transparent',
+                color:      pureText ? 'white'         : 'var(--muted)',
+                border: `1px solid ${pureText ? 'var(--accent)' : 'var(--border)'}`,
+              }}
+            >
+              Nur Text {pureText ? 'an' : 'aus'}
+            </button>
             <button
               onClick={() => changeFontSize(-FONT_SIZE_STEP)}
               disabled={fontSize <= MIN_FONT_SIZE}
@@ -1581,7 +1615,8 @@ export default function NuggetDetailPage() {
               <button
                 type="button"
                 onClick={toggleVerses}
-                className="text-xs px-2.5 py-1.5 rounded-lg ml-auto transition-all"
+                disabled={pureText}
+                className="text-xs px-2.5 py-1.5 rounded-lg ml-auto transition-all disabled:opacity-40"
                 style={{
                   background: showVerses ? 'var(--accent)' : 'transparent',
                   color:      showVerses ? 'white'         : 'var(--muted)',
@@ -1595,7 +1630,8 @@ export default function NuggetDetailPage() {
               <button
                 type="button"
                 onClick={toggleAnnotationMarks}
-                className={`text-xs px-2.5 py-1.5 rounded-lg transition-all${hasVerses ? '' : ' ml-auto'}`}
+                disabled={pureText}
+                className={`text-xs px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-40${hasVerses ? '' : ' ml-auto'}`}
                 style={{
                   background: showAnnotationMarks ? 'var(--accent)' : 'transparent',
                   color:      showAnnotationMarks ? 'white'         : 'var(--muted)',
@@ -1698,7 +1734,8 @@ export default function NuggetDetailPage() {
                   <button
                     type="button"
                     onClick={toggleVerses}
-                    className="text-xs px-3 py-1 rounded-lg transition-all"
+                    disabled={pureText}
+                    className="text-xs px-3 py-1 rounded-lg transition-all disabled:opacity-40"
                     style={{
                       background: showVerses ? 'var(--accent)' : 'transparent',
                       color:      showVerses ? 'white'         : 'var(--muted)',
@@ -1811,10 +1848,13 @@ export default function NuggetDetailPage() {
         onClick={handleContentClick}
         // Verse markers are hidden by default (scroll-style reading); hidden
         // marking styles map to .mark-hidden-<kind>-<colour> classes (rules in
-        // globals.css). The edit view never gets these classes, so markers and
-        // markings stay visible while editing.
+        // globals.css). "Nur Text" overrides both: it forces verses-hidden and
+        // blankets ALL marking styles via marks-hidden-all, without touching
+        // the individual settings. The edit view never gets these classes, so
+        // markers and markings stay visible while editing.
         className={[
-          showVerses ? '' : 'verses-hidden',
+          showVerses && !pureText ? '' : 'verses-hidden',
+          pureText ? 'marks-hidden-all' : '',
           ...hiddenMarks.map(k => `mark-hidden-${k.replace(':', '-')}`),
         ].filter(Boolean).join(' ') || undefined}
       >
@@ -1919,16 +1959,18 @@ export default function NuggetDetailPage() {
                       Legende
                     </h3>
                     {/* Master visibility toggle — hide/show ALL marking styles
-                        at once (viewing preference, available to any reader). */}
+                        at once (viewing preference, available to any reader).
+                        Disabled while "Nur Text" hides everything anyway. */}
                     {legendRows.length > 0 && (
                       <button
                         onClick={() => setAllMarksHidden(
                           !allLegendHidden,
                           legendRows.map(r => markKey(r.kind, r.name)),
                         )}
+                        disabled={pureText}
                         aria-label={allLegendHidden ? 'Alle Markierungen einblenden' : 'Alle Markierungen ausblenden'}
-                        title={allLegendHidden ? 'Alle einblenden' : 'Alle ausblenden'}
-                        className="flex items-center justify-center p-1.5 rounded-lg flex-shrink-0"
+                        title={pureText ? '„Nur Text" ist aktiv' : allLegendHidden ? 'Alle einblenden' : 'Alle ausblenden'}
+                        className="flex items-center justify-center p-1.5 rounded-lg flex-shrink-0 disabled:opacity-40"
                         style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
                       >
                         {allLegendHidden ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -1987,13 +2029,15 @@ export default function NuggetDetailPage() {
                           {markLabel(scheme, r.kind, r.name)}
                         </span>
                       )}
-                      {/* Per-style visibility toggle (eye = shown, slashed = hidden). */}
+                      {/* Per-style visibility toggle (eye = shown, slashed = hidden).
+                          Disabled while "Nur Text" hides everything anyway. */}
                       <button
                         onClick={() => toggleMarkHidden(r.kind, r.name)}
+                        disabled={pureText}
                         aria-pressed={rowHidden}
                         aria-label={rowHidden ? 'Markierung einblenden' : 'Markierung ausblenden'}
-                        title={rowHidden ? 'Einblenden' : 'Ausblenden'}
-                        className="flex items-center justify-center p-1.5 rounded-lg flex-shrink-0"
+                        title={pureText ? '„Nur Text" ist aktiv' : rowHidden ? 'Einblenden' : 'Ausblenden'}
+                        className="flex items-center justify-center p-1.5 rounded-lg flex-shrink-0 disabled:opacity-40"
                         style={{ color: 'var(--muted)' }}
                       >
                         {rowHidden ? <EyeOff size={15} /> : <Eye size={15} />}
