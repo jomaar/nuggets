@@ -24,6 +24,15 @@ export interface BibleConversion {
 /** "(ELB03)" → translation code line; short alphanumeric token in parentheses. */
 const TRANSLATION_RE = /^\([A-Za-z0-9.\-]{2,12}\)$/
 
+/**
+ * Single-line excerpt header: "Luke 14:33 - 16:4 (ELB03)" — a partial passage that
+ * does NOT start at chapter 1 verse 1. Captures title, start chapter:verse and the
+ * translation code; the range end (if any) is matched but not used — the actual
+ * verse count comes from walking the body, not the header.
+ */
+const TITLE_RANGE_RE =
+  /^(.+?)\s+(\d{1,3}):(\d{1,3})(?:\s*[-–]\s*(?:\d{1,3}:)?\d{1,3})?\s+\(([A-Za-z0-9.\-]{2,12})\)$/
+
 /** A body line starts with a bare verse number ("1 Paulus…") — NOT "1." (markdown list). */
 const VERSE_LINE_RE = /^\d{1,3}\s/
 
@@ -44,9 +53,31 @@ function escapeHtml(s: string): string {
 const NUMBERED_TITLE_MAX = 48
 
 /** Split the raw file into optional header lines + body lines (trimmed, non-empty). */
-function splitHeader(text: string): { translation: string; title: string; bodyLines: string[] } {
+function splitHeader(text: string): {
+  translation: string
+  title: string
+  startChapter: number
+  startVerse: number
+  bodyLines: string[]
+} {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
   let i = 0
+
+  // Single-line excerpt header ("Luke 14:33 - 16:4 (ELB03)") — start mid-book.
+  if (lines[i]) {
+    const range = TITLE_RANGE_RE.exec(lines[i])
+    if (range) {
+      return {
+        translation: range[4],
+        title: range[1],
+        startChapter: parseInt(range[2], 10),
+        startVerse: parseInt(range[3], 10),
+        bodyLines: lines.slice(i + 1),
+      }
+    }
+  }
+
+  // Two-line full-book header ("(ELB03)" then title) — always starts at 1:1.
   let translation = ''
   if (lines[i] && TRANSLATION_RE.test(lines[i])) {
     translation = lines[i].slice(1, -1)
@@ -66,7 +97,7 @@ function splitHeader(text: string): { translation: string; title: string; bodyLi
       i++
     }
   }
-  return { translation, title, bodyLines: lines.slice(i) }
+  return { translation, title, startChapter: 1, startVerse: 1, bodyLines: lines.slice(i) }
 }
 
 /**
@@ -87,10 +118,11 @@ function splitHeader(text: string): { translation: string; title: string; bodyLi
  */
 function runStateMachine(
   bodyLines: string[],
+  start: { chapter: number; verse: number },
   emit?: (piece: { marker?: string; text?: string }) => void
 ): { chapterCount: number; verseCount: number } {
-  let chapter = 1
-  let verse = 0
+  let chapter = start.chapter
+  let verse = start.verse - 1
   let verseCount = 0
 
   for (const line of bodyLines) {
@@ -116,7 +148,7 @@ function runStateMachine(
     })
   }
 
-  return { chapterCount: verseCount > 0 ? chapter : 0, verseCount }
+  return { chapterCount: verseCount > 0 ? chapter - start.chapter + 1 : 0, verseCount }
 }
 
 /**
@@ -127,15 +159,15 @@ function runStateMachine(
 export function detectBibleText(text: string): BibleDetection | null {
   if (text.length < 200) return null
 
-  const { translation, title, bodyLines } = splitHeader(text)
+  const { translation, title, startChapter, startVerse, bodyLines } = splitHeader(text)
   if (bodyLines.length < 3) return null
-  if (!/^1\s/.test(bodyLines[0])) return null
+  if (!new RegExp(`^${startVerse}\\s`).test(bodyLines[0])) return null
 
   const verseLineShare =
     bodyLines.filter((l) => VERSE_LINE_RE.test(l)).length / bodyLines.length
   if (verseLineShare < 0.8) return null
 
-  const { verseCount } = runStateMachine(bodyLines)
+  const { verseCount } = runStateMachine(bodyLines, { chapter: startChapter, verse: startVerse })
   if (verseCount < 10) return null
 
   return { translation: translation || null, title: title || null }
@@ -152,13 +184,17 @@ export function detectBibleText(text: string): BibleDetection | null {
  * through untouched (no `marked` round-trip that could mangle the markup).
  */
 export function convertBibleText(text: string): BibleConversion {
-  const { translation, title, bodyLines } = splitHeader(text)
+  const { translation, title, startChapter, startVerse, bodyLines } = splitHeader(text)
 
   const out: string[] = []
-  const { chapterCount, verseCount } = runStateMachine(bodyLines, (piece) => {
-    if (piece.marker !== undefined) out.push(`<sup data-verse="${piece.marker}"></sup>`)
-    else if (piece.text !== undefined) out.push(escapeHtml(piece.text))
-  })
+  const { chapterCount, verseCount } = runStateMachine(
+    bodyLines,
+    { chapter: startChapter, verse: startVerse },
+    (piece) => {
+      if (piece.marker !== undefined) out.push(`<sup data-verse="${piece.marker}"></sup>`)
+      else if (piece.text !== undefined) out.push(escapeHtml(piece.text))
+    }
+  )
 
   const body = '<p>' + out.join(' ').replace(/<\/sup>\s+/g, '</sup>') + '</p>'
 
