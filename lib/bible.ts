@@ -26,12 +26,14 @@ const TRANSLATION_RE = /^\([A-Za-z0-9.\-]{2,12}\)$/
 
 /**
  * Single-line excerpt header: "Luke 14:33 - 16:4 (ELB03)" — a partial passage that
- * does NOT start at chapter 1 verse 1. Captures title, start chapter:verse and the
- * translation code; the range end (if any) is matched but not used — the actual
- * verse count comes from walking the body, not the header.
+ * does NOT start at chapter 1 verse 1. Group 1 captures the WHOLE reference ("Luke
+ * 14:33 - 16:4", translation stripped) verbatim for use as the nugget title; groups
+ * 2/3 are the start chapter:verse for the state machine and group 4 the translation
+ * code. The range end is matched but otherwise unused — the actual verse count comes
+ * from walking the body, not the header.
  */
 const TITLE_RANGE_RE =
-  /^(.+?)\s+(\d{1,3}):(\d{1,3})(?:\s*[-–]\s*(?:\d{1,3}:)?\d{1,3})?\s+\(([A-Za-z0-9.\-]{2,12})\)$/
+  /^((?:.+?)\s+(\d{1,3}):(\d{1,3})(?:\s*[-–]\s*(?:\d{1,3}:)?\d{1,3})?)\s+\(([A-Za-z0-9.\-]{2,12})\)$/
 
 /** A body line starts with a bare verse number ("1 Paulus…") — NOT "1." (markdown list). */
 const VERSE_LINE_RE = /^\d{1,3}\s/
