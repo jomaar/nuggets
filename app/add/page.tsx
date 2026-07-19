@@ -46,6 +46,11 @@ export default function AddPage() {
   const [extracting, setExtracting]   = useState(false)
   const [extractError, setExtractError] = useState('')
   const [saveError, setSaveError]     = useState('')
+  // Set when the nugget itself saved fine but the AI call (title/tags/concepts)
+  // failed — e.g. an invalid or spend-limit-disabled API key. Without this the
+  // save looked identical to a fully successful one, so a failure went unnoticed
+  // until someone wondered why a nugget never showed up in the knowledge graph.
+  const [aiWarning, setAiWarning]     = useState<{ message: string; nuggetId: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Default the domain picker to the last domain worked in (shared with
@@ -178,6 +183,11 @@ export default function AddPage() {
       // to the «alle» list. Fall back to the list if the response lacks an id.
       if (res.ok) {
         const created = await res.json()
+        if (created?.aiWarning && created?.id) {
+          setShowConfirm(false)
+          setAiWarning({ message: created.aiWarning, nuggetId: created.id })
+          return
+        }
         if (created?.id) {
           router.push(`/nugget/${created.id}`)
           return
@@ -530,6 +540,41 @@ export default function AddPage() {
                 {saving ? 'Speichert…' : 'Jetzt speichern'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI failure warning: the nugget itself is saved (see handleSave), but
+          without this dialog that success looked identical to a fully working
+          save — title/tags/concepts silently never got extracted. */}
+      {aiWarning && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.45)' }}
+        >
+          <div
+            className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-6 flex flex-col gap-4"
+            style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+          >
+            <h2 className="text-xl">⚠️ KI-Verarbeitung fehlgeschlagen</h2>
+            <p className="text-sm" style={{ color: 'var(--ink)' }}>
+              Der Nugget wurde gespeichert, aber Titel, Tags und die Einbindung ins
+              Wissensnetz (Konzepte) konnten nicht automatisch ermittelt werden:
+            </p>
+            <p className="text-sm font-medium" style={{ color: 'var(--accent)' }}>
+              {aiWarning.message}
+            </p>
+            <p className="text-xs" style={{ color: 'var(--muted)' }}>
+              Titel/Tags lassen sich manuell nachtragen; die Konzept-Verknüpfung kann
+              später nachgeholt werden, sobald die Ursache behoben ist.
+            </p>
+            <button
+              onClick={() => router.push(`/nugget/${aiWarning.nuggetId}`)}
+              className="py-3 rounded-xl text-base font-medium transition-all active:scale-95"
+              style={{ background: 'var(--accent)', color: 'white' }}
+            >
+              Verstanden, zum Nugget
+            </button>
           </div>
         </div>
       )}

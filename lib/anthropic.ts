@@ -25,3 +25,25 @@ export function isModelNotFoundError(error: unknown): boolean {
     error.message.includes(CLAUDE_MODEL)
   )
 }
+
+/**
+ * User-facing (German) summary of an AI call failure. Anthropic disables the
+ * API key itself when a workspace spend limit is hit — that surfaces as a
+ * plain 401 "API key is invalid", indistinguishable from a truly bad key, so
+ * both get the same actionable hint rather than a generic message.
+ */
+export function describeAiError(error: unknown): string {
+  if (isModelNotFoundError(error)) {
+    return 'KI-Modell nicht mehr verfügbar (evtl. von Anthropic zurückgezogen).'
+  }
+  if (error instanceof Anthropic.AuthenticationError) {
+    return 'API-Key ungültig oder gesperrt — evtl. Spend-Limit in der Anthropic Console erreicht.'
+  }
+  if (error instanceof Anthropic.PermissionDeniedError) {
+    return 'Zugriff verweigert — API-Key ohne Berechtigung für dieses Modell.'
+  }
+  if (error instanceof Anthropic.RateLimitError) {
+    return 'Rate-Limit erreicht — bitte in ein paar Minuten erneut versuchen.'
+  }
+  return 'KI-Anfrage fehlgeschlagen.'
+}

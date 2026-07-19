@@ -1,5 +1,5 @@
 import { prisma } from './prisma'
-import { anthropic, CLAUDE_MODEL, isModelNotFoundError } from './anthropic'
+import { anthropic, CLAUDE_MODEL, describeAiError } from './anthropic'
 import { normalizeToHtml, htmlToPlain } from './content'
 
 const SYSTEM_PROMPT = `You are a knowledge graph assistant for a personal knowledge management app.
@@ -126,14 +126,21 @@ function enforceConceptBudget(result: ClauseResult, maxTotal: number, maxNew: nu
 
 /**
  * Calls Claude to generate a title, extract concepts, optionally revise the content,
- * and link concepts to the nugget. Never throws — failures are logged but do not affect the nugget.
+ * and link concepts to the nugget. Never throws — the nugget itself is already saved
+ * by the time this runs, so a failure here must not fail the whole request. Instead
+ * it's reported back so the caller can warn the user (silent failures used to leave
+ * a nugget saved but unlinked from the knowledge graph with no indication why).
  */
-export async function extractAndLinkConcepts(nuggetId: string, text: string, options: ExtractionOptions = {}): Promise<void> {
+export async function extractAndLinkConcepts(
+  nuggetId: string,
+  text: string,
+  options: ExtractionOptions = {}
+): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!process.env.ANTHROPIC_API_KEY) {
     console.warn('[concepts] ANTHROPIC_API_KEY not set — skipping extraction')
-    return
+    return { ok: false, error: 'KI nicht konfiguriert (kein API-Key hinterlegt).' }
   }
-  if (!text.trim()) return
+  if (!text.trim()) return { ok: true }
 
   const { domainId, reviseContent, aiHint } = options
 
@@ -265,7 +272,10 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
     })
 
     const toolUse = response.content.find(b => b.type === 'tool_use')
-    if (!toolUse || toolUse.type !== 'tool_use') return
+    if (!toolUse || toolUse.type !== 'tool_use') {
+      console.error('[concepts] response had no tool_use block despite forced tool_choice')
+      return { ok: false, error: 'KI-Anfrage fehlgeschlagen (unerwartete Antwort).' }
+    }
 
     const result = toolUse.input as ClauseResult
     // The model occasionally violates the schema despite forced tool use
@@ -338,11 +348,9 @@ export async function extractAndLinkConcepts(nuggetId: string, text: string, opt
     }
 
     console.log(`[concepts] nugget ${nuggetId}: title="${result.title}", tags=${JSON.stringify(result.tags)}, ${existingToLink.length}/${result.existingConcepts?.length ?? 0} matched, ${newToCreate.length}/${result.newConcepts?.length ?? 0} new (budget ${maxTotal} total / ${maxNew} new)`)
+    return { ok: true }
   } catch (err) {
-    if (isModelNotFoundError(err)) {
-      console.error(`[concepts] model "${CLAUDE_MODEL}" not found — likely retired by Anthropic; update CLAUDE_MODEL in lib/anthropic.ts`, err)
-    } else {
-      console.error('[concepts] extraction failed:', err)
-    }
+    console.error('[concepts] extraction failed:', err)
+    return { ok: false, error: describeAiError(err) }
   }
 }

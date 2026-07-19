@@ -81,11 +81,19 @@ export async function POST(req: NextRequest) {
     include: { domain: true },
   })
 
-  await extractAndLinkConcepts(nugget.id, nugget.contentMarkdown || nugget.contentPlain, {
+  const extraction = await extractAndLinkConcepts(nugget.id, nugget.contentMarkdown || nugget.contentPlain, {
     domainId: nugget.domainId,
     reviseContent: reviseContent !== false,
     aiHint: typeof aiHint === 'string' ? aiHint : undefined,
   })
 
-  return NextResponse.json(nugget, { status: 201 })
+  // The nugget itself is already saved successfully at this point — an AI failure
+  // (bad key, spend limit, model retired, …) must not turn into a 4xx/5xx for the
+  // whole request. It's surfaced as a soft warning instead, so the client can tell
+  // the user their note wasn't titled/tagged/linked into the knowledge graph,
+  // rather than that silently never happening (the previous behaviour).
+  return NextResponse.json(
+    { ...nugget, aiWarning: extraction.ok ? null : extraction.error },
+    { status: 201 }
+  )
 }
