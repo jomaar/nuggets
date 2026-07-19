@@ -12,6 +12,8 @@ interface DomainPrompt {
   domainPrompt: string | null
 }
 
+type AiHealth = { ok: boolean; error?: string; model?: string }
+
 export default function AdminPage() {
   const [globalAddition, setGlobalAddition] = useState('')
   const [domains, setDomains]               = useState<DomainPrompt[]>([])
@@ -19,6 +21,22 @@ export default function AdminPage() {
   const [loading, setLoading]               = useState(true)
   const [saving, setSaving]                 = useState(false)
   const [savedAt, setSavedAt]               = useState<number | null>(null)
+  const [aiHealth, setAiHealth]             = useState<AiHealth | null>(null)
+  const [checkingAi, setCheckingAi]         = useState(false)
+
+  const checkAiHealth = useCallback(async () => {
+    setCheckingAi(true)
+    try {
+      const res = await fetch('/api/ai/health')
+      setAiHealth(await res.json())
+    } catch {
+      setAiHealth({ ok: false, error: 'Netzwerkfehler beim Prüfen.' })
+    } finally {
+      setCheckingAi(false)
+    }
+  }, [])
+
+  useEffect(() => { checkAiHealth() }, [checkAiHealth])
 
   const load = useCallback(async () => {
     const res = await fetch('/api/admin/prompts')
@@ -79,6 +97,49 @@ export default function AdminPage() {
       </header>
 
       <div className="flex flex-col gap-6">
+        {/* AI heartbeat — a metadata-only call (no token cost), so it catches
+            an invalid/spend-limit-disabled API key before it silently breaks
+            a nugget save. */}
+        <div
+          className="p-4 rounded-2xl flex items-center justify-between gap-3"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden
+              style={{
+                width: '0.6rem',
+                height: '0.6rem',
+                borderRadius: '50%',
+                display: 'inline-block',
+                background: checkingAi
+                  ? 'var(--muted)'
+                  : aiHealth?.ok
+                    ? '#2f9e44'
+                    : 'var(--act-delete, #c0392b)',
+              }}
+            />
+            <div>
+              <p className="text-sm" style={{ color: 'var(--ink)' }}>
+                {checkingAi
+                  ? 'Prüfe KI-Verbindung…'
+                  : aiHealth?.ok
+                    ? `KI erreichbar (${aiHealth.model})`
+                    : aiHealth?.error || 'KI-Verbindung fehlgeschlagen'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={checkAiHealth}
+            disabled={checkingAi}
+            className="text-xs px-3 py-1.5 rounded-lg shrink-0"
+            style={{ color: 'var(--muted)', border: '1px solid var(--border)', opacity: checkingAi ? 0.6 : 1 }}
+          >
+            Jetzt prüfen
+          </button>
+        </div>
+
         {/* Global addition */}
         <div>
           <label className="text-xs tracking-widest uppercase mb-2 block" style={{ color: 'var(--muted)' }}>
