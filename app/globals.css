@@ -339,6 +339,27 @@ h1, h2, h3, .serif {
 .highlight-ai:hover {
   color: var(--accent-strong, var(--accent, #3f4da2));
 }
+.format-toggle {
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink, #333);
+  background: transparent;
+  border: 1px solid var(--border, #e0d8c8);
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+.format-toggle:hover {
+  background: var(--border, #e0d8c8);
+}
+.format-toggle.is-active {
+  color: var(--accent);
+  background: var(--accent-tint);
+  border-color: var(--accent);
+}
 
 /* Tiptap editor */
 .tiptap-editor .ProseMirror {

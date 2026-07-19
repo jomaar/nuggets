@@ -5,7 +5,7 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useEffect, useRef, useState } from 'react'
-import { MessageSquarePlus, Sparkles } from 'lucide-react'
+import { Bold, Italic, MessageSquarePlus, Sparkles } from 'lucide-react'
 import { normalizeToHtml } from '@/lib/content'
 import CssVarHighlight from './CssVarHighlight'
 import CssVarUnderline from './CssVarUnderline'
@@ -211,6 +211,14 @@ export default function NuggetEditor({
   }
 
   /**
+   * Toggle bold/italic on the selection. Edit-view only — unlike the colour
+   * marks these change the document structure itself, and there's no
+   * keyboard shortcut fallback on iOS (no Cmd+B without a physical keyboard).
+   */
+  const toggleBold = () => editor?.chain().focus().toggleBold().run()
+  const toggleItalic = () => editor?.chain().focus().toggleItalic().run()
+
+  /**
    * Hand the current selection to the comment handler (reading view only),
    * then collapse the editor selection so the BubbleMenu closes. The DOM
    * selection is cleared too — the caller has already captured it.
@@ -273,6 +281,33 @@ export default function NuggetEditor({
           shouldShow={({ from, to }) => from !== to}
         >
           <div className="highlight-menu">
+            {/* Bold/Italic toggle — edit view only. No colour-mark keyboard-shortcut
+                fallback exists on iOS (no Cmd+B without a physical keyboard), so this
+                is the only way to remove bold/italic there. */}
+            {editor.isEditable && (
+              <div className="highlight-menu-row">
+                <button
+                  type="button"
+                  className={`format-toggle${editor.isActive('bold') ? ' is-active' : ''}`}
+                  aria-label="Fett"
+                  aria-pressed={editor.isActive('bold')}
+                  title="Fett"
+                  onClick={toggleBold}
+                >
+                  <Bold size={16} />
+                </button>
+                <button
+                  type="button"
+                  className={`format-toggle${editor.isActive('italic') ? ' is-active' : ''}`}
+                  aria-label="Kursiv"
+                  aria-pressed={editor.isActive('italic')}
+                  title="Kursiv"
+                  onClick={toggleItalic}
+                >
+                  <Italic size={16} />
+                </button>
+              </div>
+            )}
             {/* Custom colour names show as a mini label under the swatch. When a
                 row has at least one name, EVERY cell in it gets a label slot
                 (blank if unnamed) so all swatches keep the same baseline. */}
