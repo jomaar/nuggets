@@ -1,7 +1,10 @@
 import { marked } from 'marked'
 import TurndownService from 'turndown'
 
-const turndown = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-' })
+// codeBlockStyle 'fenced' is required: Turndown's default is an indented
+// block with no language tag, which silently drops ```mermaid (and any other
+// language) fences from the AI's Markdown projection and from contentMarkdown.
+const turndown = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-', codeBlockStyle: 'fenced' })
 // Highlights (<mark>) and coloured underlines (<u data-color>) are reader
 // annotations, not content. Unwrap them so the derived Markdown — and
 // therefore the AI — never sees marking markup. Plain <u> is unwrapped too:
