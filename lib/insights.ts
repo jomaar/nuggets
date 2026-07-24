@@ -106,6 +106,103 @@ Strenge Regeln:
 - Antworte in der Sprache der Notizen (überwiegend Deutsch).
 - Gib das Ergebnis ausschließlich über das Werkzeug save_tensions zurück.`
 
+type GenResult = { ok: true; insights: Insight[] } | { ok: false; error: string }
+
+/** One insight the engine wants persisted (before token/kind/hash are attached). */
+interface NewInsightRow {
+  title: string
+  body: string
+  refs: { conceptIds: string[]; nuggetIds: string[] }
+}
+
+/** What an engine's synthesis step returns: the rows to persist + the call's token usage. */
+type Synthesis =
+  | { ok: true; rows: NewInsightRow[]; inputTokens: number; outputTokens: number }
+  | { ok: false; error: string }
+
+/**
+ * Numbered reading list + user message, shared by every concept-scoped engine.
+ * The model refers to readings by index; the engine maps indices back to nugget
+ * ids — far more robust than trusting the model to echo opaque cuid strings.
+ */
+function buildUserMessage(distilled: ConceptDistillation): string {
+  const readingList = distilled.readings
+    .map((r, i) => `[${i + 1}] „${r.note}" (aus: ${r.title})`)
+    .join('\n')
+  return `Konzept: ${distilled.term}\nDefinition: ${distilled.description}\n\nLesarten:\n${readingList}`
+}
+
+/**
+ * Shared backbone for every concept-scoped insight engine (tension, question, …).
+ * Handles the whole efficiency + idempotency machinery so each engine only has to
+ * supply its prompt/tool/mapping via `synthesize`:
+ *  - never sends nugget bodies (input is the distilled edge-notes only);
+ *  - on a cache hit for (kind, anchorConcept, inputHash) it returns the surviving
+ *    (non-dismissed) rows WITHOUT any model call (zero tokens);
+ *  - on a fresh input it first sweeps stale, non-dismissed rows OF THIS KIND for
+ *    the concept, so the panel never mixes readings from an older edge set;
+ *  - dismissed rows are always preserved, so a rejected insight never resurrects;
+ *  - records the whole call's token usage on the first created row (the rest carry
+ *    0), so summing the concept's rows reconstructs one generation's cost.
+ * tension and question share the SAME inputHash (same distilled input) but are
+ * scoped by `kind`, so they coexist without colliding (index is [kind, inputHash],
+ * not a unique constraint).
+ */
+async function generateForConcept(
+  conceptId: string,
+  kind: string,
+  minReadings: number,
+  synthesize: (distilled: ConceptDistillation) => Promise<Synthesis>,
+): Promise<GenResult> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return { ok: false, error: 'KI nicht konfiguriert (kein API-Key hinterlegt).' }
+  }
+
+  const distilled = await distillConcept(conceptId)
+  if (!distilled) return { ok: false, error: 'Konzept nicht gefunden.' }
+  // Too few readings to reason about — nothing to do (honest empty).
+  if (distilled.readings.length < minReadings) return { ok: true, insights: [] }
+
+  const inputHash = hashInput(distilled)
+
+  const cached = await prisma.insight.findMany({
+    where: { kind, anchorConceptId: conceptId, inputHash },
+    orderBy: { createdAt: 'asc' },
+  })
+  if (cached.length > 0) {
+    return { ok: true, insights: cached.filter(i => i.status !== 'dismissed') }
+  }
+
+  await prisma.insight.deleteMany({
+    where: { kind, anchorConceptId: conceptId, inputHash: { not: inputHash }, status: { not: 'dismissed' } },
+  })
+
+  const result = await synthesize(distilled)
+  if (!result.ok) return { ok: false, error: result.error }
+
+  const created: Insight[] = []
+  for (let i = 0; i < result.rows.length; i++) {
+    const r = result.rows[i]
+    const insight = await prisma.insight.create({
+      data: {
+        kind,
+        status: 'new',
+        title: r.title,
+        body: r.body,
+        anchorConceptId: conceptId,
+        refs: JSON.stringify(r.refs),
+        inputHash,
+        model: CLAUDE_MODEL,
+        inputTokens: i === 0 ? result.inputTokens : 0,
+        outputTokens: i === 0 ? result.outputTokens : 0,
+      },
+    })
+    created.push(insight)
+  }
+
+  return { ok: true, insights: created }
+}
+
 interface TensionOutput {
   tensions: {
     readingA: number
@@ -115,139 +212,178 @@ interface TensionOutput {
   }[]
 }
 
-type GenResult = { ok: true; insights: Insight[] } | { ok: false; error: string }
-
 /**
- * Generate (or return cached) tension insights for one concept. Never sends
- * nugget bodies. Idempotent per (kind, anchorConcept, inputHash): on a cache hit
- * it returns the surviving insights without any model call (zero tokens); a
- * fresh input first sweeps stale, non-dismissed tension rows for the concept so
- * the panel never mixes readings from an older edge set. Dismissed rows are
- * always preserved, so a rejected insight is never resurrected.
+ * Generate (or return cached) tension insights for one concept: genuine frictions
+ * between how different nuggets read the same concept. Needs ≥2 readings. The
+ * cache/sweep/token machinery lives in `generateForConcept`.
  */
-export async function generateTensions(conceptId: string): Promise<GenResult> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return { ok: false, error: 'KI nicht konfiguriert (kein API-Key hinterlegt).' }
-  }
-
-  const distilled = await distillConcept(conceptId)
-  if (!distilled) return { ok: false, error: 'Konzept nicht gefunden.' }
-  // A tension needs at least two readings to compare — nothing to do otherwise.
-  if (distilled.readings.length < 2) return { ok: true, insights: [] }
-
-  const inputHash = hashInput(distilled)
-
-  // Cache hit: this exact input was already analyzed. Return the surviving
-  // (non-dismissed) insights; dismissed ones stay hidden. No model call.
-  const cached = await prisma.insight.findMany({
-    where: { kind: 'tension', anchorConceptId: conceptId, inputHash },
-    orderBy: { createdAt: 'asc' },
-  })
-  if (cached.length > 0) {
-    return { ok: true, insights: cached.filter(i => i.status !== 'dismissed') }
-  }
-
-  // Fresh input (first run or the concept's edges changed): drop stale,
-  // non-dismissed tension rows for this concept so old readings don't linger.
-  await prisma.insight.deleteMany({
-    where: {
-      kind: 'tension',
-      anchorConceptId: conceptId,
-      inputHash: { not: inputHash },
-      status: { not: 'dismissed' },
-    },
-  })
-
-  // Present readings as a numbered list; the model refers to them by index, and
-  // we map indices back to nugget ids — far more robust than trusting the model
-  // to echo opaque cuid strings.
-  const readingList = distilled.readings
-    .map((r, i) => `[${i + 1}] „${r.note}" (aus: ${r.title})`)
-    .join('\n')
-  const userMessage = `Konzept: ${distilled.term}\nDefinition: ${distilled.description}\n\nLesarten:\n${readingList}`
-
-  try {
-    const response = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 2048,
-      system: TENSION_SYSTEM_PROMPT,
-      tools: [
-        {
-          name: 'save_tensions',
-          description: 'Save the genuine tensions found between the readings (empty if the readings are coherent).',
-          input_schema: {
-            type: 'object' as const,
-            properties: {
-              tensions: {
-                type: 'array',
-                description: 'Distinct genuine tensions. Empty array if the readings are coherent.',
-                items: {
-                  type: 'object',
-                  properties: {
-                    readingA: { type: 'integer', description: 'Number of the first reading in tension' },
-                    readingB: { type: 'integer', description: 'Number of the second reading in tension' },
-                    title: { type: 'string', description: 'The tension as one pointed line (question or thesis), language of the notes' },
-                    body: { type: 'string', description: '2–4 sentences: what exactly is in tension and why it is worth thinking about. Markdown allowed.' },
+export function generateTensions(conceptId: string): Promise<GenResult> {
+  return generateForConcept(conceptId, 'tension', 2, async distilled => {
+    try {
+      const response = await anthropic.messages.create({
+        model: CLAUDE_MODEL,
+        max_tokens: 2048,
+        system: TENSION_SYSTEM_PROMPT,
+        tools: [
+          {
+            name: 'save_tensions',
+            description: 'Save the genuine tensions found between the readings (empty if the readings are coherent).',
+            input_schema: {
+              type: 'object' as const,
+              properties: {
+                tensions: {
+                  type: 'array',
+                  description: 'Distinct genuine tensions. Empty array if the readings are coherent.',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      readingA: { type: 'integer', description: 'Number of the first reading in tension' },
+                      readingB: { type: 'integer', description: 'Number of the second reading in tension' },
+                      title: { type: 'string', description: 'The tension as one pointed line (question or thesis), language of the notes' },
+                      body: { type: 'string', description: '2–4 sentences: what exactly is in tension and why it is worth thinking about. Markdown allowed.' },
+                    },
+                    required: ['readingA', 'readingB', 'title', 'body'],
                   },
-                  required: ['readingA', 'readingB', 'title', 'body'],
                 },
               },
+              required: ['tensions'],
             },
-            required: ['tensions'],
           },
-        },
-      ],
-      tool_choice: { type: 'tool', name: 'save_tensions' },
-      messages: [{ role: 'user', content: userMessage }],
-    })
-
-    const toolUse = response.content.find(b => b.type === 'tool_use')
-    if (!toolUse || toolUse.type !== 'tool_use') {
-      return { ok: false, error: 'KI-Anfrage fehlgeschlagen (unerwartete Antwort).' }
-    }
-    const out = toolUse.input as TensionOutput
-    const tensions = Array.isArray(out.tensions) ? out.tensions : []
-
-    // Map reading indices → nugget ids; drop any tension referencing an
-    // out-of-range or identical pair (schema violations despite forced tools).
-    const rows = tensions
-      .map(t => {
-        const a = distilled.readings[t.readingA - 1]
-        const b = distilled.readings[t.readingB - 1]
-        if (!a || !b || a.nuggetId === b.nuggetId) return null
-        if (!t.title?.trim() || !t.body?.trim()) return null
-        return { a, b, title: t.title.trim(), body: t.body.trim() }
+        ],
+        tool_choice: { type: 'tool', name: 'save_tensions' },
+        messages: [{ role: 'user', content: buildUserMessage(distilled) }],
       })
-      .filter((r): r is NonNullable<typeof r> => r !== null)
 
-    // Record the whole call's token usage on the first row (the rest carry 0),
-    // so summing the concept's rows reconstructs one generation's cost. A
-    // zero-tension run records nothing — an accepted, minor blind spot.
-    const created: Insight[] = []
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i]
-      const insight = await prisma.insight.create({
-        data: {
-          kind: 'tension',
-          status: 'new',
-          title: r.title,
-          body: r.body,
-          anchorConceptId: conceptId,
-          refs: JSON.stringify({ conceptIds: [], nuggetIds: [r.a.nuggetId, r.b.nuggetId] }),
-          inputHash,
-          model: CLAUDE_MODEL,
-          inputTokens: i === 0 ? response.usage.input_tokens : 0,
-          outputTokens: i === 0 ? response.usage.output_tokens : 0,
-        },
-      })
-      created.push(insight)
+      const toolUse = response.content.find(b => b.type === 'tool_use')
+      if (!toolUse || toolUse.type !== 'tool_use') {
+        return { ok: false, error: 'KI-Anfrage fehlgeschlagen (unerwartete Antwort).' }
+      }
+      const out = toolUse.input as TensionOutput
+      const tensions = Array.isArray(out.tensions) ? out.tensions : []
+
+      // Map reading indices → nugget ids; drop any tension referencing an
+      // out-of-range or identical pair (schema violations despite forced tools).
+      const rows: NewInsightRow[] = tensions
+        .map(t => {
+          const a = distilled.readings[t.readingA - 1]
+          const b = distilled.readings[t.readingB - 1]
+          if (!a || !b || a.nuggetId === b.nuggetId) return null
+          if (!t.title?.trim() || !t.body?.trim()) return null
+          return {
+            title: t.title.trim(),
+            body: t.body.trim(),
+            refs: { conceptIds: [] as string[], nuggetIds: [a.nuggetId, b.nuggetId] },
+          }
+        })
+        .filter((r): r is NewInsightRow => r !== null)
+
+      return { ok: true, rows, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }
+    } catch (error) {
+      console.error('[insights] tension generation failed:', error)
+      return { ok: false, error: describeAiError(error) }
     }
+  })
+}
 
-    return { ok: true, insights: created }
-  } catch (error) {
-    console.error('[insights] tension generation failed:', error)
-    return { ok: false, error: describeAiError(error) }
-  }
+const QUESTION_SYSTEM_PROMPT = `Du bist ein theologisch und philosophisch geschulter Denkpartner in einer persönlichen Wissens-App (Schwerpunkt Glaube und Bibel).
+
+Du bekommst EIN Konzept mit seiner Definition und mehreren "Lesarten" — kurze Notizen aus verschiedenen Nuggets (Notizen des Nutzers), die jeweils festhalten, was DIESE Notiz über das Konzept sagt.
+
+Deine Aufgabe: die stärksten OFFENEN FRAGEN formulieren, die dieses Material aufwirft, aber selbst NICHT beantwortet — die gedankliche Leerstelle, den nächsten Schritt, dem der Nutzer nachgehen sollte. Der Wert liegt darin, ihm eine produktive Frage zu geben, die aus seinem EIGENEN Material erwächst und die er noch nicht durchdacht hat.
+
+Strenge Regeln:
+- Nur echte Fragen, die aus dem Material erwachsen. KEINE allgemeinen Lehrbuchfragen, keine Frage, die eine der Lesarten bereits beantwortet.
+- Höchstens ZWEI Fragen, lieber EINE. Eine präzise, tiefe Frage schlägt mehrere flache.
+- Wirft das Material keine echte offene Frage auf, gib eine LEERE Liste zurück. Eine ehrliche leere Antwort ist besser als eine erfundene Frage.
+- Formuliere die Frage zugespitzt als "title" (die Frage selbst, ein Satz), plus 2–4 Sätze im "body": warum die Frage offen ist, woran sie im Material hängt und wohin sie führt.
+- Nenne unter "readings" die Nummern der ein oder zwei Lesarten, aus denen die Frage erwächst — nur wenn eindeutig, sonst eine leere Liste.
+- Antworte in der Sprache der Notizen (überwiegend Deutsch).
+- Gib das Ergebnis ausschließlich über das Werkzeug save_questions zurück.`
+
+interface QuestionOutput {
+  questions: {
+    title: string
+    body: string
+    readings?: number[]
+  }[]
+}
+
+/**
+ * Generate (or return cached) open-question insights for one concept: the
+ * productive questions the material raises but does not answer. Needs ≥1 reading
+ * (a single rich reading can already leave something open). Shares `distillConcept`
+ * and the whole cache/sweep/token backbone with the tension engine; only the
+ * prompt, tool schema and index→nuggetId mapping differ.
+ */
+export function generateQuestions(conceptId: string): Promise<GenResult> {
+  return generateForConcept(conceptId, 'question', 1, async distilled => {
+    try {
+      const response = await anthropic.messages.create({
+        model: CLAUDE_MODEL,
+        max_tokens: 2048,
+        system: QUESTION_SYSTEM_PROMPT,
+        tools: [
+          {
+            name: 'save_questions',
+            description: 'Save the genuine open questions the material raises (empty if it raises none).',
+            input_schema: {
+              type: 'object' as const,
+              properties: {
+                questions: {
+                  type: 'array',
+                  description: 'Distinct open questions (at most two). Empty array if the material raises no genuine open question.',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      title: { type: 'string', description: 'The open question itself, one pointed sentence, language of the notes' },
+                      body: { type: 'string', description: '2–4 sentences: why it is open, what in the material it hangs on and where it leads. Markdown allowed.' },
+                      readings: {
+                        type: 'array',
+                        description: 'Numbers of the 1–2 readings the question arises from; empty if not clearly tied to specific readings.',
+                        items: { type: 'integer' },
+                      },
+                    },
+                    required: ['title', 'body'],
+                  },
+                },
+              },
+              required: ['questions'],
+            },
+          },
+        ],
+        tool_choice: { type: 'tool', name: 'save_questions' },
+        messages: [{ role: 'user', content: buildUserMessage(distilled) }],
+      })
+
+      const toolUse = response.content.find(b => b.type === 'tool_use')
+      if (!toolUse || toolUse.type !== 'tool_use') {
+        return { ok: false, error: 'KI-Anfrage fehlgeschlagen (unerwartete Antwort).' }
+      }
+      const out = toolUse.input as QuestionOutput
+      const questions = Array.isArray(out.questions) ? out.questions : []
+
+      // Map the cited reading indices → nugget ids (deduped, out-of-range dropped)
+      // so the card can offer jump chips; a question without clear refs shows none.
+      const rows: NewInsightRow[] = questions
+        .map(q => {
+          if (!q.title?.trim() || !q.body?.trim()) return null
+          const nuggetIds = Array.isArray(q.readings)
+            ? [...new Set(
+                q.readings
+                  .map(n => distilled.readings[n - 1]?.nuggetId)
+                  .filter((v): v is string => typeof v === 'string'),
+              )]
+            : []
+          return { title: q.title.trim(), body: q.body.trim(), refs: { conceptIds: [] as string[], nuggetIds } }
+        })
+        .filter((r): r is NewInsightRow => r !== null)
+
+      return { ok: true, rows, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }
+    } catch (error) {
+      console.error('[insights] question generation failed:', error)
+      return { ok: false, error: describeAiError(error) }
+    }
+  })
 }
 
 const LOCATE_SYSTEM_PROMPT = `Du erhältst den Volltext eines Nuggets (einer Notiz) und die Beschreibung eines Denkanstoßes (einer gedanklichen Spannung), der sich auf dieses Nugget bezieht. Finde die EINE Textstelle im Nugget, auf die sich der Denkanstoß am direktesten bezieht.

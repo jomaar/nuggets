@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Waypoints, Lightbulb, Sparkles, Check, X } from 'lucide-react'
+import { Waypoints, Lightbulb, Check, X, Zap, HelpCircle } from 'lucide-react'
 import DomainIcon from '@/components/DomainIcon'
 import { useOwner } from '@/components/OwnerContext'
 import { commentMarkdownToHtml } from '@/lib/content'
@@ -71,7 +71,8 @@ export default function ConceptPage() {
   const [related, setRelated] = useState<RelatedConcept[]>([])
   const [loading, setLoading] = useState(true)
   const [insights, setInsights] = useState<Insight[]>([])
-  const [generating, setGenerating] = useState(false)
+  // Which engine is currently running (null = idle) — two independent buttons.
+  const [generatingKind, setGeneratingKind] = useState<'tension' | 'question' | null>(null)
   const [insightError, setInsightError] = useState<string | null>(null)
   const [hasGenerated, setHasGenerated] = useState(false)
   const [jumpingKey, setJumpingKey] = useState<string | null>(null)
@@ -100,15 +101,15 @@ export default function ConceptPage() {
 
   useEffect(() => { load(); loadInsights() }, [load, loadInsights])
 
-  /** Owner action: run the tension engine for this concept, then refresh the list. */
-  const generateInsights = useCallback(async () => {
-    setGenerating(true)
+  /** Owner action: run one engine (tension | question) for this concept, then refresh. */
+  const generateInsights = useCallback(async (kind: 'tension' | 'question') => {
+    setGeneratingKind(kind)
     setInsightError(null)
     try {
       const res = await fetch('/api/insights/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'tension', conceptId: id }),
+        body: JSON.stringify({ kind, conceptId: id }),
       })
       const data = await res.json()
       if (!res.ok) { setInsightError(data.error ?? 'KI-Anfrage fehlgeschlagen.'); return }
@@ -117,7 +118,7 @@ export default function ConceptPage() {
     } catch {
       setInsightError('Netzwerkfehler.')
     } finally {
-      setGenerating(false)
+      setGeneratingKind(null)
     }
   }, [id, loadInsights])
 
@@ -276,23 +277,33 @@ export default function ConceptPage() {
           different nuggets read this concept), not just showing that links exist.
           Fed by lib/insights.ts from the distilled edge-notes, never nugget bodies. */}
       <div className="mt-10">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <p className="text-xs tracking-widest uppercase flex items-center gap-1.5" style={{ color: 'var(--muted)' }}>
-            <Lightbulb size={13} />
-            Denkanstöße
-          </p>
-          {isOwner && (
+        <p className="text-xs tracking-widest uppercase flex items-center gap-1.5 mb-4" style={{ color: 'var(--muted)' }}>
+          <Lightbulb size={13} />
+          Denkanstöße
+        </p>
+        {isOwner && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {/* Two independent engines — each re-run is idempotent (cache hit = free). */}
             <button
-              onClick={generateInsights}
-              disabled={generating}
-              className="text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50"
+              onClick={() => generateInsights('tension')}
+              disabled={generatingKind !== null}
+              className="text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 disabled:opacity-50"
               style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
             >
-              <Sparkles size={13} />
-              {generating ? 'Denke nach…' : insights.length > 0 ? 'Neu suchen' : 'Spannungen suchen'}
+              <Zap size={13} />
+              {generatingKind === 'tension' ? 'Denke nach…' : 'Spannungen'}
             </button>
-          )}
-        </div>
+            <button
+              onClick={() => generateInsights('question')}
+              disabled={generatingKind !== null}
+              className="text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 disabled:opacity-50"
+              style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+            >
+              <HelpCircle size={13} />
+              {generatingKind === 'question' ? 'Denke nach…' : 'Offene Fragen'}
+            </button>
+          </div>
+        )}
 
         {insightError && (
           <p className="text-xs mb-3" style={{ color: 'var(--act-delete, #c0392b)' }}>{insightError}</p>
@@ -301,9 +312,9 @@ export default function ConceptPage() {
         {insights.length === 0 ? (
           <p className="text-xs" style={{ color: 'var(--muted)', lineHeight: '1.6' }}>
             {hasGenerated
-              ? 'Keine Spannungen gefunden — die Lesarten dieses Konzepts sind stimmig.'
+              ? 'Nichts gefunden — die Lesarten dieses Konzepts sind stimmig und werfen keine offene Frage auf.'
               : isOwner
-                ? 'Noch keine Denkanstöße. Lass die KI nach Spannungen zwischen den Lesarten dieses Konzepts suchen.'
+                ? 'Noch keine Denkanstöße. Lass die KI nach Spannungen oder offenen Fragen zwischen den Lesarten dieses Konzepts suchen.'
                 : 'Noch keine Denkanstöße für dieses Konzept.'}
           </p>
         ) : (
@@ -314,6 +325,12 @@ export default function ConceptPage() {
                 className="px-5 py-4 rounded-2xl border"
                 style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: '0 2px 12px rgba(26,23,20,0.06)' }}
               >
+                {/* Kind badge — tells a friction apart from an open question at a glance. */}
+                <p className="text-[10px] tracking-widest uppercase flex items-center gap-1 mb-2" style={{ color: 'var(--muted)' }}>
+                  {ins.kind === 'question'
+                    ? <><HelpCircle size={11} /> Offene Frage</>
+                    : <><Zap size={11} /> Spannung</>}
+                </p>
                 <p className="text-sm font-medium mb-2" style={{ color: 'var(--ink)', lineHeight: '1.5' }}>
                   {ins.title}
                 </p>
