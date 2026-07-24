@@ -29,10 +29,11 @@ NAMED-ENTITY-LINKING — strongly prefer reusing existing concepts:
 - Match across languages (ἀγάπη = Liebe = Love = the same concept node).
 - Greek terms ἀγάπη, φιλία, ἔρως are DISTINCT concepts — never merge different Greek words.
 
-The connection "note" field (for both matched and new concepts):
-- One short phrase capturing what THIS note specifically says about the concept — its particular reading, angle, or claim.
-- This is where the specificity goes. Example: concept "Logos" + note "read as the human capacity for speech and self-expression".
-- Same language as the note. Keep it to a clause, not a paragraph.
+The connection "note" field (REQUIRED for every concept, matched or new):
+- The note's specific CLAIM or STANCE on the concept — the position this note takes, phrased so that a different note could AGREE with it or CONTRADICT it. Not a topic label ("erwähnt Demut"), but a proposition ("Demut ist Voraussetzung, nicht Folge des Gebets").
+- Example: concept "Logos" + note "gelesen als menschliche Fähigkeit zu Sprache und Selbstausdruck" (a reading one could dispute), NOT "kommt im Text vor" (a topic).
+- This is where ALL the specificity goes, and it is the raw material the app later reasons over to surface TENSIONS and OPEN QUESTIONS between notes — so make it a real assertion, not a restatement of the concept's definition.
+- Same language as the note. One clause, not a paragraph. Always provide it, even when the reading feels obvious.
 
 Other rules:
 - Title: one short line (max 80 chars), in the same language as the note, capturing the core idea
@@ -232,9 +233,9 @@ export async function extractAndLinkConcepts(
                   properties: {
                     id:        { type: 'string', description: 'Exact ID from the existing list' },
                     relevance: { type: 'number', description: '0.3–1.0' },
-                    note:      { type: 'string', description: 'Short phrase: what THIS note specifically says about the concept (same language as note)' },
+                    note:      { type: 'string', description: "The note's specific claim/stance on the concept — a proposition that could agree or conflict with another note's reading, NOT a topic label (same language as note)" },
                   },
-                  required: ['id', 'relevance'],
+                  required: ['id', 'relevance', 'note'],
                 },
               },
               newConcepts: {
@@ -256,10 +257,10 @@ export async function extractAndLinkConcepts(
                       },
                     },
                     relevance: { type: 'number', description: '0.3–1.0' },
-                    note:      { type: 'string', description: 'Short phrase: what THIS note specifically says about the concept (same language as note)' },
+                    note:      { type: 'string', description: "The note's specific claim/stance on the concept — a proposition that could agree or conflict with another note's reading, NOT a topic label (same language as note)" },
                     whyNoExistingMatch: { type: 'string', description: 'One short sentence: why none of the existing concepts covers this idea' },
                   },
-                  required: ['description', 'labels', 'relevance', 'whyNoExistingMatch'],
+                  required: ['description', 'labels', 'relevance', 'note', 'whyNoExistingMatch'],
                 },
               },
             },
