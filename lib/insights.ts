@@ -3,6 +3,7 @@ import { prisma } from './prisma'
 import { anthropic, CLAUDE_MODEL, describeAiError } from './anthropic'
 import { fallbackTitle } from './content'
 import { KnowledgeGraph } from './graph'
+import { detectConceptCommunities, type ConceptCommunity } from './conceptCommunities'
 import type { AnchorToken } from './bookmarkLink'
 import type { Insight } from '@prisma/client'
 
@@ -595,6 +596,201 @@ export async function generateBridges(conceptId: string): Promise<GenResult> {
       return { ok: false, error: describeAiError(error) }
     }
   })
+}
+
+// ── Theme engine ───────────────────────────────────────────────────────────
+// The odd one out: GLOBAL, not anchored on a single concept. It partitions the
+// whole concept graph into communities (densely inter-linked concept groups, via
+// weighted Louvain in lib/conceptCommunities.ts) and asks, per community, for the
+// one emergent theme the cluster embodies that no single concept states. Still
+// body-free: the input is member terms + definitions only.
+//
+// Why its own cache/sweep tail (not cacheOrGenerate): that helper scopes cache and
+// stale-sweep by anchorConceptId (per concept). theme is global — one run yields
+// many communities, and a community's lead (=anchor) can shift between runs, so an
+// anchor-scoped sweep couldn't find the old row. Instead the cache key is the
+// community's member SET (inputHash), the sweep is global (drop non-dismissed theme
+// rows whose community no longer exists), and dismissed rows are always preserved.
+
+/**
+ * Theme cache fingerprint: the community's member SET, each as
+ * (conceptId + term + description), order-independent. Description-sensitive
+ * (editing a member's definition regenerates) and membership-sensitive (a shifted
+ * community regenerates). Deterministic Louvain (see lib/louvain.ts) keeps the set
+ * stable across runs on unchanged data, so a re-run with no change is a cache hit.
+ */
+function hashThemeInput(community: ConceptCommunity, descriptions: Map<string, string>): string {
+  const norm = community.members
+    .map(m => ({ c: m.conceptId, t: m.term, d: descriptions.get(m.conceptId) ?? '' }))
+    .sort((a, b) => (a.c < b.c ? -1 : a.c > b.c ? 1 : 0))
+  return createHash('sha256').update(JSON.stringify({ theme: norm })).digest('hex')
+}
+
+const THEME_SYSTEM_PROMPT = `Du bist ein theologisch und philosophisch geschulter Denkpartner in einer persönlichen Wissens-App (Schwerpunkt Glaube und Bibel).
+
+Du bekommst einen CLUSTER verwandter Konzepte — Begriffe, die in den Notizen des Nutzers immer wieder gemeinsam auftauchen, jeweils mit ihrer Definition. Der Cluster wurde rein rechnerisch aus dem Vernetzungsmuster gebildet.
+
+Deine Aufgabe: das EINE emergente THEMA benennen, das dieser Cluster als Ganzes verkörpert — den roten Faden, der die Konzepte verbindet und den kein einzelnes Konzept für sich ausspricht. Der Wert: dem Nutzer sichtbar machen, welches größere Thema sich in seinem Material herausgebildet hat, ohne dass er es bewusst angelegt hat.
+
+Strenge Regeln:
+- Nur ein ECHTES, tragendes Thema. Ist der Cluster bloß ein loses Sammelsurium ohne gemeinsamen Kern, gib eine LEERE Liste zurück. Eine ehrliche leere Antwort ist besser als ein erfundener Zusammenhang.
+- Der "title" ist der Themenname: eine prägnante Benennung des roten Fadens (kein ganzer Satz).
+- Der "body" ist die implizite THESE: 2–4 Sätze, die formulieren, was das Material über dieses Thema als Ganzes sagt — die Aussage, die sich aus dem Zusammenspiel der Konzepte ergibt.
+- Höchstens EIN Thema pro Cluster.
+- Antworte in der Sprache der Definitionen (überwiegend Deutsch).
+- Gib das Ergebnis ausschließlich über das Werkzeug save_themes zurück.`
+
+interface ThemeOutput {
+  themes: {
+    title: string
+    body: string
+  }[]
+}
+
+/**
+ * Ask the model to name the emergent theme of ONE concept community. Body-free:
+ * the input is the member terms + their definitions. Returns 0..1 rows (honest
+ * empty when the cluster has no genuine common thread). refs carry the non-lead
+ * members as concept jump chips; the lead is the insight's anchorConceptId.
+ */
+async function synthesizeTheme(
+  community: ConceptCommunity,
+  descriptions: Map<string, string>,
+): Promise<Synthesis> {
+  try {
+    const memberList = community.members
+      .map((m, i) => `[${i + 1}] ${m.term}: ${descriptions.get(m.conceptId) ?? ''}`)
+      .join('\n')
+    const userMessage = `Konzept-Cluster (${community.members.length} verwandte Konzepte):\n${memberList}`
+
+    const response = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 2048,
+      system: THEME_SYSTEM_PROMPT,
+      tools: [
+        {
+          name: 'save_themes',
+          description: 'Save the one emergent theme of the cluster (empty if it has no genuine common thread).',
+          input_schema: {
+            type: 'object' as const,
+            properties: {
+              themes: {
+                type: 'array',
+                description: 'At most one theme. Empty array if the cluster is just a grab-bag.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    title: { type: 'string', description: 'The theme name: a concise label of the common thread (not a full sentence), language of the definitions' },
+                    body: { type: 'string', description: '2–4 sentences: the implicit thesis — what the material says about this theme as a whole. Markdown allowed.' },
+                  },
+                  required: ['title', 'body'],
+                },
+              },
+            },
+            required: ['themes'],
+          },
+        },
+      ],
+      tool_choice: { type: 'tool', name: 'save_themes' },
+      messages: [{ role: 'user', content: userMessage }],
+    })
+
+    const toolUse = response.content.find(b => b.type === 'tool_use')
+    if (!toolUse || toolUse.type !== 'tool_use') {
+      return { ok: false, error: 'KI-Anfrage fehlgeschlagen (unerwartete Antwort).' }
+    }
+    const out = toolUse.input as ThemeOutput
+    const themes = Array.isArray(out.themes) ? out.themes.slice(0, 1) : []
+
+    // Non-lead members become concept jump chips; the lead is the anchor concept.
+    const refConceptIds = community.members
+      .filter(m => m.conceptId !== community.lead.conceptId)
+      .map(m => m.conceptId)
+    const rows: NewInsightRow[] = themes
+      .filter(t => t.title?.trim() && t.body?.trim())
+      .map(t => ({
+        title: t.title.trim(),
+        body: t.body.trim(),
+        refs: { conceptIds: refConceptIds, nuggetIds: [] as string[] },
+      }))
+
+    return { ok: true, rows, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }
+  } catch (error) {
+    console.error('[insights] theme generation failed:', error)
+    return { ok: false, error: describeAiError(error) }
+  }
+}
+
+/**
+ * Generate (or return cached) theme insights across the WHOLE concept graph.
+ * Partitions the graph into communities, then per community: cache hit on the
+ * member-set inputHash returns the surviving row with zero tokens; a miss runs one
+ * save_themes call. Finally sweeps every non-dismissed theme whose community no
+ * longer exists (dismissed themes are preserved). Global by design — takes no
+ * conceptId; a theme surfaces on its lead concept's panel because
+ * `GET /api/insights?conceptId` already filters by anchorConceptId.
+ */
+export async function generateThemes(): Promise<GenResult> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return { ok: false, error: 'KI nicht konfiguriert (kein API-Key hinterlegt).' }
+  }
+
+  const graph = await KnowledgeGraph.load()
+  const { communities } = await detectConceptCommunities(graph)
+
+  // Load the definitions of every member once (needed for both hash and prompt).
+  const memberIds = [...new Set(communities.flatMap(c => c.members.map(m => m.conceptId)))]
+  const descriptions = new Map(
+    (
+      await prisma.concept.findMany({
+        where: { id: { in: memberIds } },
+        select: { id: true, description: true },
+      })
+    ).map(c => [c.id, c.description]),
+  )
+
+  const withHash = communities.map(c => ({ community: c, inputHash: hashThemeInput(c, descriptions) }))
+
+  const insights: Insight[] = []
+  for (const { community, inputHash } of withHash) {
+    const cached = await prisma.insight.findMany({
+      where: { kind: 'theme', inputHash },
+      orderBy: { createdAt: 'asc' },
+    })
+    if (cached.length > 0) {
+      insights.push(...cached.filter(i => i.status !== 'dismissed'))
+      continue
+    }
+
+    const synth = await synthesizeTheme(community, descriptions)
+    if (!synth.ok) return { ok: false, error: synth.error }
+    for (let i = 0; i < synth.rows.length; i++) {
+      const r = synth.rows[i]
+      const created = await prisma.insight.create({
+        data: {
+          kind: 'theme',
+          status: 'new',
+          title: r.title,
+          body: r.body,
+          anchorConceptId: community.lead.conceptId,
+          refs: JSON.stringify(r.refs),
+          inputHash,
+          model: CLAUDE_MODEL,
+          inputTokens: i === 0 ? synth.inputTokens : 0,
+          outputTokens: i === 0 ? synth.outputTokens : 0,
+        },
+      })
+      insights.push(created)
+    }
+  }
+
+  // Global stale-sweep: drop non-dismissed themes whose community is gone. With no
+  // current communities, `notIn: []` correctly sweeps every non-dismissed theme.
+  await prisma.insight.deleteMany({
+    where: { kind: 'theme', status: { not: 'dismissed' }, inputHash: { notIn: withHash.map(w => w.inputHash) } },
+  })
+
+  return { ok: true, insights }
 }
 
 const LOCATE_SYSTEM_PROMPT = `Du erhältst den Volltext eines Nuggets (einer Notiz) und die Beschreibung eines Denkanstoßes (einer gedanklichen Spannung), der sich auf dieses Nugget bezieht. Finde die EINE Textstelle im Nugget, auf die sich der Denkanstoß am direktesten bezieht.

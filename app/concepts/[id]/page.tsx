@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Waypoints, Lightbulb, Check, X, Zap, HelpCircle, Link2 } from 'lucide-react'
+import { Waypoints, Lightbulb, Check, X, Zap, HelpCircle, Link2, Layers } from 'lucide-react'
 import DomainIcon from '@/components/DomainIcon'
 import { useOwner } from '@/components/OwnerContext'
 import { commentMarkdownToHtml } from '@/lib/content'
@@ -72,7 +72,7 @@ export default function ConceptPage() {
   const [loading, setLoading] = useState(true)
   const [insights, setInsights] = useState<Insight[]>([])
   // Which engine is currently running (null = idle) — three independent buttons.
-  const [generatingKind, setGeneratingKind] = useState<'tension' | 'question' | 'bridge' | null>(null)
+  const [generatingKind, setGeneratingKind] = useState<'tension' | 'question' | 'bridge' | 'theme' | null>(null)
   const [insightError, setInsightError] = useState<string | null>(null)
   const [hasGenerated, setHasGenerated] = useState(false)
   const [jumpingKey, setJumpingKey] = useState<string | null>(null)
@@ -102,7 +102,7 @@ export default function ConceptPage() {
   useEffect(() => { load(); loadInsights() }, [load, loadInsights])
 
   /** Owner action: run one engine (tension | question | bridge) for this concept, then refresh. */
-  const generateInsights = useCallback(async (kind: 'tension' | 'question' | 'bridge') => {
+  const generateInsights = useCallback(async (kind: 'tension' | 'question' | 'bridge' | 'theme') => {
     setGeneratingKind(kind)
     setInsightError(null)
     try {
@@ -316,6 +316,16 @@ export default function ConceptPage() {
               <Link2 size={13} />
               {generatingKind === 'bridge' ? 'Denke nach…' : 'Brücken'}
             </button>
+            <button
+              onClick={() => generateInsights('theme')}
+              disabled={generatingKind !== null}
+              title="Sucht emergente Themen im GANZEN Graphen; ein Thema erscheint auf seinem Kern-Konzept."
+              className="text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 disabled:opacity-50"
+              style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+            >
+              <Layers size={13} />
+              {generatingKind === 'theme' ? 'Denke nach…' : 'Themen'}
+            </button>
           </div>
         )}
 
@@ -328,7 +338,7 @@ export default function ConceptPage() {
             {hasGenerated
               ? 'Nichts gefunden — die Lesarten dieses Konzepts geben derzeit keinen weiteren Denkanstoß her.'
               : isOwner
-                ? 'Noch keine Denkanstöße. Lass die KI nach Spannungen, offenen Fragen oder Brücken zu verwandten Konzepten suchen.'
+                ? 'Noch keine Denkanstöße. Lass die KI nach Spannungen, offenen Fragen, Brücken oder übergreifenden Themen suchen.'
                 : 'Noch keine Denkanstöße für dieses Konzept.'}
           </p>
         ) : (
@@ -339,13 +349,15 @@ export default function ConceptPage() {
                 className="px-5 py-4 rounded-2xl border"
                 style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: '0 2px 12px rgba(26,23,20,0.06)' }}
               >
-                {/* Kind badge — friction vs. open question vs. bridge at a glance. */}
+                {/* Kind badge — friction vs. open question vs. bridge vs. theme at a glance. */}
                 <p className="text-[10px] tracking-widest uppercase flex items-center gap-1 mb-2" style={{ color: 'var(--muted)' }}>
                   {ins.kind === 'question'
                     ? <><HelpCircle size={11} /> Offene Frage</>
                     : ins.kind === 'bridge'
                       ? <><Link2 size={11} /> Brücke</>
-                      : <><Zap size={11} /> Spannung</>}
+                      : ins.kind === 'theme'
+                        ? <><Layers size={11} /> Thema</>
+                        : <><Zap size={11} /> Spannung</>}
                 </p>
                 <p className="text-sm font-medium mb-2" style={{ color: 'var(--ink)', lineHeight: '1.5' }}>
                   {ins.title}
