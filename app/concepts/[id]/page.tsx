@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Waypoints, Lightbulb, Check, X, Zap, HelpCircle } from 'lucide-react'
+import { Waypoints, Lightbulb, Check, X, Zap, HelpCircle, Link2 } from 'lucide-react'
 import DomainIcon from '@/components/DomainIcon'
 import { useOwner } from '@/components/OwnerContext'
 import { commentMarkdownToHtml } from '@/lib/content'
@@ -71,8 +71,8 @@ export default function ConceptPage() {
   const [related, setRelated] = useState<RelatedConcept[]>([])
   const [loading, setLoading] = useState(true)
   const [insights, setInsights] = useState<Insight[]>([])
-  // Which engine is currently running (null = idle) — two independent buttons.
-  const [generatingKind, setGeneratingKind] = useState<'tension' | 'question' | null>(null)
+  // Which engine is currently running (null = idle) — three independent buttons.
+  const [generatingKind, setGeneratingKind] = useState<'tension' | 'question' | 'bridge' | null>(null)
   const [insightError, setInsightError] = useState<string | null>(null)
   const [hasGenerated, setHasGenerated] = useState(false)
   const [jumpingKey, setJumpingKey] = useState<string | null>(null)
@@ -101,8 +101,8 @@ export default function ConceptPage() {
 
   useEffect(() => { load(); loadInsights() }, [load, loadInsights])
 
-  /** Owner action: run one engine (tension | question) for this concept, then refresh. */
-  const generateInsights = useCallback(async (kind: 'tension' | 'question') => {
+  /** Owner action: run one engine (tension | question | bridge) for this concept, then refresh. */
+  const generateInsights = useCallback(async (kind: 'tension' | 'question' | 'bridge') => {
     setGeneratingKind(kind)
     setInsightError(null)
     try {
@@ -186,6 +186,11 @@ export default function ConceptPage() {
     const found = concept.nuggets.find(n => n.nugget.id === nuggetId)
     return found ? (found.nugget.title || fallbackTitle(found.nugget.contentHtml)) : 'Nugget'
   }
+
+  /** Resolve a bridged concept's display term from the proximity list (same source
+   *  the bridge neighbours come from, so it resolves in practice); generic fallback. */
+  const conceptTermFor = (conceptId: string): string =>
+    related.find(r => r.id === conceptId)?.term ?? 'Konzept'
 
   return (
     <>
@@ -302,6 +307,15 @@ export default function ConceptPage() {
               <HelpCircle size={13} />
               {generatingKind === 'question' ? 'Denke nach…' : 'Offene Fragen'}
             </button>
+            <button
+              onClick={() => generateInsights('bridge')}
+              disabled={generatingKind !== null}
+              className="text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 disabled:opacity-50"
+              style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+            >
+              <Link2 size={13} />
+              {generatingKind === 'bridge' ? 'Denke nach…' : 'Brücken'}
+            </button>
           </div>
         )}
 
@@ -312,9 +326,9 @@ export default function ConceptPage() {
         {insights.length === 0 ? (
           <p className="text-xs" style={{ color: 'var(--muted)', lineHeight: '1.6' }}>
             {hasGenerated
-              ? 'Nichts gefunden — die Lesarten dieses Konzepts sind stimmig und werfen keine offene Frage auf.'
+              ? 'Nichts gefunden — die Lesarten dieses Konzepts geben derzeit keinen weiteren Denkanstoß her.'
               : isOwner
-                ? 'Noch keine Denkanstöße. Lass die KI nach Spannungen oder offenen Fragen zwischen den Lesarten dieses Konzepts suchen.'
+                ? 'Noch keine Denkanstöße. Lass die KI nach Spannungen, offenen Fragen oder Brücken zu verwandten Konzepten suchen.'
                 : 'Noch keine Denkanstöße für dieses Konzept.'}
           </p>
         ) : (
@@ -325,11 +339,13 @@ export default function ConceptPage() {
                 className="px-5 py-4 rounded-2xl border"
                 style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: '0 2px 12px rgba(26,23,20,0.06)' }}
               >
-                {/* Kind badge — tells a friction apart from an open question at a glance. */}
+                {/* Kind badge — friction vs. open question vs. bridge at a glance. */}
                 <p className="text-[10px] tracking-widest uppercase flex items-center gap-1 mb-2" style={{ color: 'var(--muted)' }}>
                   {ins.kind === 'question'
                     ? <><HelpCircle size={11} /> Offene Frage</>
-                    : <><Zap size={11} /> Spannung</>}
+                    : ins.kind === 'bridge'
+                      ? <><Link2 size={11} /> Brücke</>
+                      : <><Zap size={11} /> Spannung</>}
                 </p>
                 <p className="text-sm font-medium mb-2" style={{ color: 'var(--ink)', lineHeight: '1.5' }}>
                   {ins.title}
@@ -356,6 +372,23 @@ export default function ConceptPage() {
                         </button>
                       )
                     })}
+                  </div>
+                )}
+                {/* Bridged concept(s) — a bridge points to a related CONCEPT, not a
+                    passage; the chip jumps to that concept's page. */}
+                {ins.refs.conceptIds.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {ins.refs.conceptIds.map(cid => (
+                      <Link
+                        key={cid}
+                        href={`/concepts/${cid}`}
+                        className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
+                        style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+                      >
+                        <Link2 size={12} />
+                        <span>{conceptTermFor(cid)}</span>
+                      </Link>
+                    ))}
                   </div>
                 )}
                 {isOwner && (

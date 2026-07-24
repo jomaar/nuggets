@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import { prisma } from './prisma'
 import { anthropic, CLAUDE_MODEL, describeAiError } from './anthropic'
 import { fallbackTitle } from './content'
+import { KnowledgeGraph } from './graph'
 import type { AnchorToken } from './bookmarkLink'
 import type { Insight } from '@prisma/client'
 
@@ -148,23 +149,12 @@ function buildUserMessage(distilled: ConceptDistillation): string {
  * scoped by `kind`, so they coexist without colliding (index is [kind, inputHash],
  * not a unique constraint).
  */
-async function generateForConcept(
+async function cacheOrGenerate(
   conceptId: string,
   kind: string,
-  minReadings: number,
-  synthesize: (distilled: ConceptDistillation) => Promise<Synthesis>,
+  inputHash: string,
+  synthesize: () => Promise<Synthesis>,
 ): Promise<GenResult> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return { ok: false, error: 'KI nicht konfiguriert (kein API-Key hinterlegt).' }
-  }
-
-  const distilled = await distillConcept(conceptId)
-  if (!distilled) return { ok: false, error: 'Konzept nicht gefunden.' }
-  // Too few readings to reason about — nothing to do (honest empty).
-  if (distilled.readings.length < minReadings) return { ok: true, insights: [] }
-
-  const inputHash = hashInput(distilled)
-
   const cached = await prisma.insight.findMany({
     where: { kind, anchorConceptId: conceptId, inputHash },
     orderBy: { createdAt: 'asc' },
@@ -177,7 +167,7 @@ async function generateForConcept(
     where: { kind, anchorConceptId: conceptId, inputHash: { not: inputHash }, status: { not: 'dismissed' } },
   })
 
-  const result = await synthesize(distilled)
+  const result = await synthesize()
   if (!result.ok) return { ok: false, error: result.error }
 
   const created: Insight[] = []
@@ -201,6 +191,32 @@ async function generateForConcept(
   }
 
   return { ok: true, insights: created }
+}
+
+/**
+ * The reading-based branch of the backbone (tension, question): distills the
+ * concept's edge-notes, gates on a minimum reading count, computes the reading
+ * input hash and hands the rest to {@link cacheOrGenerate}. The bridge engine
+ * distills a DIFFERENT input (neighbour definitions) and calls cacheOrGenerate
+ * directly, so it lives outside this helper.
+ */
+async function generateForConcept(
+  conceptId: string,
+  kind: string,
+  minReadings: number,
+  synthesize: (distilled: ConceptDistillation) => Promise<Synthesis>,
+): Promise<GenResult> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return { ok: false, error: 'KI nicht konfiguriert (kein API-Key hinterlegt).' }
+  }
+
+  const distilled = await distillConcept(conceptId)
+  if (!distilled) return { ok: false, error: 'Konzept nicht gefunden.' }
+  // Too few readings to reason about — nothing to do (honest empty).
+  if (distilled.readings.length < minReadings) return { ok: true, insights: [] }
+
+  const inputHash = hashInput(distilled)
+  return cacheOrGenerate(conceptId, kind, inputHash, () => synthesize(distilled))
 }
 
 interface TensionOutput {
@@ -381,6 +397,201 @@ export function generateQuestions(conceptId: string): Promise<GenResult> {
       return { ok: true, rows, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }
     } catch (error) {
       console.error('[insights] question generation failed:', error)
+      return { ok: false, error: describeAiError(error) }
+    }
+  })
+}
+
+// ── Bridge engine ──────────────────────────────────────────────────────────
+// Unlike tension/question (which reason over ONE concept's readings), the bridge
+// engine reasons over a concept and its cosine NEIGHBOURS: it looks for a latent
+// connection between two related ideas that the material implies but the user
+// hasn't written down yet — a prompt for a missing nugget. Still body-free: the
+// input is abstract concept definitions only.
+
+/** One cosine-neighbour concept offered to the bridge engine as a candidate. */
+export interface BridgeNeighbour {
+  conceptId: string
+  term: string
+  description: string
+  score: number
+}
+
+/** Body-free distilled input for the bridge engine: the anchor + its neighbours. */
+export interface BridgeDistillation {
+  conceptId: string
+  term: string
+  description: string
+  neighbours: BridgeNeighbour[]
+}
+
+/** How many top cosine neighbours the bridge engine considers as candidates. */
+const BRIDGE_NEIGHBOURS = 6
+
+/**
+ * Builds the bridge engine's input: the concept's own definition plus its top
+ * cosine-neighbour concepts (term + description each). Neighbours come from
+ * `KnowledgeGraph.relatedConcepts` (co-occurrence proximity, never a stored
+ * concept↔concept edge). No readings, no nugget bodies — abstract definitions are
+ * all a "what connection between these two ideas is not yet written down?" question
+ * needs. Returns null if the concept is gone; an empty neighbour list ⇒ honest
+ * empty (nothing to bridge to).
+ */
+export async function distillBridge(
+  conceptId: string,
+  k = BRIDGE_NEIGHBOURS,
+): Promise<BridgeDistillation | null> {
+  const [graph, concept] = await Promise.all([
+    KnowledgeGraph.load(),
+    prisma.concept.findUnique({
+      where: { id: conceptId },
+      include: { labels: { select: { language: true, term: true } } },
+    }),
+  ])
+  if (!concept) return null
+
+  const related = graph.relatedConcepts(conceptId, k)
+  const descriptions = new Map(
+    (
+      await prisma.concept.findMany({
+        where: { id: { in: related.map(r => r.id) } },
+        select: { id: true, description: true },
+      })
+    ).map(c => [c.id, c.description]),
+  )
+
+  const neighbours: BridgeNeighbour[] = related.map(r => ({
+    conceptId: r.id,
+    term: r.term,
+    description: descriptions.get(r.id) ?? '',
+    score: r.score,
+  }))
+
+  return { conceptId, term: primaryTerm(concept.labels), description: concept.description, neighbours }
+}
+
+/**
+ * Bridge cache fingerprint. Covers the anchor's definition plus the SET of
+ * neighbour terms + descriptions (order-independent), so editing a neighbour's
+ * description or the neighbour set itself re-triggers generation. The cosine
+ * `score` is deliberately excluded — tiny relevance jitter shouldn't invalidate
+ * the cache; only which ideas are on the table and what they mean does.
+ */
+function hashBridgeInput(d: BridgeDistillation): string {
+  const norm = d.neighbours
+    .map(n => ({ c: n.conceptId, t: n.term, d: n.description }))
+    .sort((a, b) => (a.c < b.c ? -1 : a.c > b.c ? 1 : 0))
+  return createHash('sha256')
+    .update(JSON.stringify({ c: d.conceptId, term: d.term, desc: d.description, neighbours: norm }))
+    .digest('hex')
+}
+
+const BRIDGE_SYSTEM_PROMPT = `Du bist ein theologisch und philosophisch geschulter Denkpartner in einer persönlichen Wissens-App (Schwerpunkt Glaube und Bibel).
+
+Du bekommst EIN Ausgangs-Konzept mit seiner Definition und eine Liste VERWANDTER Konzepte (je mit Definition) — verwandt, weil sie in denselben Notizen des Nutzers vorkommen.
+
+Deine Aufgabe: eine latente BRÜCKE aufdecken — eine gedankliche Verbindung zwischen dem Ausgangs-Konzept und EINEM der verwandten Konzepte, die im Material zwar angelegt, aber noch NICHT ausformuliert ist. Der Wert: dem Nutzer eine fehlende Notiz vorschlagen, die genau diese Verbindung schließt — der produktive Gedanke, den er noch nicht geschrieben hat.
+
+Strenge Regeln:
+- Nur ECHTE, nicht-triviale Brücken. Dass zwei Konzepte offensichtlich zusammenhängen (etwa weil das eine das andere enthält), ist KEINE Brücke. Suche die überraschende, aber tragfähige Verbindung.
+- Höchstens ZWEI Brücken, lieber EINE. Eine tiefe Brücke schlägt mehrere flache.
+- Findest du keine echte Lücke, gib eine LEERE Liste zurück. Eine ehrliche leere Antwort ist besser als eine erfundene Brücke.
+- Jede Brücke nennt genau EIN verwandtes Konzept (über seine Nummer), formuliert die Verbindung als zugespitzte These oder Frage im "title", plus 2–4 Sätze im "body": worin die Brücke besteht und welche fehlende Notiz sie schließen würde.
+- Antworte in der Sprache der Definitionen (überwiegend Deutsch).
+- Gib das Ergebnis ausschließlich über das Werkzeug save_bridges zurück.`
+
+interface BridgeOutput {
+  bridges: {
+    neighbour: number
+    title: string
+    body: string
+  }[]
+}
+
+/**
+ * Generate (or return cached) bridge insights for one concept: latent connections
+ * to its cosine neighbours that the material implies but no nugget makes explicit —
+ * each a prompt for a missing note. `refs.conceptIds` carries the bridged neighbour
+ * (the panel renders it as a jump chip to that concept). Reuses the whole
+ * cache/sweep/token backbone via `cacheOrGenerate`; only the distillation, hash and
+ * prompt differ from the reading-based engines.
+ */
+export async function generateBridges(conceptId: string): Promise<GenResult> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return { ok: false, error: 'KI nicht konfiguriert (kein API-Key hinterlegt).' }
+  }
+
+  const distilled = await distillBridge(conceptId)
+  if (!distilled) return { ok: false, error: 'Konzept nicht gefunden.' }
+  // No neighbours ⇒ nothing to bridge to (honest empty).
+  if (distilled.neighbours.length < 1) return { ok: true, insights: [] }
+
+  const inputHash = hashBridgeInput(distilled)
+  return cacheOrGenerate(conceptId, 'bridge', inputHash, async () => {
+    try {
+      const neighbourList = distilled.neighbours
+        .map((n, i) => `[${i + 1}] ${n.term}: ${n.description}`)
+        .join('\n')
+      const userMessage =
+        `Ausgangs-Konzept: ${distilled.term}\nDefinition: ${distilled.description}\n\nVerwandte Konzepte:\n${neighbourList}`
+
+      const response = await anthropic.messages.create({
+        model: CLAUDE_MODEL,
+        max_tokens: 2048,
+        system: BRIDGE_SYSTEM_PROMPT,
+        tools: [
+          {
+            name: 'save_bridges',
+            description: 'Save the genuine latent bridges found (empty if the concepts are only trivially related).',
+            input_schema: {
+              type: 'object' as const,
+              properties: {
+                bridges: {
+                  type: 'array',
+                  description: 'Distinct genuine bridges (at most two). Empty array if none.',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      neighbour: { type: 'integer', description: 'Number of the related concept this bridge connects to' },
+                      title: { type: 'string', description: 'The bridge as one pointed line (thesis or question), language of the definitions' },
+                      body: { type: 'string', description: '2–4 sentences: what the bridge is and which missing note would close it. Markdown allowed.' },
+                    },
+                    required: ['neighbour', 'title', 'body'],
+                  },
+                },
+              },
+              required: ['bridges'],
+            },
+          },
+        ],
+        tool_choice: { type: 'tool', name: 'save_bridges' },
+        messages: [{ role: 'user', content: userMessage }],
+      })
+
+      const toolUse = response.content.find(b => b.type === 'tool_use')
+      if (!toolUse || toolUse.type !== 'tool_use') {
+        return { ok: false, error: 'KI-Anfrage fehlgeschlagen (unerwartete Antwort).' }
+      }
+      const out = toolUse.input as BridgeOutput
+      const bridges = Array.isArray(out.bridges) ? out.bridges : []
+
+      // Map the cited neighbour index → concept id; drop out-of-range refs.
+      const rows: NewInsightRow[] = bridges
+        .map(b => {
+          const neighbour = distilled.neighbours[b.neighbour - 1]
+          if (!neighbour) return null
+          if (!b.title?.trim() || !b.body?.trim()) return null
+          return {
+            title: b.title.trim(),
+            body: b.body.trim(),
+            refs: { conceptIds: [neighbour.conceptId], nuggetIds: [] as string[] },
+          }
+        })
+        .filter((r): r is NewInsightRow => r !== null)
+
+      return { ok: true, rows, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }
+    } catch (error) {
+      console.error('[insights] bridge generation failed:', error)
       return { ok: false, error: describeAiError(error) }
     }
   })
