@@ -3,8 +3,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Waypoints } from 'lucide-react'
+import { Waypoints, Lightbulb, Sparkles, Check, X } from 'lucide-react'
 import DomainIcon from '@/components/DomainIcon'
+import { useOwner } from '@/components/OwnerContext'
+import { commentMarkdownToHtml } from '@/lib/content'
 
 interface Label {
   language: string
@@ -45,6 +47,17 @@ interface RelatedConcept {
   sharedNuggets: number
 }
 
+/** A generated insight (Denkanstoß) anchored to this concept — see lib/insights.ts. */
+interface Insight {
+  id: string
+  kind: string
+  status: string // "new" | "kept"  (dismissed ones are never sent)
+  title: string
+  body: string
+  refs: { conceptIds: string[]; nuggetIds: string[] } // jump targets
+  createdAt: string
+}
+
 const LANG_NAMES: Record<string, string> = {
   de: 'Deutsch', en: 'English', el: 'Ελληνικά', he: 'עברית',
 }
@@ -52,9 +65,14 @@ const LANG_NAMES: Record<string, string> = {
 export default function ConceptPage() {
   const { id } = useParams<{ id: string }>()
   const router  = useRouter()
+  const { isOwner } = useOwner()
   const [concept, setConcept] = useState<ConceptDetail | null>(null)
   const [related, setRelated] = useState<RelatedConcept[]>([])
   const [loading, setLoading] = useState(true)
+  const [insights, setInsights] = useState<Insight[]>([])
+  const [generating, setGenerating] = useState(false)
+  const [insightError, setInsightError] = useState<string | null>(null)
+  const [hasGenerated, setHasGenerated] = useState(false)
 
   const load = useCallback(async () => {
     // Proximity is fetched alongside the detail; an empty result just hides the block.
@@ -68,7 +86,49 @@ export default function ConceptPage() {
     setLoading(false)
   }, [id])
 
-  useEffect(() => { load() }, [load])
+  // Cached insights load independently (public read); an empty list just shows the
+  // invitation to generate. Generation itself is owner-only and on demand.
+  const loadInsights = useCallback(async () => {
+    const res = await fetch(`/api/insights?conceptId=${id}`)
+    if (res.ok) setInsights((await res.json()).insights ?? [])
+  }, [id])
+
+  useEffect(() => { load(); loadInsights() }, [load, loadInsights])
+
+  /** Owner action: run the tension engine for this concept, then refresh the list. */
+  const generateInsights = useCallback(async () => {
+    setGenerating(true)
+    setInsightError(null)
+    try {
+      const res = await fetch('/api/insights/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'tension', conceptId: id }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setInsightError(data.error ?? 'KI-Anfrage fehlgeschlagen.'); return }
+      setHasGenerated(true)
+      await loadInsights()
+    } catch {
+      setInsightError('Netzwerkfehler.')
+    } finally {
+      setGenerating(false)
+    }
+  }, [id, loadInsights])
+
+  /** Owner action: keep or dismiss an insight (optimistic; dismissed disappears). */
+  const setInsightStatus = useCallback(async (insightId: string, status: 'kept' | 'dismissed') => {
+    setInsights(prev =>
+      status === 'dismissed'
+        ? prev.filter(i => i.id !== insightId)
+        : prev.map(i => (i.id === insightId ? { ...i, status } : i)),
+    )
+    await fetch(`/api/insights/${insightId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    })
+  }, [])
 
   if (loading) return (
     <div className="pt-3">
@@ -88,6 +148,12 @@ export default function ConceptPage() {
     concept.labels.find(l => l.language === 'de')?.term ??
     concept.labels.find(l => l.language === 'en')?.term ??
     concept.labels[0]?.term ?? '?'
+
+  /** Resolve a referenced nugget's display title from this concept's own list. */
+  const titleFor = (nuggetId: string): string => {
+    const found = concept.nuggets.find(n => n.nugget.id === nuggetId)
+    return found ? (found.nugget.title || fallbackTitle(found.nugget.contentHtml)) : 'Nugget'
+  }
 
   return (
     <>
@@ -173,6 +239,92 @@ export default function ConceptPage() {
             )}
           </Link>
         ))}
+      </div>
+
+      {/* Denkanstöße — the graph reasoning ABOUT the material (tensions between how
+          different nuggets read this concept), not just showing that links exist.
+          Fed by lib/insights.ts from the distilled edge-notes, never nugget bodies. */}
+      <div className="mt-10">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <p className="text-xs tracking-widest uppercase flex items-center gap-1.5" style={{ color: 'var(--muted)' }}>
+            <Lightbulb size={13} />
+            Denkanstöße
+          </p>
+          {isOwner && (
+            <button
+              onClick={generateInsights}
+              disabled={generating}
+              className="text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50"
+              style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+            >
+              <Sparkles size={13} />
+              {generating ? 'Denke nach…' : insights.length > 0 ? 'Neu suchen' : 'Spannungen suchen'}
+            </button>
+          )}
+        </div>
+
+        {insightError && (
+          <p className="text-xs mb-3" style={{ color: 'var(--act-delete, #c0392b)' }}>{insightError}</p>
+        )}
+
+        {insights.length === 0 ? (
+          <p className="text-xs" style={{ color: 'var(--muted)', lineHeight: '1.6' }}>
+            {hasGenerated
+              ? 'Keine Spannungen gefunden — die Lesarten dieses Konzepts sind stimmig.'
+              : isOwner
+                ? 'Noch keine Denkanstöße. Lass die KI nach Spannungen zwischen den Lesarten dieses Konzepts suchen.'
+                : 'Noch keine Denkanstöße für dieses Konzept.'}
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {insights.map(ins => (
+              <div
+                key={ins.id}
+                className="px-5 py-4 rounded-2xl border"
+                style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: '0 2px 12px rgba(26,23,20,0.06)' }}
+              >
+                <p className="text-sm font-medium mb-2" style={{ color: 'var(--ink)', lineHeight: '1.5' }}>
+                  {ins.title}
+                </p>
+                <div
+                  className="annotation-body text-xs mb-3"
+                  style={{ color: 'var(--muted)', lineHeight: '1.6' }}
+                  dangerouslySetInnerHTML={{ __html: commentMarkdownToHtml(ins.body) }}
+                />
+                {ins.refs.nuggetIds.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {ins.refs.nuggetIds.map(nid => (
+                      <Link
+                        key={nid}
+                        href={`/nugget/${nid}`}
+                        className="text-xs px-2.5 py-1 rounded-full"
+                        style={{ background: 'var(--warm)', color: 'var(--muted)' }}
+                      >
+                        {titleFor(nid)}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+                {isOwner && (
+                  <div className="flex items-center gap-4 mt-1">
+                    {ins.status === 'kept' ? (
+                      <span className="text-xs flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                        <Check size={12} /> behalten
+                      </span>
+                    ) : (
+                      <button onClick={() => setInsightStatus(ins.id, 'kept')} className="text-xs flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+                        <Check size={12} /> Behalten
+                      </button>
+                    )}
+                    <button onClick={() => setInsightStatus(ins.id, 'dismissed')} className="text-xs flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+                      <X size={12} /> Verwerfen
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Related concepts — proximity derived from shared nuggets (lib/graph.ts),

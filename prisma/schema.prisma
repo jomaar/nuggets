@@ -105,8 +105,9 @@ model Concept {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  labels  ConceptLabel[]
-  nuggets NuggetConcept[]
+  labels   ConceptLabel[]
+  nuggets  NuggetConcept[]
+  insights Insight[]
 
   @@map("concepts")
 }
@@ -134,6 +135,41 @@ model NuggetConcept {
 
   @@id([nuggetId, conceptId])
   @@map("nugget_concepts")
+}
+
+/**
+ * A generated "Denkanstoß" (insight) — the knowledge graph reasoning ABOUT the
+ * user's material, not just visualizing it. Produced by lib/insights.ts from the
+ * distilled edge-notes (never full nugget bodies). A NEW persisted entity, not a
+ * written-back proximity edge (lib/graph.ts keeps proximity compute-on-read).
+ *
+ * inputHash = a hash of the exact distilled input that produced this insight.
+ * One generation run can yield SEVERAL insights sharing the same (kind, inputHash)
+ * — e.g. a concept with multiple internal tensions — so idempotency is enforced in
+ * code (lib/insights.ts skips the model call when rows for that (kind, anchorConcept,
+ * inputHash) already exist), not by a DB unique constraint. The index below is the
+ * cache-lookup path.
+ */
+model Insight {
+  id              String   @id @default(cuid())
+  kind            String // "tension" | "question" | "bridge" | "theme"
+  status          String   @default("new") // "new" | "kept" | "dismissed"
+  title           String // the provocation, one line
+  body            String // markdown elaboration / the open question
+  anchorConceptId String? // primary concept this hangs off (panel query + cascade); null = cross-cutting
+  refs            String   @default("{}") // JSON { conceptIds: string[], nuggetIds: string[] } — jump targets
+  inputHash       String // hash of the distilled input → dedupe + staleness detection
+  model           String
+  inputTokens     Int      @default(0)
+  outputTokens    Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  anchorConcept Concept? @relation(fields: [anchorConceptId], references: [id], onDelete: Cascade)
+
+  @@index([kind, inputHash])
+  @@index([anchorConceptId])
+  @@index([status])
+  @@map("insights")
 }
 
 model Review {
