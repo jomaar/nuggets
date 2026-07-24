@@ -1,13 +1,12 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Waypoints, Lightbulb, Check, X, Zap, HelpCircle, Link2, Layers } from 'lucide-react'
+import { Waypoints, Lightbulb, Zap, HelpCircle, Link2, Layers } from 'lucide-react'
 import DomainIcon from '@/components/DomainIcon'
+import InsightCard from '@/components/InsightCard'
 import { useOwner } from '@/components/OwnerContext'
-import { commentMarkdownToHtml } from '@/lib/content'
-import { encodeAnchorToken, type AnchorToken } from '@/lib/bookmarkLink'
 
 interface Label {
   language: string
@@ -75,10 +74,6 @@ export default function ConceptPage() {
   const [generatingKind, setGeneratingKind] = useState<'tension' | 'question' | 'bridge' | 'theme' | null>(null)
   const [insightError, setInsightError] = useState<string | null>(null)
   const [hasGenerated, setHasGenerated] = useState(false)
-  const [jumpingKey, setJumpingKey] = useState<string | null>(null)
-  // Per-session cache of located anchors (insightId:nuggetId → anchor|null), so
-  // tapping the same chip twice doesn't re-spend an AI call.
-  const anchorCache = useRef<Record<string, AnchorToken | null>>({})
 
   const load = useCallback(async () => {
     // Proximity is fetched alongside the detail; an empty result just hides the block.
@@ -123,43 +118,16 @@ export default function ConceptPage() {
   }, [id, loadInsights])
 
   /**
-   * Tap a nugget chip on an insight: for the owner, locate the exact passage the
-   * insight is about (Tier 1 — on-demand, lazy) and deep-link there via `?bm=`;
-   * anyone else (or on any failure) just opens the nugget at the top.
+   * Apply an insight's keep/dismiss to the local list (dismiss removes it, keep
+   * flips its status). The PATCH itself lives in InsightCard — this only keeps the
+   * page's list in sync.
    */
-  const jumpToNuggetSpot = useCallback(async (insightId: string, nuggetId: string) => {
-    if (!isOwner) { router.push(`/nugget/${nuggetId}`); return }
-    const key = `${insightId}:${nuggetId}`
-    if (!(key in anchorCache.current)) {
-      setJumpingKey(key)
-      let anchor: AnchorToken | null = null
-      try {
-        const res = await fetch(`/api/insights/${insightId}/locate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ nuggetId }),
-        })
-        if (res.ok) anchor = (await res.json()).anchor ?? null
-      } catch { /* anchor stays null → jump to top */ }
-      anchorCache.current[key] = anchor
-      setJumpingKey(null)
-    }
-    const anchor = anchorCache.current[key]
-    router.push(anchor ? `/nugget/${nuggetId}?bm=${encodeAnchorToken(anchor)}` : `/nugget/${nuggetId}`)
-  }, [isOwner, router])
-
-  /** Owner action: keep or dismiss an insight (optimistic; dismissed disappears). */
-  const setInsightStatus = useCallback(async (insightId: string, status: 'kept' | 'dismissed') => {
+  const applyStatus = useCallback((insightId: string, status: 'kept' | 'dismissed') => {
     setInsights(prev =>
       status === 'dismissed'
         ? prev.filter(i => i.id !== insightId)
         : prev.map(i => (i.id === insightId ? { ...i, status } : i)),
     )
-    await fetch(`/api/insights/${insightId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    })
   }, [])
 
   if (loading) return (
@@ -344,82 +312,14 @@ export default function ConceptPage() {
         ) : (
           <div className="flex flex-col gap-3">
             {insights.map(ins => (
-              <div
+              <InsightCard
                 key={ins.id}
-                className="px-5 py-4 rounded-2xl border"
-                style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: '0 2px 12px rgba(26,23,20,0.06)' }}
-              >
-                {/* Kind badge — friction vs. open question vs. bridge vs. theme at a glance. */}
-                <p className="text-[10px] tracking-widest uppercase flex items-center gap-1 mb-2" style={{ color: 'var(--muted)' }}>
-                  {ins.kind === 'question'
-                    ? <><HelpCircle size={11} /> Offene Frage</>
-                    : ins.kind === 'bridge'
-                      ? <><Link2 size={11} /> Brücke</>
-                      : ins.kind === 'theme'
-                        ? <><Layers size={11} /> Thema</>
-                        : <><Zap size={11} /> Spannung</>}
-                </p>
-                <p className="text-sm font-medium mb-2" style={{ color: 'var(--ink)', lineHeight: '1.5' }}>
-                  {ins.title}
-                </p>
-                <div
-                  className="annotation-body text-xs mb-3"
-                  style={{ color: 'var(--muted)', lineHeight: '1.6' }}
-                  dangerouslySetInnerHTML={{ __html: commentMarkdownToHtml(ins.body) }}
-                />
-                {ins.refs.nuggetIds.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {ins.refs.nuggetIds.map(nid => {
-                      const busy = jumpingKey === `${ins.id}:${nid}`
-                      return (
-                        <button
-                          key={nid}
-                          onClick={() => jumpToNuggetSpot(ins.id, nid)}
-                          disabled={busy}
-                          title={isOwner ? 'Zur betreffenden Stelle springen' : undefined}
-                          className="text-xs px-2.5 py-1 rounded-full disabled:opacity-60"
-                          style={{ background: 'var(--warm)', color: 'var(--muted)' }}
-                        >
-                          {busy ? 'springe …' : titleFor(nid)}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-                {/* Bridged concept(s) — a bridge points to a related CONCEPT, not a
-                    passage; the chip jumps to that concept's page. */}
-                {ins.refs.conceptIds.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {ins.refs.conceptIds.map(cid => (
-                      <Link
-                        key={cid}
-                        href={`/concepts/${cid}`}
-                        className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
-                        style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
-                      >
-                        <Link2 size={12} />
-                        <span>{conceptTermFor(cid)}</span>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-                {isOwner && (
-                  <div className="flex items-center gap-4 mt-1">
-                    {ins.status === 'kept' ? (
-                      <span className="text-xs flex items-center gap-1" style={{ color: 'var(--accent)' }}>
-                        <Check size={12} /> behalten
-                      </span>
-                    ) : (
-                      <button onClick={() => setInsightStatus(ins.id, 'kept')} className="text-xs flex items-center gap-1" style={{ color: 'var(--muted)' }}>
-                        <Check size={12} /> Behalten
-                      </button>
-                    )}
-                    <button onClick={() => setInsightStatus(ins.id, 'dismissed')} className="text-xs flex items-center gap-1" style={{ color: 'var(--muted)' }}>
-                      <X size={12} /> Verwerfen
-                    </button>
-                  </div>
-                )}
-              </div>
+                insight={ins}
+                isOwner={isOwner}
+                nuggetTitle={titleFor}
+                conceptTerm={conceptTermFor}
+                onStatusChange={applyStatus}
+              />
             ))}
           </div>
         )}

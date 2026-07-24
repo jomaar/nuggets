@@ -44,6 +44,19 @@
   --act-comments: #129d9d;
   --act-view:     #8e5bc9;
   --act-delete:   #c0392b;
+
+  /* Insight ("Denkanstoß") rubric palette — one hue per kind so a card's type
+     reads at a glance (coloured left edge + badge) on both the concept panel and
+     the /concepts feed. Well-separated on the wheel (orange / blue / teal /
+     purple); each *-wash is the light tint used behind the badge label. */
+  --insight-tension:       #d97a34;  /* Spannung — friction/heat */
+  --insight-tension-wash:  #f8ebe0;
+  --insight-question:      #2f7fd1;  /* Offene Frage — inquiry */
+  --insight-question-wash: #e3eef9;
+  --insight-bridge:        #129d9d;  /* Brücke — connection */
+  --insight-bridge-wash:   #dcf0f0;
+  --insight-theme:         #8e5bc9;  /* Thema — overarching */
+  --insight-theme-wash:    #ece2f6;
 }
 
 * { box-sizing: border-box; }
