@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Waypoints, Lightbulb, Sparkles, Check, X } from 'lucide-react'
 import DomainIcon from '@/components/DomainIcon'
 import { useOwner } from '@/components/OwnerContext'
 import { commentMarkdownToHtml } from '@/lib/content'
+import { encodeAnchorToken, type AnchorToken } from '@/lib/bookmarkLink'
 
 interface Label {
   language: string
@@ -73,6 +74,10 @@ export default function ConceptPage() {
   const [generating, setGenerating] = useState(false)
   const [insightError, setInsightError] = useState<string | null>(null)
   const [hasGenerated, setHasGenerated] = useState(false)
+  const [jumpingKey, setJumpingKey] = useState<string | null>(null)
+  // Per-session cache of located anchors (insightId:nuggetId → anchor|null), so
+  // tapping the same chip twice doesn't re-spend an AI call.
+  const anchorCache = useRef<Record<string, AnchorToken | null>>({})
 
   const load = useCallback(async () => {
     // Proximity is fetched alongside the detail; an empty result just hides the block.
@@ -115,6 +120,32 @@ export default function ConceptPage() {
       setGenerating(false)
     }
   }, [id, loadInsights])
+
+  /**
+   * Tap a nugget chip on an insight: for the owner, locate the exact passage the
+   * insight is about (Tier 1 — on-demand, lazy) and deep-link there via `?bm=`;
+   * anyone else (or on any failure) just opens the nugget at the top.
+   */
+  const jumpToNuggetSpot = useCallback(async (insightId: string, nuggetId: string) => {
+    if (!isOwner) { router.push(`/nugget/${nuggetId}`); return }
+    const key = `${insightId}:${nuggetId}`
+    if (!(key in anchorCache.current)) {
+      setJumpingKey(key)
+      let anchor: AnchorToken | null = null
+      try {
+        const res = await fetch(`/api/insights/${insightId}/locate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nuggetId }),
+        })
+        if (res.ok) anchor = (await res.json()).anchor ?? null
+      } catch { /* anchor stays null → jump to top */ }
+      anchorCache.current[key] = anchor
+      setJumpingKey(null)
+    }
+    const anchor = anchorCache.current[key]
+    router.push(anchor ? `/nugget/${nuggetId}?bm=${encodeAnchorToken(anchor)}` : `/nugget/${nuggetId}`)
+  }, [isOwner, router])
 
   /** Owner action: keep or dismiss an insight (optimistic; dismissed disappears). */
   const setInsightStatus = useCallback(async (insightId: string, status: 'kept' | 'dismissed') => {
@@ -293,16 +324,21 @@ export default function ConceptPage() {
                 />
                 {ins.refs.nuggetIds.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2">
-                    {ins.refs.nuggetIds.map(nid => (
-                      <Link
-                        key={nid}
-                        href={`/nugget/${nid}`}
-                        className="text-xs px-2.5 py-1 rounded-full"
-                        style={{ background: 'var(--warm)', color: 'var(--muted)' }}
-                      >
-                        {titleFor(nid)}
-                      </Link>
-                    ))}
+                    {ins.refs.nuggetIds.map(nid => {
+                      const busy = jumpingKey === `${ins.id}:${nid}`
+                      return (
+                        <button
+                          key={nid}
+                          onClick={() => jumpToNuggetSpot(ins.id, nid)}
+                          disabled={busy}
+                          title={isOwner ? 'Zur betreffenden Stelle springen' : undefined}
+                          className="text-xs px-2.5 py-1 rounded-full disabled:opacity-60"
+                          style={{ background: 'var(--warm)', color: 'var(--muted)' }}
+                        >
+                          {busy ? 'springe …' : titleFor(nid)}
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
                 {isOwner && (
