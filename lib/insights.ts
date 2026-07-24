@@ -924,3 +924,107 @@ export async function locateInsightPassage(
     return { ok: false, error: describeAiError(error) }
   }
 }
+
+// ── Copy-as-prompt ───────────────────────────────────────────────────────────
+// Assembles a self-contained Markdown block for one insight so the user can paste
+// it into any LLM and keep working on the thought. NO model call — pure DB
+// assembly. It bundles the insight, the concepts it involves (definition + the
+// per-nugget readings) and the underlying notes IN FULL (contentMarkdown), which
+// is exactly the context an external LLM needs and which the client doesn't have.
+
+/** Human label per insight kind for the prompt header. */
+const KIND_LABEL: Record<string, string> = {
+  tension: 'Spannung',
+  question: 'Offene Frage',
+  bridge: 'Brücke',
+  theme: 'Thema',
+}
+
+/**
+ * Build the "copy as prompt" Markdown for one insight, or null if it's gone.
+ * Included concepts = the anchor plus any referenced concepts (bridge/theme).
+ * Included notes = the insight's referenced nuggets (tension/question) or, when
+ * the insight points at concepts instead (bridge/theme), every nugget linked to
+ * those concepts. Full note bodies are intentional (the user chose max context).
+ */
+export async function buildInsightPrompt(insightId: string): Promise<string | null> {
+  const insight = await prisma.insight.findUnique({ where: { id: insightId } })
+  if (!insight) return null
+
+  let refs: { conceptIds: string[]; nuggetIds: string[] } = { conceptIds: [], nuggetIds: [] }
+  try {
+    const p = JSON.parse(insight.refs)
+    refs = {
+      conceptIds: Array.isArray(p?.conceptIds) ? p.conceptIds : [],
+      nuggetIds: Array.isArray(p?.nuggetIds) ? p.nuggetIds : [],
+    }
+  } catch { /* keep empty */ }
+
+  // Anchor first, then referenced concepts (deduped).
+  const conceptIds = [...new Set(
+    [insight.anchorConceptId, ...refs.conceptIds].filter((v): v is string => !!v),
+  )]
+
+  let nuggetIds: string[]
+  if (refs.nuggetIds.length > 0) {
+    nuggetIds = [...new Set(refs.nuggetIds)]
+  } else {
+    const links = await prisma.nuggetConcept.findMany({
+      where: { conceptId: { in: conceptIds } },
+      select: { nuggetId: true },
+    })
+    nuggetIds = [...new Set(links.map(l => l.nuggetId))]
+  }
+
+  const [concepts, nuggets, edges] = await Promise.all([
+    prisma.concept.findMany({
+      where: { id: { in: conceptIds } },
+      include: { labels: { select: { language: true, term: true } } },
+    }),
+    prisma.nugget.findMany({
+      where: { id: { in: nuggetIds } },
+      select: { id: true, title: true, contentHtml: true, contentMarkdown: true },
+    }),
+    prisma.nuggetConcept.findMany({
+      where: { conceptId: { in: conceptIds }, nuggetId: { in: nuggetIds }, note: { not: null } },
+      select: { conceptId: true, nuggetId: true, note: true },
+    }),
+  ])
+
+  const conceptById = new Map(concepts.map(c => [c.id, c]))
+  const nuggetById = new Map(nuggets.map(n => [n.id, n]))
+  const titleFor = (id: string): string => {
+    const n = nuggetById.get(id)
+    return n ? (n.title || fallbackTitle(n.contentHtml)) : 'Notiz'
+  }
+
+  const out: string[] = []
+  out.push('> Aus meiner Wissens-App zum Weiterdenken — ein Denkanstoß mit den beteiligten Konzepten und den zugrunde liegenden Notizen im Volltext.')
+  out.push('')
+  out.push(`# Denkanstoß (${KIND_LABEL[insight.kind] ?? 'Denkanstoß'}): ${insight.title}`)
+  out.push('')
+  out.push(insight.body.trim())
+
+  if (concepts.length > 0) {
+    out.push('', '## Beteiligte Konzepte')
+    for (const cid of conceptIds) {
+      const c = conceptById.get(cid)
+      if (!c) continue
+      out.push('', `### ${primaryTerm(c.labels)}`, c.description.trim())
+      for (const e of edges.filter(x => x.conceptId === cid)) {
+        out.push(`- Lesart aus „${titleFor(e.nuggetId)}": ${e.note!.trim()}`)
+      }
+    }
+  }
+
+  if (nuggets.length > 0) {
+    out.push('', '## Notizen (Volltext)')
+    const blocks = nuggetIds
+      .map(nid => nuggetById.get(nid))
+      .filter((n): n is NonNullable<typeof n> => !!n)
+      .map(n => `### ${n.title || fallbackTitle(n.contentHtml)}\n\n${(n.contentMarkdown || '').trim()}`)
+    out.push('', blocks.join('\n\n---\n\n'))
+  }
+
+  return out.join('\n').trim()
+}

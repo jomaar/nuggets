@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Check, X, Zap, HelpCircle, Link2, Layers, type LucideIcon } from 'lucide-react'
+import { Check, X, Zap, HelpCircle, Link2, Layers, Copy, type LucideIcon } from 'lucide-react'
 import { commentMarkdownToHtml } from '@/lib/content'
 import { encodeAnchorToken, type AnchorToken } from '@/lib/bookmarkLink'
 
@@ -71,6 +71,7 @@ export default function InsightCard({
   const { Icon } = meta
 
   const [jumpingId, setJumpingId] = useState<string | null>(null)
+  const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle')
   // Per-card cache of located anchors (nuggetId → anchor|null), so tapping the
   // same chip twice doesn't re-spend an AI call.
   const anchorCache = useRef<Record<string, AnchorToken | null>>({})
@@ -108,6 +109,26 @@ export default function InsightCard({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     })
+  }
+
+  /**
+   * Copy the insight as a self-contained Markdown prompt (insight + involved
+   * concepts + underlying notes in full, assembled server-side) so the user can
+   * paste it into any LLM. Available to anyone — it only bundles public content.
+   */
+  const copyPrompt = async () => {
+    setCopyState('copying')
+    try {
+      const res = await fetch(`/api/insights/${insight.id}/prompt`)
+      if (!res.ok) throw new Error('fetch failed')
+      const { markdown } = await res.json()
+      await navigator.clipboard.writeText(markdown)
+      setCopyState('copied')
+      setTimeout(() => setCopyState('idle'), 2000)
+    } catch {
+      setCopyState('error')
+      setTimeout(() => setCopyState('idle'), 2000)
+    }
   }
 
   return (
@@ -189,22 +210,39 @@ export default function InsightCard({
         </div>
       )}
 
-      {isOwner && (
-        <div className="flex items-center gap-4 mt-1">
-          {insight.status === 'kept' ? (
-            <span className="text-xs flex items-center gap-1" style={{ color: 'var(--accent)' }}>
-              <Check size={12} /> behalten
-            </span>
-          ) : (
-            <button onClick={() => setStatus('kept')} className="text-xs flex items-center gap-1" style={{ color: 'var(--muted)' }}>
-              <Check size={12} /> Behalten
+      <div className="flex items-center gap-4 mt-1">
+        {/* Copy the insight as an LLM-ready Markdown prompt — visible to everyone. */}
+        <button
+          onClick={copyPrompt}
+          disabled={copyState === 'copying'}
+          title="Als Prompt kopieren (Insight + Konzepte + Notiz-Volltexte als Markdown)"
+          className="text-xs flex items-center gap-1 disabled:opacity-60"
+          style={{ color: copyState === 'copied' ? 'var(--accent)' : 'var(--muted)' }}
+        >
+          {copyState === 'copied'
+            ? <><Check size={12} /> Kopiert</>
+            : copyState === 'error'
+              ? <><X size={12} /> Fehler</>
+              : <><Copy size={12} /> {copyState === 'copying' ? 'Kopiere…' : 'Kopieren'}</>}
+        </button>
+
+        {isOwner && (
+          <>
+            {insight.status === 'kept' ? (
+              <span className="text-xs flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                <Check size={12} /> behalten
+              </span>
+            ) : (
+              <button onClick={() => setStatus('kept')} className="text-xs flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+                <Check size={12} /> Behalten
+              </button>
+            )}
+            <button onClick={() => setStatus('dismissed')} className="text-xs flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+              <X size={12} /> Verwerfen
             </button>
-          )}
-          <button onClick={() => setStatus('dismissed')} className="text-xs flex items-center gap-1" style={{ color: 'var(--muted)' }}>
-            <X size={12} /> Verwerfen
-          </button>
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
