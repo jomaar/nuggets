@@ -5,7 +5,7 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useEffect, useRef, useState } from 'react'
-import { Bold, Italic, MessageSquarePlus, Sparkles } from 'lucide-react'
+import { Bold, Italic, MessageSquarePlus, Sparkles, Share2, Check } from 'lucide-react'
 import { normalizeToHtml } from '@/lib/content'
 import CssVarHighlight from './CssVarHighlight'
 import CssVarUnderline from './CssVarUnderline'
@@ -41,6 +41,17 @@ interface NuggetEditorProps {
    * closes.
    */
   onComment?: () => void
+  /**
+   * Opt-in: show a "copy external link" action in the selection menu (reading
+   * view). Copies an ABSOLUTE deep link to the selection for sharing outside
+   * the app; the handler reads the live DOM selection itself (same pattern as
+   * onComment). Unlike onComment, the selection is NOT collapsed afterward —
+   * there's no sheet to open as confirmation, so `externalLinkCopied` flips
+   * the button's icon to a checkmark in place while the menu stays open.
+   */
+  onExternalLink?: () => void
+  /** Briefly true after a successful onExternalLink copy (see above). */
+  externalLinkCopied?: boolean
   /**
    * Per-nugget colour meanings (lib/marking.ts). Named colours show their name
    * as a mini label under the swatch (iOS has no hover tooltips).
@@ -96,6 +107,8 @@ export default function NuggetEditor({
   editable = true,
   enableAiRework = false,
   onComment,
+  onExternalLink,
+  externalLinkCopied = false,
   markScheme = {},
   renderMermaid = false,
 }: NuggetEditorProps) {
@@ -262,6 +275,13 @@ export default function NuggetEditor({
       {editor && (
         <BubbleMenu
           editor={editor}
+          // Append to document.body instead of Tiptap's default (a sibling of
+          // the ProseMirror DOM, i.e. INSIDE contentRef in the reading view).
+          // The single view's anchor-context builders (bookmarks/comments/
+          // external links) walk a Range bounded by contentRef's end — with
+          // the default placement, an open menu's own text (e.g. the "✕"
+          // remove button) could leak into a quote's captured prefix/suffix.
+          appendTo={() => document.body}
           // Pin the menu just UNDER the sticky top bar instead of next to the
           // selection. iOS's native selection callout hugs the selection (and
           // can't be read — it's a UIKit overlay, not in the DOM), so anchoring
@@ -373,6 +393,22 @@ export default function NuggetEditor({
                     onClick={commentSelection}
                   >
                     <MessageSquarePlus size={22} />
+                  </button>
+                  {ulRowNamed && <span className="swatch-label">{'\u00a0'}</span>}
+                </div>
+              )}
+              {/* Reading view only: copy an absolute link to the selection for
+                  sharing outside the app. */}
+              {onExternalLink && (
+                <div className="swatch-cell">
+                  <button
+                    type="button"
+                    className="highlight-ai"
+                    aria-label="Externen Link kopieren"
+                    title="Externen Link kopieren"
+                    onClick={onExternalLink}
+                  >
+                    {externalLinkCopied ? <Check size={22} /> : <Share2 size={22} />}
                   </button>
                   {ulRowNamed && <span className="swatch-label">{'\u00a0'}</span>}
                 </div>

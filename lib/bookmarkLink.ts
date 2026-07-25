@@ -89,6 +89,38 @@ export async function copyDeepLink(path: string, label: string): Promise<boolean
 }
 
 /**
+ * Copy an ABSOLUTE deep link to the clipboard for sharing OUTSIDE the app
+ * (Reminders, Kalender, chat, email) — unlike `copyDeepLink`'s internal
+ * cross-nugget links (site-relative href, portable across domain moves), a
+ * link meant to leave the app must carry the domain to work from anywhere it
+ * lands. The plain-text flavor is a BARE URL, not a Markdown link: Reminders/
+ * Kalender are plain-text fields, and `[label](url)` would show its brackets
+ * literally there. Rich targets that accept an HTML paste (email, chat, Notes)
+ * still get a proper labelled hyperlink via the HTML flavor. Returns false if
+ * the clipboard is unavailable.
+ */
+export async function copyExternalDeepLink(path: string, label: string): Promise<boolean> {
+  const text = label.trim() || path
+  const absoluteUrl = `${window.location.origin}${path}`
+  const html = `<a href="${escapeHtml(absoluteUrl)}">${escapeHtml(text)}</a>`
+  try {
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html':  new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([absoluteUrl], { type: 'text/plain' }),
+        }),
+      ])
+      return true
+    }
+    await navigator.clipboard.writeText(absoluteUrl)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * Parse a `?bm=` token back into an anchor. Returns null on any malformed or
  * incomplete input, so a corrupted link degrades to "no jump" rather than
  * throwing.

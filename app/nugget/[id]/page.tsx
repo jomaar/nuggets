@@ -10,7 +10,7 @@ import { useHighlightSave } from '@/components/useHighlightSave'
 import DomainIcon from '@/components/DomainIcon'
 import TextStatsBar from '@/components/TextStatsBar'
 import { countHtml } from '@/lib/textStats'
-import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, type AnchorToken } from '@/lib/bookmarkLink'
+import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, copyExternalDeepLink, type AnchorToken } from '@/lib/bookmarkLink'
 import { recordRecentNugget, removeRecentNugget, updateRecentScroll, getRecentScroll } from '@/lib/recentNuggets'
 import {
   HIGHLIGHT_PALETTE, UNDERLINE_PALETTE, MARK_LABEL_MAX,
@@ -336,6 +336,46 @@ function anchorForMark(root: HTMLElement, mark: Element): AnchorToken {
   }
 }
 
+/**
+ * Build a text-quote anchor from an arbitrary DOM Range within the reading
+ * content — the selection-based counterpart to `anchorForMark`. Clamped to the
+ * range's start text node (findRanges/resolveAnchor only match within a single
+ * text node), so a selection spanning several paragraphs anchors at its start,
+ * mirroring the comment anchor. Returns null when the range holds no text.
+ */
+function buildRangeAnchor(root: HTMLElement, sel: Range): AnchorToken | null {
+  let node: Text | null = null
+  let startOffset = 0
+  if (sel.startContainer.nodeType === Node.TEXT_NODE) {
+    node = sel.startContainer as Text
+    startOffset = sel.startOffset
+  } else {
+    const walker = document.createTreeWalker(sel.startContainer, NodeFilter.SHOW_TEXT)
+    let t = walker.nextNode() as Text | null
+    while (t && (t.nodeValue ?? '').trim() === '') t = walker.nextNode() as Text | null
+    node = t
+  }
+  if (!node) return null
+
+  const nodeText = node.nodeValue ?? ''
+  let endOffset = sel.endContainer === node ? sel.endOffset : nodeText.length
+  let quote = nodeText.slice(startOffset, endOffset).trim()
+  if (!quote) { startOffset = 0; endOffset = nodeText.length; quote = nodeText.trim() }
+  if (!quote) return null
+
+  const before = document.createRange()
+  before.setStart(root, 0)
+  before.setEnd(node, startOffset)
+  const after = document.createRange()
+  after.setStart(node, Math.min(endOffset, nodeText.length))
+  after.setEnd(root, root.childNodes.length)
+  return {
+    quote,
+    prefix: squashWhitespace(before.toString()).slice(-ANCHOR_CONTEXT_LEN),
+    suffix: squashWhitespace(after.toString()).slice(0, ANCHOR_CONTEXT_LEN),
+  }
+}
+
 /** Length of the longest common suffix of `a` and `b`. */
 function commonSuffixLen(a: string, b: string): number {
   let i = 0
@@ -386,11 +426,13 @@ const SCROLL_RESTORE_KEY = 'nugget-restore-scroll'
  * Mounted only once the nugget is loaded so the highlight hook is seeded with
  * the real initial HTML (its baseline is captured at first render).
  */
-function NuggetReader({ id, contentHtml, markScheme, onComment }: {
+function NuggetReader({ id, contentHtml, markScheme, onComment, onExternalLink, externalLinkCopied }: {
   id: string
   contentHtml: string
   markScheme: MarkScheme
   onComment?: () => void
+  onExternalLink?: () => void
+  externalLinkCopied?: boolean
 }) {
   const { html, handleContentChange, handleEditorReady } = useHighlightSave(id, contentHtml)
   return (
@@ -401,6 +443,8 @@ function NuggetReader({ id, contentHtml, markScheme, onComment }: {
       onReady={handleEditorReady}
       markScheme={markScheme}
       onComment={onComment}
+      onExternalLink={onExternalLink}
+      externalLinkCopied={externalLinkCopied}
       renderMermaid
     />
   )
@@ -487,6 +531,9 @@ export default function NuggetDetailPage() {
   const stickyRef = useRef<HTMLDivElement>(null)
   // Brief confirmation that a bookmark was saved (icon flips to a check).
   const [bookmarkSaved, setBookmarkSaved] = useState(false)
+  // Brief confirmation that an external deep link was copied (icon flips to a
+  // check in the BubbleMenu button itself — see copyExternalLink).
+  const [externalLinkCopied, setExternalLinkCopied] = useState(false)
   // Live Range objects for the current query, kept out of state so stepping
   // through matches doesn't trigger a re-render of the whole reading view.
   const matchRanges = useRef<Range[]>([])
@@ -1009,48 +1056,42 @@ export default function NuggetDetailPage() {
     const root = contentRef.current
     const sel = selectionRangeRef.current
     if (!root || !sel) return
-
-    let node: Text | null = null
-    let startOffset = 0
-    if (sel.startContainer.nodeType === Node.TEXT_NODE) {
-      node = sel.startContainer as Text
-      startOffset = sel.startOffset
-    } else {
-      // Selection starts on an element — descend to its first non-empty text node.
-      const walker = document.createTreeWalker(sel.startContainer, NodeFilter.SHOW_TEXT)
-      let t = walker.nextNode() as Text | null
-      while (t && (t.nodeValue ?? '').trim() === '') t = walker.nextNode() as Text | null
-      node = t
-    }
-    if (!node) return
-
-    const nodeText = node.nodeValue ?? ''
-    let endOffset = sel.endContainer === node ? sel.endOffset : nodeText.length
-    let quote = nodeText.slice(startOffset, endOffset).trim()
-    if (!quote) { startOffset = 0; endOffset = nodeText.length; quote = nodeText.trim() }
-    if (!quote) return
-
-    // Context around the quote's boundaries; fuzzy-scored on resolve, so the
-    // trim above not being reflected in the offsets is harmless.
-    const before = document.createRange()
-    before.setStart(root, 0)
-    before.setEnd(node, startOffset)
-    const after = document.createRange()
-    after.setStart(node, Math.min(endOffset, nodeText.length))
-    after.setEnd(root, root.childNodes.length)
-    const prefix = squashWhitespace(before.toString()).slice(-ANCHOR_CONTEXT_LEN)
-    const suffix = squashWhitespace(after.toString()).slice(0, ANCHOR_CONTEXT_LEN)
+    const anchor = buildRangeAnchor(root, sel)
+    if (!anchor) return
 
     const res = await fetch('/api/annotations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nuggetId: id, quote, prefix, suffix, body: '' }),
+      body: JSON.stringify({ nuggetId: id, ...anchor, body: '' }),
     })
     if (!res.ok) return
     const created: NuggetAnnotation = await res.json()
     setAnnotations(prev => [...prev, created])
     setActiveAnnotationId(created.id)
     setAnnotationsOpen(true)
+  }
+
+  /**
+   * Copy an ABSOLUTE deep link to the current selection, for sharing outside
+   * the app (Reminders, Kalender, chat, email) — TODO 8. Unlike the internal
+   * cross-nugget links (site-relative href, portable across domain moves), a
+   * link meant to leave the app must carry the domain. Reuses the exact anchor
+   * mechanic behind bookmarks/comments/highlight links, just built from an
+   * arbitrary selection instead of a `<mark>` or a sampled line. The selection
+   * is left intact (unlike the comment button) so the checkmark confirmation
+   * is visible in place before the menu closes.
+   */
+  const copyExternalLink = async () => {
+    const root = contentRef.current
+    const sel = selectionRangeRef.current
+    if (!root || !sel) return
+    const anchor = buildRangeAnchor(root, sel)
+    if (!anchor) return
+    const path = `/nugget/${id}?bm=${encodeAnchorToken(anchor)}`
+    if (await copyExternalDeepLink(path, anchor.quote)) {
+      setExternalLinkCopied(true)
+      setTimeout(() => setExternalLinkCopied(false), 1200)
+    }
   }
 
   /** Live-edit a comment: state immediately, PATCH debounced per comment. */
@@ -1864,6 +1905,8 @@ export default function NuggetDetailPage() {
           contentHtml={nugget.contentHtml}
           markScheme={scheme}
           onComment={isOwner ? addAnnotation : undefined}
+          onExternalLink={copyExternalLink}
+          externalLinkCopied={externalLinkCopied}
         />
       </div>
 
