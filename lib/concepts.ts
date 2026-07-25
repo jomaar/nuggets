@@ -9,7 +9,7 @@ Your task: analyze a new note, give it a title, link it to concepts, suggest tag
 
 THE CORE PRINCIPLE — concepts are ABSTRACT, REUSABLE NODES, not statements about the note:
 - A concept is a single, general, reusable idea that could plausibly recur across MANY unrelated notes.
-- A concept is essentially a noun or named entity: "Logos", "Glaube", "Kreuzestheologie", "Hebräerbrief", "Demut".
+- A concept is essentially a noun or named entity: "Logos", "Glaube", "Kreuzestheologie", "Hebräerbrief", "Demut". Authors, thinkers, and other persons are ordinary named-entity concepts too when central to the note — e.g. "Kafka", "Fromm", "Kierkegaard" — exactly like "Hebräerbrief" or "Platon" below.
 - A concept is NEVER an interpretation, claim, or sentence about this note. It must not contain the note's specific spin.
   - WRONG (too specific, a statement): "Logos als Sprach- und Ausdrucksfähigkeit", "Glaube als Voraussetzung für Gotteserkenntnis"
   - RIGHT (abstract node): "Logos", "Glaube"
@@ -20,7 +20,9 @@ KNOWN ANTI-PATTERNS — recurring mistakes; never produce these as concepts:
 - "X als Y" / "X as Y" (a reading): the concept is X alone; the reading "as Y" belongs in the connection note.
 - "X vs. Y" / "X und Y" (a contrast or pairing): link X and Y as two SEPARATE concepts; the contrast belongs in their notes.
 - Anything scoped to this text or its source ("X in Hebräer 12", "X bei Platon"): the concept is X; the scoping belongs in the note. (The source itself — "Hebräerbrief", "Platon" — may be its own concept if central.)
+- "X (Autor)" / "X (Werk)" attribution suffix (e.g. "Despair (Kierkegaard)", "Der Process (Kafka)"): the concept is X alone ("Verzweiflung"/"Despair", "Der Process"). If the author/thinker is central enough to recur across notes, link them as their OWN separate concept ("Kierkegaard", "Kafka") instead of folding the name into the idea's label — never a parenthetical suffix on a different concept.
 - Concept labels are typically 1–3 words. A longer label is almost always a statement in disguise — generalize it.
+- For a well-known proper noun (book/work title, name) with more than one accepted spelling, use the WIDELY RECOGNIZED standard form rather than copying this note's specific orthography verbatim — so future notes about the same entity naturally reuse the same node instead of minting a spelling-variant duplicate.
 
 NAMED-ENTITY-LINKING — strongly prefer reusing existing concepts:
 - You receive the list of concepts already in the graph. Default to MATCHING an existing concept.
