@@ -22,7 +22,7 @@ import {
   getNuggetFontSize, setNuggetFontSize,
   MIN_FONT_SIZE, MAX_FONT_SIZE, DEFAULT_FONT_SIZE, FONT_SIZE_STEP,
 } from '@/lib/nuggetFontSize'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer, Pencil, Trash2, ArrowLeft, MessageSquareText, ALargeSmall, Eye, EyeOff } from 'lucide-react'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer, Pencil, Trash2, ArrowLeft, MessageSquareText, ALargeSmall, Eye, EyeOff, Plus } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -497,6 +497,15 @@ export default function NuggetDetailPage() {
   const [importOpen, setImportOpen]       = useState(false)
   const [importSources, setImportSources] = useState<{ id: string; title: string; scheme: MarkScheme }[] | null>(null)
   const [importSource, setImportSource]   = useState<{ id: string; title: string; scheme: MarkScheme } | null>(null)
+  // Manual concept linking: force a connection the AI extraction missed (or
+  // remove one), without waiting for a re-extraction. Mirrors an
+  // `existingConcepts` entry from lib/concepts.ts — id + required thesis-note.
+  const [addConceptOpen, setAddConceptOpen]     = useState(false)
+  const [conceptCandidates, setConceptCandidates] = useState<Concept[] | null>(null)
+  const [conceptQuery, setConceptQuery]         = useState('')
+  const [pickedConcept, setPickedConcept]       = useState<Concept | null>(null)
+  const [conceptNote, setConceptNote]           = useState('')
+  const [savingConcept, setSavingConcept]       = useState(false)
   // Mark index whose deep-link was just copied (flips that row's icon to a check).
   const [copiedMarkIndex, setCopiedMarkIndex] = useState<number | null>(null)
   // Margin comments (annotations): anchored the same way as bookmarks
@@ -833,6 +842,47 @@ export default function NuggetDetailPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ markScheme: next }),
     })
+  }
+
+  /**
+   * Open the concept-link dialog and load every candidate concept (list GET,
+   * same client-filter pattern as the scheme-import dialog above).
+   */
+  const openAddConcept = () => {
+    setAddConceptOpen(true)
+    setPickedConcept(null)
+    setConceptQuery('')
+    setConceptNote('')
+    setConceptCandidates(null)
+    fetch('/api/concepts')
+      .then(r => (r.ok ? r.json() : []))
+      .then((rows: Concept[]) => setConceptCandidates(rows))
+      .catch(() => setConceptCandidates([]))
+  }
+
+  /** Persist the manual link, then reload the nugget so the Konzepte list picks it up. */
+  const linkConcept = async () => {
+    if (!pickedConcept || !conceptNote.trim() || savingConcept) return
+    setSavingConcept(true)
+    try {
+      const res = await fetch(`/api/nuggets/${id}/concepts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conceptId: pickedConcept.id, note: conceptNote.trim() }),
+      })
+      if (res.ok) {
+        setAddConceptOpen(false)
+        await load()
+      }
+    } finally {
+      setSavingConcept(false)
+    }
+  }
+
+  /** Remove one concept edge (the concept node itself is left untouched). */
+  const unlinkConcept = async (conceptId: string) => {
+    await fetch(`/api/nuggets/${id}/concepts/${conceptId}`, { method: 'DELETE' })
+    await load()
   }
 
   /** Step the reading font size by `delta` px (clamped + persisted + applied). */
@@ -1416,6 +1466,15 @@ export default function NuggetDetailPage() {
   const concepts = [...nugget.concepts].sort(
     (a, b) => b.concept._count.nuggets - a.concept._count.nuggets,
   )
+  // Candidates for the manual concept-link dialog: not yet linked to this
+  // nugget, and matching the search query across every label (any language).
+  const conceptMatches = (conceptCandidates ?? [])
+    .filter(c => !concepts.some(({ concept }) => concept.id === c.id))
+    .filter(c => {
+      const q = conceptQuery.trim().toLowerCase()
+      return !q || c.labels.some(l => l.term.toLowerCase().includes(q))
+    })
+    .slice(0, 30)
   // Bible imports carry <sup data-verse> atoms — only they get the verse toggle.
   const hasVerses = nugget.contentHtml.includes('data-verse=')
 
@@ -1844,41 +1903,73 @@ export default function NuggetDetailPage() {
             {/* Concepts — sorted by how many nuggets share them. Each entry shows
                 the edge reading (NuggetConcept.note): what THIS nugget says about
                 the concept — the WHY of the link, not just that it exists. */}
-            {concepts.length > 0 && (
+            {(concepts.length > 0 || isOwner) && (
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="text-xs tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
                     Konzepte
                   </h2>
-                  {/* Entry into the ego-network view, focused on this nugget. */}
-                  <Link
-                    href={`/graph?type=nugget&id=${nugget.id}`}
-                    className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
-                    style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
-                  >
-                    <Waypoints size={13} />
-                    <span>Netz</span>
-                  </Link>
-                </div>
-                <div className="flex flex-col gap-2.5">
-                  {concepts.map(({ concept, note }) => (
-                    <div key={concept.id}>
-                      <Link
-                        href={`/concepts/${concept.id}`}
-                        className="inline-flex text-xs px-2.5 py-1 rounded-full items-center gap-1.5"
+                  <div className="flex items-center gap-1.5">
+                    {/* Manual override: link an existing concept the AI extraction
+                        missed, without waiting for a re-extraction. */}
+                    {isOwner && (
+                      <button
+                        onClick={openAddConcept}
+                        aria-label="Konzept verknüpfen"
+                        className="w-6 h-6 rounded-full flex items-center justify-center"
                         style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
                       >
-                        <span>{primaryLabel(concept.labels)}</span>
-                        <span style={{ opacity: 0.6 }}>{concept._count.nuggets}</span>
-                      </Link>
-                      {note && (
-                        <p className="text-xs mt-1" style={{ color: 'var(--muted)', lineHeight: '1.5' }}>
-                          {note}
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                        <Plus size={13} />
+                      </button>
+                    )}
+                    {/* Entry into the ego-network view, focused on this nugget. */}
+                    <Link
+                      href={`/graph?type=nugget&id=${nugget.id}`}
+                      className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5"
+                      style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+                    >
+                      <Waypoints size={13} />
+                      <span>Netz</span>
+                    </Link>
+                  </div>
                 </div>
+                {concepts.length === 0 ? (
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                    Noch keine Konzepte verknüpft.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-2.5">
+                    {concepts.map(({ concept, note }) => (
+                      <div key={concept.id}>
+                        <div className="inline-flex items-center gap-1">
+                          <Link
+                            href={`/concepts/${concept.id}`}
+                            className="inline-flex text-xs px-2.5 py-1 rounded-full items-center gap-1.5"
+                            style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
+                          >
+                            <span>{primaryLabel(concept.labels)}</span>
+                            <span style={{ opacity: 0.6 }}>{concept._count.nuggets}</span>
+                          </Link>
+                          {isOwner && (
+                            <button
+                              onClick={() => unlinkConcept(concept.id)}
+                              aria-label="Verknüpfung entfernen"
+                              className="w-5 h-5 rounded-full flex items-center justify-center"
+                              style={{ color: 'var(--muted)' }}
+                            >
+                              <X size={12} />
+                            </button>
+                          )}
+                        </div>
+                        {note && (
+                          <p className="text-xs mt-1" style={{ color: 'var(--muted)', lineHeight: '1.5' }}>
+                            {note}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
         </div>
@@ -2273,6 +2364,108 @@ export default function NuggetDetailPage() {
                     </span>
                   </button>
                 ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {addConceptOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          style={{ background: 'rgba(28,28,30,0.4)' }}
+          onClick={() => setAddConceptOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
+            style={{ background: 'var(--surface)', maxHeight: '70vh', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+              style={{ borderBottom: '1px solid var(--border)' }}
+            >
+              <h2 className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                Konzept verknüpfen
+              </h2>
+              <button onClick={() => setAddConceptOpen(false)} aria-label="Schließen" style={{ color: 'var(--muted)' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div
+              className="overflow-y-auto px-3 py-3 flex flex-col gap-2"
+              style={{ overscrollBehavior: 'contain' }}
+            >
+              {pickedConcept ? (
+                /* Concept picked — the note is required and thesis-shaped, same
+                   contract as an AI-extracted edge (lib/concepts.ts). */
+                <>
+                  <p className="text-sm" style={{ color: 'var(--ink)' }}>
+                    Verknüpfung mit „{primaryLabel(pickedConcept.labels)}“ — was sagt DIESES Nugget dazu?
+                  </p>
+                  <textarea
+                    value={conceptNote}
+                    onChange={e => setConceptNote(e.target.value)}
+                    placeholder='Eine These, kein Themen-Schlagwort — z. B. „Sünde wird hier als Rechtsbegriff verhandelt, nicht als Zustand“'
+                    rows={3}
+                    className="text-sm px-3 py-2 rounded-lg resize-none"
+                    style={{ background: 'var(--warm)', color: 'var(--ink)', border: '1px solid var(--border)' }}
+                    autoFocus
+                  />
+                  <button
+                    onClick={linkConcept}
+                    disabled={!conceptNote.trim() || savingConcept}
+                    className="text-left text-sm px-3 py-2.5 rounded-lg transition-all active:scale-[0.99] disabled:opacity-50"
+                    style={{ background: 'var(--accent)', color: 'white' }}
+                  >
+                    {savingConcept ? 'Speichert…' : 'Verknüpfen'}
+                  </button>
+                  <button
+                    onClick={() => setPickedConcept(null)}
+                    className="text-sm px-3 py-2 rounded-lg"
+                    style={{ color: 'var(--muted)' }}
+                  >
+                    ← Zurück zur Auswahl
+                  </button>
+                </>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    value={conceptQuery}
+                    onChange={e => setConceptQuery(e.target.value)}
+                    placeholder="Konzept suchen…"
+                    className="text-sm px-3 py-2 rounded-lg flex-shrink-0"
+                    style={{ background: 'var(--warm)', color: 'var(--ink)', border: '1px solid var(--border)' }}
+                    autoFocus
+                  />
+                  {conceptCandidates === null ? (
+                    <p className="text-sm text-center py-6" style={{ color: 'var(--muted)' }}>
+                      Lädt…
+                    </p>
+                  ) : conceptMatches.length === 0 ? (
+                    <p className="text-sm text-center py-6" style={{ color: 'var(--muted)' }}>
+                      {conceptQuery.trim() ? 'Kein Treffer.' : 'Keine weiteren Konzepte.'}
+                    </p>
+                  ) : (
+                    conceptMatches.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => setPickedConcept(c)}
+                        className="text-left px-3 py-2.5 rounded-lg flex items-center justify-between gap-2 transition-all active:scale-[0.99]"
+                        style={{ background: 'var(--warm)' }}
+                      >
+                        <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                          {primaryLabel(c.labels)}
+                        </span>
+                        <span className="text-xs flex-shrink-0" style={{ color: 'var(--muted)' }}>
+                          {c._count.nuggets}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </>
               )}
             </div>
           </div>
