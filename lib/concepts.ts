@@ -128,6 +128,33 @@ function enforceConceptBudget(result: ClauseResult, maxTotal: number, maxNew: nu
 }
 
 /**
+ * Trailing " (CapitalizedWord)" attribution suffix — e.g. "Der Process (Kafka)".
+ * Requires a single token of letters only (no digits, no internal space)
+ * starting with an uppercase letter, anchored at the end. Deliberately does
+ * NOT match lowercase transliteration glosses ("Prophet (prophētēs)") or
+ * Bible references with a digit/space inside the parens ("... (Phil 1,21)").
+ */
+const ATTRIBUTION_SUFFIX_RE = /\s\((\p{Lu}[\p{L}'-]*)\)$/u
+
+/** "X vs. Y" / "X versus Y" contrast — already forbidden, case-insensitive. */
+const CONTRAST_RE = /\bvs\.?\b|\bversus\b/i
+
+/**
+ * Cheap, deterministic structural check over newly-minted concept labels —
+ * NOT a second LLM call. Flags labels that slipped past the prompt rules.
+ * Never throws; an empty result means no violations. Warning signal only —
+ * must not block concept creation (extractAndLinkConcepts never throws,
+ * always reports back).
+ */
+export function detectAntiPatternLabels(labels: string[]): string[] {
+  const seen = new Set<string>()
+  for (const label of labels) {
+    if (ATTRIBUTION_SUFFIX_RE.test(label) || CONTRAST_RE.test(label)) seen.add(label)
+  }
+  return [...seen]
+}
+
+/**
  * Calls Claude to generate a title, extract concepts, optionally revise the content,
  * and link concepts to the nugget. Never throws — the nugget itself is already saved
  * by the time this runs, so a failure here must not fail the whole request. Instead
@@ -138,7 +165,7 @@ export async function extractAndLinkConcepts(
   nuggetId: string,
   text: string,
   options: ExtractionOptions = {}
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; warning?: string } | { ok: false; error: string }> {
   if (!process.env.ANTHROPIC_API_KEY) {
     console.warn('[concepts] ANTHROPIC_API_KEY not set — skipping extraction')
     return { ok: false, error: 'KI nicht konfiguriert (kein API-Key hinterlegt).' }
@@ -148,14 +175,15 @@ export async function extractAndLinkConcepts(
   const { domainId, reviseContent, aiHint } = options
 
   try {
-    // Domain-scoped NEL: only concepts already used within the nugget's domain
-    // are offered for matching (no domain = only concepts on domainless nuggets).
-    // Membership is DERIVED from edges, not stored — a concept belongs to every
-    // domain it is used in. Consequence: a concept known only in another domain
-    // is invisible here and will be minted again (separate per-domain subgraphs).
+    // Cross-domain NEL (2026-07-25): every concept in the graph is offered for
+    // matching, regardless of which domain(s) its existing edges are in. Domain
+    // scoping used to isolate concepts into separate per-domain subgraphs (a
+    // concept known only in another domain was invisible and got re-minted) —
+    // that was actively harmful for genuinely cross-cutting ideas (e.g. a
+    // literary reading and a biblical one both about "Schuld"/"Gewissen").
+    // domainId is still used below to select the note's domain-specific prompt.
     const [existing, domain, settings] = await Promise.all([
       prisma.concept.findMany({
-        where: { nuggets: { some: { nugget: { domainId: domainId ?? null } } } },
         include: { labels: { select: { language: true, term: true } } },
         orderBy: { createdAt: 'asc' },
       }),
@@ -325,6 +353,12 @@ export async function extractAndLinkConcepts(
 
     const { existingToLink, newToCreate } = enforceConceptBudget(result, maxTotal, maxNew)
 
+    const flaggedLabels = detectAntiPatternLabels(
+      newToCreate.flatMap(nc => nc.labels.map(l => l.term))
+    )
+    if (flaggedLabels.length > 0)
+      console.warn(`[concepts] nugget ${nuggetId}: anti-pattern label(s) detected despite prompt rules: ${flaggedLabels.join(', ')}`)
+
     // Link existing concepts
     for (const { id, relevance, note } of existingToLink) {
       if (!existing.find(c => c.id === id)) continue
@@ -351,7 +385,12 @@ export async function extractAndLinkConcepts(
     }
 
     console.log(`[concepts] nugget ${nuggetId}: title="${result.title}", tags=${JSON.stringify(result.tags)}, ${existingToLink.length}/${result.existingConcepts?.length ?? 0} matched, ${newToCreate.length}/${result.newConcepts?.length ?? 0} new (budget ${maxTotal} total / ${maxNew} new)`)
-    return { ok: true }
+    return {
+      ok: true,
+      ...(flaggedLabels.length > 0 && {
+        warning: `Möglicher Namenskonflikt in neuen Konzepten: ${flaggedLabels.join(', ')}. Bitte in „Konzepte" prüfen.`,
+      }),
+    }
   } catch (err) {
     console.error('[concepts] extraction failed:', err)
     return { ok: false, error: describeAiError(err) }

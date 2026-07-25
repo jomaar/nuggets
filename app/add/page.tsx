@@ -51,6 +51,10 @@ export default function AddPage() {
   // save looked identical to a fully successful one, so a failure went unnoticed
   // until someone wondered why a nugget never showed up in the knowledge graph.
   const [aiWarning, setAiWarning]     = useState<{ message: string; nuggetId: string } | null>(null)
+  // Set when extraction succeeded but a new concept's label matches a known
+  // naming anti-pattern (e.g. "X (Author)") — non-blocking (nugget + concepts
+  // are already saved), unlike aiWarning which means extraction failed.
+  const [conceptWarning, setConceptWarning] = useState<{ message: string; nuggetId: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Default the domain picker to the last domain worked in (shared with
@@ -186,6 +190,11 @@ export default function AddPage() {
         if (created?.aiWarning && created?.id) {
           setShowConfirm(false)
           setAiWarning({ message: created.aiWarning, nuggetId: created.id })
+          return
+        }
+        if (created?.conceptWarning && created?.id) {
+          setShowConfirm(false)
+          setConceptWarning({ message: created.conceptWarning, nuggetId: created.id })
           return
         }
         if (created?.id) {
@@ -576,6 +585,29 @@ export default function AddPage() {
               Verstanden, zum Nugget
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Soft, non-blocking notice: extraction succeeded, but a new concept's
+          label matches a known naming anti-pattern (e.g. "X (Author)") and may
+          need a manual rename — unlike aiWarning above, this never blocked saving. */}
+      {conceptWarning && (
+        <div
+          className="fixed left-4 right-4 bottom-4 sm:left-auto sm:right-4 sm:max-w-sm z-50 rounded-xl p-4 flex flex-col gap-2"
+          style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Konzept-Hinweis</p>
+            <button onClick={() => setConceptWarning(null)} aria-label="Schließen" style={{ color: 'var(--muted)' }}>×</button>
+          </div>
+          <p className="text-xs" style={{ color: 'var(--muted)' }}>{conceptWarning.message}</p>
+          <button
+            onClick={() => router.push(`/nugget/${conceptWarning.nuggetId}`)}
+            className="text-xs self-start"
+            style={{ color: 'var(--accent-light)' }}
+          >
+            Zum Nugget →
+          </button>
         </div>
       )}
     </>

@@ -37,7 +37,8 @@ async function main(): Promise<void> {
     await prisma.nuggetConcept.deleteMany({ where: { nuggetId: nugget.id } })
     const orphans = await prisma.concept.deleteMany({ where: { nuggets: { none: {} } } })
     if (orphans.count > 0) console.log(`  swept ${orphans.count} orphaned concept(s)`)
-    await extractAndLinkConcepts(nugget.id, nugget.contentMarkdown, { domainId: nugget.domainId })
+    const result = await extractAndLinkConcepts(nugget.id, nugget.contentMarkdown, { domainId: nugget.domainId })
+    if (result.ok && result.warning) console.log(`  ⚠ ${result.warning}`)
   }
 
   const conceptCount = await prisma.concept.count()

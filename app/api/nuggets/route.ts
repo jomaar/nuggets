@@ -93,7 +93,11 @@ export async function POST(req: NextRequest) {
   // the user their note wasn't titled/tagged/linked into the knowledge graph,
   // rather than that silently never happening (the previous behaviour).
   return NextResponse.json(
-    { ...nugget, aiWarning: extraction.ok ? null : extraction.error },
+    {
+      ...nugget,
+      aiWarning: extraction.ok ? null : extraction.error,
+      conceptWarning: extraction.ok ? (extraction.warning ?? null) : null,
+    },
     { status: 201 }
   )
 }
