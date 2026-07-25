@@ -183,7 +183,6 @@ export default function NuggetEditor({
     if (value !== editor.getHTML()) {
       editor.commands.setContent(value, { emitUpdate: false })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, editor])
 
   // Reflect prop changes to the editable state.

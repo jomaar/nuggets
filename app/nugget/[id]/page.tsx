@@ -511,6 +511,12 @@ export default function NuggetDetailPage() {
   // content mutations and read by scroll-sync/tap hit-testing, none of which
   // should re-render the reading view.
   const annotationRanges = useRef<Map<string, Range>>(new Map())
+  // Ids currently holding a resolved Range — state, NOT derived from the ref
+  // above at render time (React refs must not be read during render; nothing
+  // guarantees a re-render when only `.current` changes). Set together with
+  // annotationOrder in the same resolve effect. Drives the sheet's "nicht mehr
+  // auffindbar" orphan hint.
+  const [resolvedAnnotationIds, setResolvedAnnotationIds] = useState<string[]>([])
   // Bumped (debounced) when the reader DOM mutates, to re-resolve anchors.
   const [annotationResolveTick, setAnnotationResolveTick] = useState(0)
   // Last non-collapsed DOM selection inside the content (via selectionchange):
@@ -574,6 +580,7 @@ export default function NuggetDetailPage() {
   useEffect(() => {
     setAnnotations([])
     setAnnotationOrder([])
+    setResolvedAnnotationIds([])
     setActiveAnnotationId(null)
     setAnnotationsOpen(false)
     annotationRanges.current = new Map()
@@ -644,6 +651,7 @@ export default function NuggetDetailPage() {
         .map(a => a.id)
       const orphanIds = annotations.filter(a => !map.has(a.id)).map(a => a.id)
       setAnnotationOrder([...resolvedIds, ...orphanIds])
+      setResolvedAnnotationIds(resolvedIds)
       // Ranges are always resolved (sheet order/jumps need them); only the
       // painted indicator layer follows the visibility toggle — or the
       // "Nur Text" master switch, which overrides it.
@@ -1432,7 +1440,6 @@ export default function NuggetDetailPage() {
       .filter((a): a is NuggetAnnotation => a !== undefined),
     ...annotations.filter(a => !annotationOrder.includes(a.id)),
   ]
-  const resolvedAnnotationIds = annotationOrder.filter(aid => annotationRanges.current.has(aid))
 
   return (
     <>
