@@ -1,10 +1,62 @@
 import { marked } from 'marked'
 import TurndownService from 'turndown'
+import { tables as turndownTables } from 'turndown-plugin-gfm'
+
+// Turndown's Node type (HTMLElement, via domino server-side) has isBlock/
+// isBlank attached at runtime; neither is in the DOM lib types.
+interface TurndownNode {
+  nodeName: string
+  parentNode: TurndownNode | null
+  isBlock?: boolean
+}
+
+/** Whether a node is a table cell or sits somewhere inside one. */
+function isInTableCell(node: TurndownNode | null): boolean {
+  for (let n = node; n; n = n.parentNode) {
+    if (n.nodeName === 'TD' || n.nodeName === 'TH') return true
+  }
+  return false
+}
 
 // codeBlockStyle 'fenced' is required: Turndown's default is an indented
 // block with no language tag, which silently drops ```mermaid (and any other
 // language) fences from the AI's Markdown projection and from contentMarkdown.
-const turndown = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-', codeBlockStyle: 'fenced' })
+const turndown = new TurndownService({
+  headingStyle: 'atx',
+  bulletListMarker: '-',
+  codeBlockStyle: 'fenced',
+  // A blank Tiptap table cell is a blank <td>/<th> wrapping a blank <p> —
+  // Turndown's blank-node check runs BEFORE any addRule (see forNode in
+  // turndown's Rules class), so the default '\n\n' block spacing lands
+  // inside a pipe-table cell as literal newlines, breaking the one-row-
+  // per-line table syntax. Only suppress it there; every other blank node
+  // keeps Turndown's normal behaviour.
+  blankReplacement: (content, node) => {
+    const n = node as unknown as TurndownNode
+    return isInTableCell(n) ? '' : n.isBlock ? '\n\n' : ''
+  },
+})
+// GFM pipe-table syntax, so a Tiptap table survives into contentMarkdown (the
+// AI's projection) as a real table instead of turndown's default fallback,
+// which would just concatenate every cell's text with no row/column structure.
+turndown.use(turndownTables)
+// The plugin's heading-row detection requires <tbody> to be the table's first
+// child; it treats a Tiptap table (always <colgroup> then <tbody>, for the
+// column-resize widths) as "no heading row" and keeps the WHOLE table as raw
+// HTML instead — colgroups are stripped from the string before conversion
+// (see htmlToMarkdown) rather than patched here, since the check runs on the
+// table's ORIGINAL children before any node-level rule can intervene.
+//
+// The plugin also doesn't scope turndown's default paragraph spacing to
+// outside table cells: since every (non-blank) Tiptap cell's content is a
+// <p>, that spacing would otherwise land INSIDE a pipe-table cell as literal
+// newlines too. Only the single-paragraph cell (the overwhelmingly common
+// case) is handled — multiple paragraphs in one cell would run together
+// with no separator.
+turndown.addRule('tableCellParagraph', {
+  filter: node => node.nodeName === 'P' && isInTableCell(node.parentNode),
+  replacement: content => content,
+})
 // Highlights (<mark>) and coloured underlines (<u data-color>) are reader
 // annotations, not content. Unwrap them so the derived Markdown — and
 // therefore the AI — never sees marking markup. Plain <u> is unwrapped too:
@@ -52,7 +104,9 @@ export function commentMarkdownToHtml(markdown: string): string {
  * Used as the projection sent to the AI, which works in Markdown.
  */
 export function htmlToMarkdown(html: string): string {
-  return turndown.turndown(html)
+  // See the addRule('tableCellParagraph', …) comment above for why colgroups
+  // (column-resize widths, meaningless to the AI anyway) are stripped first.
+  return turndown.turndown(html.replace(/<colgroup>[\s\S]*?<\/colgroup>/gi, ''))
 }
 
 /**

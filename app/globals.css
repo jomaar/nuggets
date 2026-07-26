@@ -154,6 +154,62 @@ h1, h2, h3, .serif {
   font-size: 0.88em;
 }
 
+/* Tables (Tiptap Table/TableRow/TableHeader/TableCell). The Table extension's
+   NodeView always wraps the <table> in a .tableWrapper div (edit AND read),
+   so a wide table scrolls horizontally within its own box instead of
+   pushing out the page — same rule as the mermaid diagrams above. */
+.nugget-content .tableWrapper {
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
+.nugget-content table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+}
+.nugget-content td, .nugget-content th {
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+  min-width: 1.5em;
+  padding: 0.35em 0.6em;
+  vertical-align: top;
+  position: relative;
+}
+.nugget-content th {
+  background: var(--warm);
+  font-weight: 600;
+  text-align: left;
+}
+/* Cell content is a <p> per the table schema; drop its own margin so it
+   doesn't add extra vertical rhythm on top of the cell padding. */
+.nugget-content td p, .nugget-content th p {
+  margin: 0;
+}
+/* Edit-view-only affordances (the reading view is never editable, so the
+   column-resize plugin never attaches there and these never render): the
+   selected-cell wash and the drag handle between columns. */
+.tiptap-editor:not(.tiptap-readonly) .ProseMirror .selectedCell::after {
+  background: var(--accent);
+  content: '';
+  inset: 0;
+  opacity: 0.12;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+.tiptap-editor:not(.tiptap-readonly) .ProseMirror .column-resize-handle {
+  background: var(--accent);
+  bottom: -2px;
+  pointer-events: none;
+  position: absolute;
+  right: -2px;
+  top: 0;
+  width: 3px;
+}
+.tiptap-editor:not(.tiptap-readonly) .ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
 /* Multi-color highlights — <mark data-color="…"> from the Tiptap Highlight mark.
    Default (no data-color) falls back to yellow. */
 .nugget-content mark {
@@ -598,11 +654,14 @@ h1, h2, h3, .serif {
   /* Page-break hygiene: don't strand a heading at the foot of a page, don't
      split tight blocks across pages. */
   .pdf-doc h1, .pdf-doc h2, .pdf-doc h3 { break-after: avoid; }
-  .pdf-doc blockquote, .pdf-doc li, .pdf-doc pre, .pdf-doc img { break-inside: avoid; }
+  .pdf-doc blockquote, .pdf-doc li, .pdf-doc pre, .pdf-doc img, .pdf-doc tr { break-inside: avoid; }
   .pdf-doc p { orphans: 2; widows: 2; }
 
   /* Mermaid diagrams: print whole (no mid-diagram page break) and unclipped —
      the on-screen horizontal scroll wrapper would otherwise cut wide diagrams
      off at the page edge; max-width: 100% already scales them down instead. */
   .pdf-doc .mermaid-diagram { break-inside: avoid; overflow: visible; }
+  /* Same reasoning for tables: the on-screen .tableWrapper scroll box must not
+     clip a wide table when printed. */
+  .pdf-doc .tableWrapper { overflow: visible; }
 }

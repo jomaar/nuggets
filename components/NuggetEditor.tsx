@@ -4,8 +4,12 @@ import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
+import { TableKit } from '@tiptap/extension-table'
 import { useEffect, useRef, useState } from 'react'
-import { Bold, Italic, MessageSquarePlus, Sparkles, Share2, Check } from 'lucide-react'
+import {
+  Bold, Italic, MessageSquarePlus, Sparkles, Share2, Check,
+  Table2, Rows3, Columns3, TableCellsMerge, Trash2,
+} from 'lucide-react'
 import { normalizeToHtml } from '@/lib/content'
 import CssVarHighlight from './CssVarHighlight'
 import CssVarUnderline from './CssVarUnderline'
@@ -141,6 +145,13 @@ export default function NuggetEditor({
         codeBlock: false,
       }),
       MermaidCodeBlock.configure({ renderDiagram: renderMermaid }),
+      // Bundles Table/TableRow/TableHeader/TableCell in one extension. Column
+      // drag-resize (edit view only in practice — the reading view is never
+      // editable, so no resize handles render there); the resulting per-column
+      // width lives in a <colgroup>, which survives the sanitize/Markdown
+      // round-trip untouched (dropped only by the GFM table rule, which
+      // doesn't model column widths).
+      TableKit.configure({ table: { resizable: true } }),
       CssVarHighlight.configure({ multicolor: true }),
       CssVarUnderline,
       // Bible verse markers — MUST stay registered: Tiptap's schema is an
@@ -263,6 +274,21 @@ export default function NuggetEditor({
     reworkRange.current = null
     setReworkText(null)
   }
+
+  /**
+   * Table structure toolbar (edit view only, always visible above the editor —
+   * unlike the marking/comment actions above, these aren't selection-bound: an
+   * empty cursor position is enough to insert a table or grow the current one).
+   * Nested tables aren't in the schema, so "insert" only shows outside a table;
+   * once the cursor is inside one, row/column/delete actions take its place.
+   */
+  const insertTable = () => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+  const addColumn = () => editor?.chain().focus().addColumnAfter().run()
+  const deleteColumn = () => editor?.chain().focus().deleteColumn().run()
+  const addRow = () => editor?.chain().focus().addRowAfter().run()
+  const deleteRow = () => editor?.chain().focus().deleteRow().run()
+  const mergeOrSplitCells = () => editor?.chain().focus().mergeOrSplit().run()
+  const deleteTable = () => editor?.chain().focus().deleteTable().run()
 
   // Whether a swatch row contains any custom-named colour (label slots are
   // rendered row-wide so the swatches stay on one baseline).
@@ -430,6 +456,78 @@ export default function NuggetEditor({
             </div>
           </div>
         </BubbleMenu>
+      )}
+      {editable && editor && (
+        <div className="flex flex-wrap items-center gap-1.5 px-1 pb-2">
+          {editor.isActive('table') ? (
+            <>
+              <button
+                type="button"
+                onClick={addColumn}
+                title="Spalte danach einfügen"
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                <Columns3 size={13} /> Spalte +
+              </button>
+              <button
+                type="button"
+                onClick={deleteColumn}
+                title="Spalte löschen"
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                <Columns3 size={13} /> Spalte −
+              </button>
+              <button
+                type="button"
+                onClick={addRow}
+                title="Zeile danach einfügen"
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                <Rows3 size={13} /> Zeile +
+              </button>
+              <button
+                type="button"
+                onClick={deleteRow}
+                title="Zeile löschen"
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                <Rows3 size={13} /> Zeile −
+              </button>
+              <button
+                type="button"
+                onClick={mergeOrSplitCells}
+                title="Zellen verbinden / teilen"
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                <TableCellsMerge size={13} /> Verb./Teilen
+              </button>
+              <button
+                type="button"
+                onClick={deleteTable}
+                title="Tabelle löschen"
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+                style={{ color: 'var(--act-delete)', border: '1px solid var(--act-delete)' }}
+              >
+                <Trash2 size={13} /> Tabelle
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={insertTable}
+              title="Tabelle einfügen"
+              className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+            >
+              <Table2 size={13} /> Tabelle einfügen
+            </button>
+          )}
+        </div>
       )}
       <EditorContent editor={editor} />
       {reworkText !== null && (
