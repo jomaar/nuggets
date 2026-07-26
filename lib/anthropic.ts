@@ -9,8 +9,8 @@ const globalForAnthropic = globalThis as unknown as { anthropic: Anthropic | und
 export const anthropic = globalForAnthropic.anthropic ?? createClient()
 if (process.env.NODE_ENV !== 'production') globalForAnthropic.anthropic = anthropic
 
-/** Single source of truth for the model used by both AI call sites (lib/concepts.ts, app/api/rework). */
-export const CLAUDE_MODEL = 'claude-opus-4-8'
+/** Single source of truth for the model used by every AI call site (lib/concepts.ts, app/api/rework, lib/insights.ts, the health check). */
+export const CLAUDE_MODEL = 'claude-sonnet-5'
 
 /**
  * True if the SDK error is a 404 for the model itself (retired/unknown model ID),

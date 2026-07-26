@@ -48,7 +48,7 @@ Damit die Gliederung eindeutig bleibt (drei Ebenen, drei Begriffe):
 ### Produktion
 - URL: nuggets.jomaar.de
 - DB: `prisma/prod.db` (SQLite auf Netcup), aktuell Testdaten
-- Modell: `claude-opus-4-8`, max_tokens: 4096
+- Modell: `claude-sonnet-5` (switched from `claude-opus-4-8` 2026-07-26 — cheaper, comparable quality), max_tokens: 4096
 - Alle Migrations angewandt, Domains geseedet
 
 ---
