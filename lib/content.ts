@@ -175,10 +175,10 @@ export function fallbackTitle(contentHtml: string): string {
 }
 
 /**
- * Server-side HTML sanitizer (no DOMParser available in Node).
+ * HTML sanitizer usable both server-side (no DOMParser in Node) and client-side.
  * Removes script/iframe/object tags and dangerous attributes.
  */
-function sanitizeHtml(html: string): string {
+export function sanitizeHtml(html: string): string {
   return html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')

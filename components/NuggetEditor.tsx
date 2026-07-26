@@ -10,7 +10,8 @@ import {
   Bold, Italic, MessageSquarePlus, Sparkles, Share2, Check,
   Table2, Rows3, Columns3, TableCellsMerge, Trash2,
 } from 'lucide-react'
-import { normalizeToHtml } from '@/lib/content'
+import { marked } from 'marked'
+import { normalizeToHtml, sanitizeHtml } from '@/lib/content'
 import CssVarHighlight from './CssVarHighlight'
 import CssVarUnderline from './CssVarUnderline'
 import VerseMarker from './VerseMarker'
@@ -69,17 +70,21 @@ interface NuggetEditorProps {
 }
 
 /**
- * Convert the AI's plain-text result into editor content for insertion. A single
- * block stays inline (so replacing mid-sentence doesn't split the paragraph);
- * blank-line-separated blocks become paragraphs. HTML is escaped so the model's
- * text can never inject markup, and single newlines become <br>.
+ * Convert the AI's result into editor content for insertion. A single block
+ * stays inline (so replacing mid-sentence doesn't split the paragraph);
+ * blank-line-separated blocks become paragraphs. Each block is parsed as
+ * INLINE Markdown (marked.parseInline, not the full block parser — a block
+ * parse would wrap even a single-sentence replacement in its own <p>,
+ * splitting the surrounding paragraph) so the model's bold/italic/link
+ * Markdown renders instead of showing as literal syntax, then sanitized since
+ * marked itself does no sanitizing. Single newlines become <br>.
  */
 function reworkToContent(text: string): string {
-  const escape = (s: string) =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const parseInline = (s: string) =>
+    sanitizeHtml(marked.parseInline(s, { breaks: true, async: false }) as string)
   const blocks = text.split(/\n{2,}/).map(b => b.trim()).filter(Boolean)
-  if (blocks.length <= 1) return escape(blocks[0] ?? '').replace(/\n/g, '<br>')
-  return blocks.map(b => `<p>${escape(b).replace(/\n/g, '<br>')}</p>`).join('')
+  if (blocks.length <= 1) return parseInline(blocks[0] ?? '')
+  return blocks.map(b => `<p>${parseInline(b)}</p>`).join('')
 }
 
 /**

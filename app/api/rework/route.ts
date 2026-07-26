@@ -23,6 +23,7 @@ Wende die Anweisung auf den Abschnitt an und gib AUSSCHLIESSLICH den überarbeit
 - in derselben Sprache wie der Eingabetext,
 - ohne Einleitung, ohne Erklärung, ohne Meta-Kommentar,
 - ohne umschließende Anführungszeichen und ohne Markdown-Code-Zäune.
+Inline-Markdown (**fett**, *kursiv*) darfst du verwenden, wenn es der Klarheit dient — es wird beim Einfügen korrekt umgewandelt.
 Behalte die ursprüngliche Bedeutung bei, sofern die Anweisung nichts anderes verlangt. Ist keine Anweisung angegeben, verbessere Klarheit und Lesefluss, ohne die Aussage zu verändern.`
 
 /**
