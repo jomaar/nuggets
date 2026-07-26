@@ -78,13 +78,27 @@ turndown.addRule('dropVerseMarkers', {
  * If input already looks like HTML, returns it as-is.
  * Always strips script tags for safety.
  */
+/**
+ * A pasted Markdown table sometimes arrives with a blank line between every
+ * row — e.g. copied from a rendered chat bubble, where each row was its own
+ * visual paragraph and copying that as plain text preserves the blank lines
+ * literally. GFM tables require contiguous lines: with a blank line inside,
+ * `marked` sees only the header + delimiter as a (near-empty) table and
+ * drops every other row as an unrelated paragraph. Collapse a blank line
+ * that sits strictly between two pipe-delimited lines before handing the
+ * text to marked.
+ */
+function collapseTableRowBlankLines(markdown: string): string {
+  return markdown.replace(/(\|[ \t]*)\r?\n(?:[ \t]*\r?\n)+(?=[ \t]*\|)/g, '$1\n')
+}
+
 export function normalizeToHtml(input: string): string {
   const trimmed = input.trim()
   const looksLikeHtml = /^<[a-z][\s\S]*>/i.test(trimmed)
 
   const html = looksLikeHtml
     ? trimmed
-    : marked(trimmed) as string
+    : marked(collapseTableRowBlankLines(trimmed)) as string
 
   return sanitizeHtml(html)
 }
