@@ -83,16 +83,30 @@ function reworkToContent(text: string): string {
 }
 
 /**
+ * A GFM table delimiter row (e.g. `|---|:--:|--:|` or `---|---`) — the line
+ * of dashes/colons under a table's header row. Requires at least one `|`
+ * between two dash segments so a plain `---` horizontal rule / setext
+ * heading underline is never mistaken for one; this is the most specific
+ * signal a pasted table has, since (unlike the header/body rows) prose
+ * essentially never produces a line shaped like this by accident. It's what
+ * `marked` itself requires to recognize a table, so this alone predicts
+ * whether normalizeToHtml would actually render one — no separate check
+ * for a leading `|` on other rows is needed, and it also catches the GFM
+ * variant without outer pipes (`Col A | Col B` header, no leading `|`).
+ */
+const TABLE_DELIMITER_RE = /^[ \t]{0,3}\|?[ \t]*:?-+:?[ \t]*\|[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/m
+
+/**
  * Heuristic: does pasted plain text look like block-level Markdown?
  * Inline-only markdown (**bold**, *italic*) is left to Tiptap's built-in
  * bold/italic paste rules; we only take over when block syntax (headings,
- * blockquotes, lists, code fences) would otherwise land as literal text.
- * Requires a multi-line paste so a fragment like "5. Mose" pasted into a
- * sentence is never mistaken for an ordered list.
+ * blockquotes, lists, code fences, tables) would otherwise land as literal
+ * text. Requires a multi-line paste so a fragment like "5. Mose" pasted into
+ * a sentence is never mistaken for an ordered list.
  */
 function looksLikeMarkdownBlocks(text: string): boolean {
   if (!text.includes('\n')) return false
-  return /^\s{0,3}(#{1,6}\s|>\s|[-*+]\s|\d+[.)]\s|```)/m.test(text)
+  return /^\s{0,3}(#{1,6}\s|>\s|[-*+]\s|\d+[.)]\s|```)/m.test(text) || TABLE_DELIMITER_RE.test(text)
 }
 
 /**
