@@ -155,9 +155,19 @@ function runStateMachine(
 
 /**
  * Cheap heuristic: does this pasted/loaded text look like a raw Bible book?
- * Safe against ordinary Markdown (ordered lists use "1."/"1)" and fail the
- * bare-number line test; the dry-run requirement kills remaining false positives).
+ * Safe against ordinary Markdown (ordered lists use "1."/"1)" — the trailing
+ * punctuation makes those tokens fail BARE_INT_RE, so they never count as
+ * verse markers at all) and against coincidental number sequences in
+ * ordinary prose (MIN_VERSE_DENSITY below).
+ *
+ * Deliberately NOT line-shape-based: source texts vary between one verse per
+ * line, one paragraph per line, and hard-wrapped copy from a PDF/reader app
+ * (verse numbers landing mid-line at a fixed column width, e.g. critical
+ * Greek NT editions) — an earlier version required verse numbers to start
+ * most physical LINES, which false-negatived on that last, common case.
  */
+const MIN_VERSE_DENSITY = 0.015 // ~1 verse marker per 65 words — real Bible prose runs far denser
+
 export function detectBibleText(text: string): BibleDetection | null {
   if (text.length < 200) return null
 
@@ -165,12 +175,11 @@ export function detectBibleText(text: string): BibleDetection | null {
   if (bodyLines.length < 3) return null
   if (!new RegExp(`^${startVerse}\\s`).test(bodyLines[0])) return null
 
-  const verseLineShare =
-    bodyLines.filter((l) => VERSE_LINE_RE.test(l)).length / bodyLines.length
-  if (verseLineShare < 0.8) return null
-
   const { verseCount } = runStateMachine(bodyLines, { chapter: startChapter, verse: startVerse })
   if (verseCount < 10) return null
+
+  const wordCount = bodyLines.reduce((n, l) => n + l.split(/\s+/).filter(Boolean).length, 0)
+  if (verseCount / wordCount < MIN_VERSE_DENSITY) return null
 
   return { translation: translation || null, title: title || null }
 }
