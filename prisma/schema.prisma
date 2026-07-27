@@ -52,6 +52,7 @@ model Nugget {
   concepts    NuggetConcept[]
   bookmarks   Bookmark[]
   annotations Annotation[]
+  shortLinks  ShortLink[]
 
   @@map("nuggets")
 }
@@ -170,6 +171,27 @@ model Insight {
   @@index([anchorConceptId])
   @@index([status])
   @@map("insights")
+}
+
+/**
+ * A short, opaque redirect record for sharing a reading spot OUTSIDE the app
+ * (Reminders, Kalender, chat, email) via /s/<code> — see lib/bookmarkLink.ts
+ * copyExternalDeepLink. The code carries no information about the content;
+ * recognizability for the recipient comes from the label placed next to the
+ * link in the plain-text clipboard flavor, not from the URL itself. `path`
+ * is unique so re-sharing the same passage dedupes onto the same code.
+ */
+model ShortLink {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  path      String   @unique
+  nuggetId  String
+  createdAt DateTime @default(now())
+
+  nugget Nugget @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
+
+  @@index([nuggetId])
+  @@map("short_links")
 }
 
 model Review {

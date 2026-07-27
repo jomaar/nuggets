@@ -1138,6 +1138,11 @@ export default function NuggetDetailPage() {
    * arbitrary selection instead of a `<mark>` or a sampled line. The selection
    * is left intact (unlike the comment button) so the checkmark confirmation
    * is visible in place before the menu closes.
+   *
+   * Mints a short `/s/<code>` link via `/api/shortlinks` before writing to the
+   * clipboard (see lib/shortLink.ts + app/s/[code]/route.ts) so the plain-text
+   * paste (Reminders/Kalender have no Markdown) stays short; any failure of
+   * that round trip falls back to today's long absolute URL.
    */
   const copyExternalLink = async () => {
     const root = contentRef.current
@@ -1146,7 +1151,23 @@ export default function NuggetDetailPage() {
     const anchor = buildRangeAnchor(root, sel)
     if (!anchor) return
     const path = `/nugget/${id}?bm=${encodeAnchorToken(anchor)}`
-    if (await copyExternalDeepLink(path, anchor.quote)) {
+
+    let url = `${window.location.origin}${path}`
+    try {
+      const res = await fetch('/api/shortlinks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nuggetId: id, path }),
+      })
+      if (res.ok) {
+        const { code } = await res.json()
+        url = `${window.location.origin}/s/${code}`
+      }
+    } catch {
+      /* network/API failure — keep the long-URL fallback assigned above */
+    }
+
+    if (await copyExternalDeepLink(url, anchor.quote)) {
       setExternalLinkCopied(true)
       setTimeout(() => setExternalLinkCopied(false), 1200)
     }

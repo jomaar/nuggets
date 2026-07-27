@@ -150,4 +150,27 @@ See `PLAN.md` for the full roadmap (Markdown editor, Concept Graph, Claude API, 
    ins `suffix` einfangen — betraf auch das bestehende Kommentar-Feature, nicht nur den
    neuen Button. Fix: `appendTo={() => document.body}` auf `<BubbleMenu>` (von Tiptap
    dafür vorgesehener Hook, keine Positions-Änderung — `floating-ui` berücksichtigt den
-   tatsächlichen DOM-Elternteil).
+   tatsächlichen DOM-Elternteil). **Eigener Kurzlink-Dienst (2026-07-27)**: die lange
+   `?bm=`-URL wurde als zu lang UND (nach Kürzung erst recht) als für den Empfänger
+   nicht erkennbar empfunden — ein Drittanbieter-Shortener wurde bewusst verworfen
+   (die Links tragen persönliche Lese-/Bibelstellen-Zitate, sollen nicht über eine
+   fremde Firma laufen). Neues Model `ShortLink` (`prisma/schema.prisma`: `code`
+   unique + `path` unique fürs Dedupe + `nuggetId` FK mit `onDelete: Cascade`, wie
+   Bookmark/Annotation). `lib/shortLink.ts` (`generateShortCode`, `crypto.randomBytes(6)`
+   → 8 Zeichen base64url, bewusst opak — keine Slugs/Content-Leaks in der URL).
+   `POST /api/shortlinks` (owner-**offen**, wie der Share2-Button selbst schon
+   ungegatet ist) nimmt `{nuggetId, path}`, gibt bei existierendem `path` den
+   bestehenden Code zurück (Dedupe, Retry bei Code-Kollision/Race auf `path`).
+   `GET /s/[code]` (`app/s/[code]/route.ts`) löst per 307-Redirect auf den langen
+   Pfad auf; unbekannter Code → Redirect auf `/` (kein eigenes 404 im Projekt).
+   Erkennbarkeit trotz opakem Code: `copyExternalDeepLink` (jetzt `(url, label)`
+   statt `(path, label)` — der Aufrufer löst den Kurzlink VOR dem Clipboard-Write
+   auf) baut den `text/plain`-Flavor jetzt als `"<Label> – <URL>"` statt nackter
+   URL (Label = `anchor.quote`, auf 80 Zeichen gekappt via `truncateForPlainText`);
+   die `text/html`-Variante bleibt ein normal gelabelter `<a>`. `copyExternalLink`
+   in `app/nugget/[id]/page.tsx` holt den Code per `fetch('/api/shortlinks')` und
+   fällt bei jedem Fehler (Netzwerk/API) sauber auf die alte lange absolute URL
+   zurück — keine Änderung an der bestehenden Check-Icon-UX. **Bewusst NICHT
+   angefasst**: die internen Cross-Nugget-Links (`copyDeepLink`, Lesezeichen-Liste
+   + Highlight-Popup) — dort ist die Länge kein sichtbares Problem, da schon als
+   gelabelter Markdown-/HTML-Link maskiert.

@@ -88,32 +88,46 @@ export async function copyDeepLink(path: string, label: string): Promise<boolean
   }
 }
 
+/** Caps a label used as a plain-text prefix — `anchor.quote` is arbitrary user-selected text and can be long. */
+function truncateForPlainText(label: string): string {
+  return label.length > 80 ? label.slice(0, 77) + '…' : label
+}
+
 /**
- * Copy an ABSOLUTE deep link to the clipboard for sharing OUTSIDE the app
+ * Copy an ABSOLUTE URL to the clipboard for sharing OUTSIDE the app
  * (Reminders, Kalender, chat, email) — unlike `copyDeepLink`'s internal
  * cross-nugget links (site-relative href, portable across domain moves), a
  * link meant to leave the app must carry the domain to work from anywhere it
- * lands. The plain-text flavor is a BARE URL, not a Markdown link: Reminders/
- * Kalender are plain-text fields, and `[label](url)` would show its brackets
- * literally there. Rich targets that accept an HTML paste (email, chat, Notes)
- * still get a proper labelled hyperlink via the HTML flavor. Returns false if
- * the clipboard is unavailable.
+ * lands. `url` is expected to already be absolute (either a short `/s/<code>`
+ * link or a long fallback URL — see `copyExternalLink`'s caller, which does
+ * the short-link round trip before calling this).
+ *
+ * A short code alone (e.g. `/s/x7k2`) is opaque by design (no slugify/content
+ * leak in the URL), so the plain-text flavor puts the human-readable `label`
+ * as visible TEXT right next to the link (`"<label> – <url>"`) instead of a
+ * bare URL — Reminders/Kalender are plain-text fields, and a Markdown
+ * `[label](url)` would show its brackets literally there (see `copyDeepLink`'s
+ * comment for why the plain-text flavor never uses Markdown syntax). Rich
+ * targets that accept an HTML paste (email, chat, Notes) get a proper
+ * labelled hyperlink via the HTML flavor. Returns false if the clipboard is
+ * unavailable.
  */
-export async function copyExternalDeepLink(path: string, label: string): Promise<boolean> {
-  const text = label.trim() || path
-  const absoluteUrl = `${window.location.origin}${path}`
-  const html = `<a href="${escapeHtml(absoluteUrl)}">${escapeHtml(text)}</a>`
+export async function copyExternalDeepLink(url: string, label: string): Promise<boolean> {
+  const text = label.trim() || url
+  const html = `<a href="${escapeHtml(url)}">${escapeHtml(text)}</a>`
+  const plainLabel = truncateForPlainText(label.trim())
+  const plainText = plainLabel ? `${plainLabel} – ${url}` : url
   try {
     if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
       await navigator.clipboard.write([
         new ClipboardItem({
           'text/html':  new Blob([html], { type: 'text/html' }),
-          'text/plain': new Blob([absoluteUrl], { type: 'text/plain' }),
+          'text/plain': new Blob([plainText], { type: 'text/plain' }),
         }),
       ])
       return true
     }
-    await navigator.clipboard.writeText(absoluteUrl)
+    await navigator.clipboard.writeText(plainText)
     return true
   } catch {
     return false
