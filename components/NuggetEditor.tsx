@@ -5,10 +5,12 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TableKit } from '@tiptap/extension-table'
+import { selectionCell, findTable, TableMap } from '@tiptap/pm/tables'
 import { useEffect, useRef, useState } from 'react'
 import {
   Bold, Italic, MessageSquarePlus, Sparkles, Share2, Check,
   Table2, Rows3, Columns3, TableCellsMerge, Trash2,
+  AlignLeft, AlignCenter, AlignRight,
 } from 'lucide-react'
 import { marked } from 'marked'
 import { normalizeToHtml, sanitizeHtml } from '@/lib/content'
@@ -309,6 +311,36 @@ export default function NuggetEditor({
   const mergeOrSplitCells = () => editor?.chain().focus().mergeOrSplit().run()
   const deleteTable = () => editor?.chain().focus().deleteTable().run()
 
+  /**
+   * Align a whole column (not just the active cell) — matches the GFM mental
+   * model of column alignment. Builds a CellSelection spanning the current
+   * column's top-to-bottom cells, then setCellAttribute applies to every cell
+   * in that selection (prosemirror-tables' setCellAttr loops a CellSelection).
+   * Collapses back to a normal cursor afterwards so the CellSelection wash
+   * doesn't linger and typing resumes normally.
+   */
+  const alignColumn = (align: 'left' | 'center' | 'right') => {
+    if (!editor) return
+    const { state } = editor
+    const table = findTable(state.selection.$from)
+    if (!table) return
+    const map = TableMap.get(table.node)
+    const col = map.colCount(selectionCell(state).pos - table.start)
+    const anchorCell = table.start + map.map[col]
+    const headCell = table.start + map.map[(map.height - 1) * map.width + col]
+    editor.chain().focus()
+      .setCellSelection({ anchorCell, headCell })
+      .setCellAttribute('align', align)
+      .setTextSelection(anchorCell + 1)
+      .run()
+  }
+
+  // Active cell can be a header or a regular cell — read whichever is active
+  // to highlight the matching alignment button.
+  const activeColumnAlign = editor?.isActive('tableHeader')
+    ? editor.getAttributes('tableHeader').align
+    : editor?.getAttributes('tableCell').align
+
   // Whether a swatch row contains any custom-named colour (label slots are
   // rendered row-wide so the swatches stay on one baseline).
   const hlRowNamed = HIGHLIGHT_PALETTE.some(c => hasMarkLabel(markScheme, 'hl', c.name))
@@ -524,6 +556,39 @@ export default function NuggetEditor({
                 style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
               >
                 <TableCellsMerge size={13} /> Verb./Teilen
+              </button>
+              <button
+                type="button"
+                onClick={() => alignColumn('left')}
+                title="Spalte linksbündig ausrichten"
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+                style={activeColumnAlign === 'left'
+                  ? { color: 'var(--accent)', border: '1px solid var(--accent)' }
+                  : { color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                <AlignLeft size={13} /> Links
+              </button>
+              <button
+                type="button"
+                onClick={() => alignColumn('center')}
+                title="Spalte zentrieren"
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+                style={activeColumnAlign === 'center'
+                  ? { color: 'var(--accent)', border: '1px solid var(--accent)' }
+                  : { color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                <AlignCenter size={13} /> Mitte
+              </button>
+              <button
+                type="button"
+                onClick={() => alignColumn('right')}
+                title="Spalte rechtsbündig ausrichten"
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+                style={activeColumnAlign === 'right'
+                  ? { color: 'var(--accent)', border: '1px solid var(--accent)' }
+                  : { color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                <AlignRight size={13} /> Rechts
               </button>
               <button
                 type="button"
