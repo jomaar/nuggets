@@ -6,7 +6,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TableKit } from '@tiptap/extension-table'
 import { selectionCell, findTable, TableMap } from '@tiptap/pm/tables'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bold, Italic, MessageSquarePlus, Sparkles, Share2, Check,
   Table2, Rows3, Columns3, TableCellsMerge, Trash2,
@@ -148,6 +148,14 @@ export default function NuggetEditor({
   const editor = useEditor({
     // Avoid SSR hydration mismatch in the Next.js App Router.
     immediatelyRender: false,
+    // Tiptap v3 only rerenders this component on document-changing transactions
+    // by default. The table toolbar (isActive('table')) and column-alignment
+    // buttons (activeColumnAlign) depend on the SELECTION, not the document —
+    // without this, clicking into an already-existing table doesn't update
+    // them (only typing does, since that's a content change that happens to
+    // trigger onUpdate). New tables looked fine only because inserting one is
+    // itself a content change.
+    shouldRerenderOnTransaction: true,
     editable,
     extensions: [
       // StarterKit (v3) already bundles the Link extension — configure it here
@@ -346,6 +354,31 @@ export default function NuggetEditor({
   const hlRowNamed = HIGHLIGHT_PALETTE.some(c => hasMarkLabel(markScheme, 'hl', c.name))
   const ulRowNamed = UNDERLINE_PALETTE.some(c => hasMarkLabel(markScheme, 'ul', c.name))
 
+  /**
+   * BubbleMenu re-dispatches a transaction whenever appendTo/getReferencedVirtualElement/
+   * options/shouldShow change identity (see its updateOptions effect). With
+   * shouldRerenderOnTransaction (needed so the table toolbar reacts to plain
+   * cursor moves, not just content edits), a fresh inline object/function on
+   * every render fed straight back into another transaction — an infinite
+   * render loop ("Maximum update depth exceeded"). These must stay referentially
+   * stable across renders.
+   */
+  const bubbleMenuAppendTo = useCallback(() => document.body, [])
+  const bubbleMenuVirtualElement = useCallback(() => {
+    const bar = typeof document !== 'undefined' ? document.querySelector('.sticky') : null
+    const top = bar ? bar.getBoundingClientRect().bottom : 8
+    const x = (typeof window !== 'undefined' ? window.innerWidth : 360) / 2
+    return { getBoundingClientRect: () => new DOMRect(x, top, 0, 0) }
+  }, [])
+  const bubbleMenuOptions = useMemo(
+    () => ({ placement: 'bottom' as const, offset: 8, flip: false, shift: true }),
+    []
+  )
+  const bubbleMenuShouldShow = useCallback(
+    ({ from, to }: { from: number; to: number }) => from !== to,
+    []
+  )
+
   return (
     <div className={`tiptap-editor nugget-content${editable ? '' : ' tiptap-readonly'}`}>
       {editor && (
@@ -357,7 +390,7 @@ export default function NuggetEditor({
           // external links) walk a Range bounded by contentRef's end — with
           // the default placement, an open menu's own text (e.g. the "✕"
           // remove button) could leak into a quote's captured prefix/suffix.
-          appendTo={() => document.body}
+          appendTo={bubbleMenuAppendTo}
           // Pin the menu just UNDER the sticky top bar instead of next to the
           // selection. iOS's native selection callout hugs the selection (and
           // can't be read — it's a UIKit overlay, not in the DOM), so anchoring
@@ -365,16 +398,11 @@ export default function NuggetEditor({
           // wherever the selection is. The reference is a zero-size virtual point
           // at the bottom edge of the sticky header (`.sticky`, present in the
           // read + edit views; fallback near the top otherwise).
-          getReferencedVirtualElement={() => {
-            const bar = typeof document !== 'undefined' ? document.querySelector('.sticky') : null
-            const top = bar ? bar.getBoundingClientRect().bottom : 8
-            const x = (typeof window !== 'undefined' ? window.innerWidth : 360) / 2
-            return { getBoundingClientRect: () => new DOMRect(x, top, 0, 0) }
-          }}
-          options={{ placement: 'bottom', offset: 8, flip: false, shift: true }}
+          getReferencedVirtualElement={bubbleMenuVirtualElement}
+          options={bubbleMenuOptions}
           // Show on any non-empty selection — highlighting works in the read-only
           // reading view too (programmatic mark commands run even when editable=false).
-          shouldShow={({ from, to }) => from !== to}
+          shouldShow={bubbleMenuShouldShow}
         >
           <div className="highlight-menu">
             {/* Bold/Italic toggle — edit view only. No colour-mark keyboard-shortcut
