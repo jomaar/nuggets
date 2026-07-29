@@ -26,7 +26,7 @@
 
   /* Underline marking palette — same hue + order as --hl-* (paired), just
      more saturated: pastel washes are unreadable as a thick text-decoration. */
-  --ul-yellow:  #c99a06;
+  --ul-yellow:  #f2c200;
   --ul-blue:    #2f7fd1;
   --ul-green:   #3a9e4f;
   --ul-pink:    #c9366f;
