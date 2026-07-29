@@ -1500,11 +1500,13 @@ export default function NuggetDetailPage() {
   const hasVerses = nugget.contentHtml.includes('data-verse=')
 
   // Legend rows: every (style, colour) that occurs in the document or carries a
-  // custom name — palette order, highlights first (marks is filled by openMarks).
-  const legendRows = [
-    ...HIGHLIGHT_PALETTE.map(c => ({ kind: 'hl' as MarkKind, ...c })),
-    ...UNDERLINE_PALETTE.map(c => ({ kind: 'ul' as MarkKind, ...c })),
-  ].filter(r =>
+  // custom name — grouped by colour PAIR (highlight then its matching underline
+  // for each hue, not all highlights then all underlines), since the two
+  // palettes share the same 6 names in the same order (marks is filled by openMarks).
+  const legendRows = HIGHLIGHT_PALETTE.flatMap((hl, i) => [
+    { kind: 'hl' as MarkKind, ...hl },
+    { kind: 'ul' as MarkKind, ...UNDERLINE_PALETTE[i] },
+  ]).filter(r =>
     marks.some(m => m.kind === r.kind && m.color === r.name) ||
     hasMarkLabel(scheme, r.kind, r.name),
   )

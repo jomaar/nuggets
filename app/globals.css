@@ -24,15 +24,14 @@
   --hl-orange:  #fbd6a4;
   --hl-purple:  #e4d4f4;
 
-  /* Underline marking palette — deliberately independent from the highlight
-     hues: pastel washes are unreadable as a line, so these are saturated
-     tones that hold up as a thick text-decoration on white. */
-  --ul-red:     #d64545;
+  /* Underline marking palette — same hue + order as --hl-* (paired), just
+     more saturated: pastel washes are unreadable as a thick text-decoration. */
+  --ul-yellow:  #c99a06;
   --ul-blue:    #2f7fd1;
   --ul-green:   #3a9e4f;
+  --ul-pink:    #c9366f;
   --ul-orange:  #e8830c;
   --ul-purple:  #8e5bc9;
-  --ul-teal:    #129d9d;
 
   /* Single-view action-bar accents — one colour per action so the icons are
      distinguishable at a glance on a phone. Values match the saturated --ul-*
@@ -235,12 +234,12 @@ h1, h2, h3, .serif {
   text-underline-offset: 0.12em;
   text-decoration-skip-ink: none;
 }
-.nugget-content u[data-color="red"]    { text-decoration-color: var(--ul-red); }
+.nugget-content u[data-color="yellow"] { text-decoration-color: var(--ul-yellow); }
 .nugget-content u[data-color="blue"]   { text-decoration-color: var(--ul-blue); }
 .nugget-content u[data-color="green"]  { text-decoration-color: var(--ul-green); }
+.nugget-content u[data-color="pink"]   { text-decoration-color: var(--ul-pink); }
 .nugget-content u[data-color="orange"] { text-decoration-color: var(--ul-orange); }
 .nugget-content u[data-color="purple"] { text-decoration-color: var(--ul-purple); }
-.nugget-content u[data-color="teal"]   { text-decoration-color: var(--ul-teal); }
 
 /* Hidden markings — the single view puts .mark-hidden-<kind>-<colour> classes
    on its content wrapper (per-nugget viewing preference, toggled via the eye
@@ -261,12 +260,12 @@ h1, h2, h3, .serif {
   padding: 0;
   border-radius: 0;
 }
-.mark-hidden-ul-red    .nugget-content u[data-color="red"],
+.mark-hidden-ul-yellow .nugget-content u[data-color="yellow"],
 .mark-hidden-ul-blue   .nugget-content u[data-color="blue"],
 .mark-hidden-ul-green  .nugget-content u[data-color="green"],
+.mark-hidden-ul-pink   .nugget-content u[data-color="pink"],
 .mark-hidden-ul-orange .nugget-content u[data-color="orange"],
-.mark-hidden-ul-purple .nugget-content u[data-color="purple"],
-.mark-hidden-ul-teal   .nugget-content u[data-color="teal"] {
+.mark-hidden-ul-purple .nugget-content u[data-color="purple"] {
   text-decoration: none;
 }
 

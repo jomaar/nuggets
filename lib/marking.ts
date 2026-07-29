@@ -8,8 +8,11 @@
  * The `name` is what gets written to `data-color`; the actual colour lives in
  * the matching CSS variable in globals.css (`.nugget-content mark[data-color]` /
  * `.nugget-content u[data-color]` rules), so themes stay centrally re-tintable.
- * The two palettes are deliberately independent: underline hues are stronger
- * and need not mirror the highlight hues (a pastel wash is unreadable as a line).
+ * The two palettes share the same 6 names IN THE SAME ORDER on purpose — each
+ * index is a pair (e.g. "pink" highlight + "pink" underline are the same hue),
+ * so swatch pickers/legends that iterate both palettes line up visually. Only
+ * the intensity differs: underline tones are the more saturated member of the
+ * pair (a pastel wash is unreadable as a line).
  */
 
 /** Which of the two marking styles a colour belongs to. */
@@ -32,14 +35,18 @@ export const HIGHLIGHT_PALETTE: readonly MarkColor[] = [
   { name: 'purple', label: 'Lila', cssVar: 'var(--hl-purple)' },
 ] as const
 
-/** Underline (decoration) palette — saturated tones that read as a line. */
+/**
+ * Underline (decoration) palette — same 6 names and order as HIGHLIGHT_PALETTE
+ * so the two are always paired (same hue, underline = the more saturated
+ * member of the pair; a pastel wash is unreadable as a line).
+ */
 export const UNDERLINE_PALETTE: readonly MarkColor[] = [
-  { name: 'red', label: 'Rot', cssVar: 'var(--ul-red)' },
+  { name: 'yellow', label: 'Gelb', cssVar: 'var(--ul-yellow)' },
   { name: 'blue', label: 'Blau', cssVar: 'var(--ul-blue)' },
   { name: 'green', label: 'Grün', cssVar: 'var(--ul-green)' },
+  { name: 'pink', label: 'Pink', cssVar: 'var(--ul-pink)' },
   { name: 'orange', label: 'Orange', cssVar: 'var(--ul-orange)' },
   { name: 'purple', label: 'Lila', cssVar: 'var(--ul-purple)' },
-  { name: 'teal', label: 'Türkis', cssVar: 'var(--ul-teal)' },
 ] as const
 
 /**
