@@ -6,7 +6,7 @@ import DomainIcon from '@/components/DomainIcon'
 import { shortName } from '@/components/DomainChips'
 import { useOwner } from '@/components/OwnerContext'
 import { getLastDomainSlug, setLastDomainSlug } from '@/lib/lastDomain'
-import { Settings } from 'lucide-react'
+import { Settings, Footprints } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -96,37 +96,49 @@ export default function AllPage() {
               </p>
             )}
           </div>
-          {isOwner ? (
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            {/* Cross-nugget marks overview — public (marks are readable content
+                like the rest), reflects the currently active domain filter. */}
+            <Link
+              href={activeDomain ? `/denkspuren?domain=${activeDomain}` : '/denkspuren'}
+              className="inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-lg whitespace-nowrap"
+              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+            >
+              <Footprints size={13} strokeWidth={1.75} />
+              Denkspuren
+            </Link>
+            {isOwner ? (
+              <>
+                <a
+                  href="/admin"
+                  className="inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-lg whitespace-nowrap"
+                  style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+                >
+                  <Settings size={13} strokeWidth={1.75} />
+                  Prompts
+                </a>
+                <button
+                  onClick={async () => {
+                    await fetch('/api/auth/logout', { method: 'POST' })
+                    setIsOwner(false)
+                    setStats(null)
+                  }}
+                  className="text-xs px-3 py-1 rounded-lg"
+                  style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+                >
+                  Abmelden
+                </button>
+              </>
+            ) : (
               <a
-                href="/admin"
-                className="inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-lg whitespace-nowrap"
-                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-              >
-                <Settings size={13} strokeWidth={1.75} />
-                Prompts
-              </a>
-              <button
-                onClick={async () => {
-                  await fetch('/api/auth/logout', { method: 'POST' })
-                  setIsOwner(false)
-                  setStats(null)
-                }}
+                href="/login"
                 className="text-xs px-3 py-1 rounded-lg"
                 style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
               >
-                Abmelden
-              </button>
-            </div>
-          ) : (
-            <a
-              href="/login"
-              className="text-xs px-3 py-1 rounded-lg"
-              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-            >
-              Anmelden
-            </a>
-          )}
+                Anmelden
+              </a>
+            )}
+          </div>
         </div>
 
         {/* Domain filter */}
