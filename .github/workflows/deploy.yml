@@ -3,6 +3,14 @@ name: Deploy to Netcup
 on:
   push:
     branches: [main]
+  # Manual trigger (Actions → Deploy to Netcup → Run workflow).
+  #
+  # Needed because a push authenticated with the server's DEPLOY KEY lands the
+  # commit but registers no push event, so the `push` trigger above never fires
+  # and the deploy silently doesn't happen — the commit is on main while
+  # production keeps running the previous build. Whenever a push came from the
+  # server itself, start the deploy from here.
+  workflow_dispatch:
 
 jobs:
   deploy:
