@@ -1,16 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { isOwner } from '@/lib/auth'
+import { loadDomainAnnotations } from '@/lib/annotations'
 
 /** Hard cap on a comment's length — a margin note, not a second nugget. */
 const BODY_MAX = 10_000
 
-// GET /api/annotations?nuggetId=… — all comments of one nugget, oldest first
-// (document order is resolved client-side from the text-quote anchors).
+// GET /api/annotations
+//   ?nuggetId=… — all comments of one nugget, oldest first (document order is
+//                 resolved client-side from the text-quote anchors).
+//   ?domain=…   — the Denkspuren aggregation across a whole domain, newest
+//                 first, enriched with nugget titles and jump anchors. An empty
+//                 `domain` value means "every domain", matching /api/marks.
+//
+// Public read like /api/marks and /api/nuggets; writes below stay owner-only.
 export async function GET(req: NextRequest) {
-  const nuggetId = req.nextUrl.searchParams.get('nuggetId')
+  const params = req.nextUrl.searchParams
+  if (params.has('domain')) {
+    return NextResponse.json(await loadDomainAnnotations(params.get('domain')?.trim() || null))
+  }
+
+  const nuggetId = params.get('nuggetId')
   if (!nuggetId) {
-    return NextResponse.json({ error: 'nuggetId required' }, { status: 400 })
+    return NextResponse.json({ error: 'nuggetId or domain required' }, { status: 400 })
   }
   const annotations = await prisma.annotation.findMany({
     where: { nuggetId },

@@ -351,8 +351,15 @@ h1, h2, h3, .serif {
   transform: scale(1.18);
 }
 /* One swatch plus its optional mini name label (custom colour meanings —
-   lib/marking.ts MarkScheme). The label is kept no wider than the swatch so
-   six named cells still fit a narrow iPhone; the legend shows full names. */
+   lib/marking.ts MarkScheme). The label width is what caps the row, so it is
+   budgeted against the WORST case: the underline row in the reading view, which
+   carries 6 swatch cells plus the comment and share buttons.
+
+   At 2.2rem that row measures 6x35.2 + 2x26.4 (unlabelled action cells) +
+   7x7.2 gaps + 20.8 padding + 2 border = 337px, leaving ~38px on a 375px
+   iPhone. Do NOT widen further without redoing this sum — and note the labels
+   themselves are capped at 7 characters by the seeded templates (prisma/seed.ts)
+   precisely so they render in full here. The legend shows the long names. */
 .swatch-cell {
   display: flex;
   flex-direction: column;
@@ -362,7 +369,7 @@ h1, h2, h3, .serif {
 .swatch-label {
   font-size: 8.5px;
   line-height: 1.2;
-  max-width: 2rem;
+  max-width: 2.2rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

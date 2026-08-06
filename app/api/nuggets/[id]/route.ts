@@ -22,6 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       aiChatUrl:   true,
       tags:        true,
       markScheme:  true,
+      markTemplateId: true,
       domainId:    true,
       createdAt:   true,
       domain: true,
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json()
-  const { content, contentMarkdown, contentHtml: contentHtmlInput, title, sourceUrl, sourceLabel, aiChatUrl, tags, domainId, markScheme } = body
+  const { content, contentMarkdown, contentHtml: contentHtmlInput, title, sourceUrl, sourceLabel, aiChatUrl, tags, domainId, markScheme, markTemplateId } = body
 
   const data: Record<string, unknown> = {}
   // Canonical content is HTML (includes highlight <mark>s); Markdown is derived for the AI.
@@ -66,6 +67,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!scheme) return NextResponse.json({ error: 'invalid markScheme' }, { status: 400 })
     data.markScheme = JSON.stringify(scheme)
   }
+  // Which template the scheme came from — labels the popup header and supplies
+  // its long-form glossary. Empty string / null clears the reference; marks keep
+  // rendering from `markScheme` either way, so this is purely descriptive.
+  if (markTemplateId !== undefined) data.markTemplateId = markTemplateId || null
 
   const nugget = await prisma.nugget.update({
     where: { id },

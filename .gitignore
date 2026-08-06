@@ -3,7 +3,11 @@ node_modules/
 .next/
 .env
 *.db
-*.db.bak.*
+# Timestamped DB backups (prod.db.bak-2026…, prod.db.backup-2026…) — the old
+# `*.db.bak.*` pattern needed a trailing dot and let these through UNIGNORED,
+# i.e. one `git add -A` away from committing the whole database.
+*.db.bak*
+*.db.backup*
 *.db-journal
 *.tsbuildinfo
 

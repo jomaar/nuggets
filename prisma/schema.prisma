@@ -41,20 +41,52 @@ model Nugget {
   aiChatUrl       String?
   tags            String   @default("[]")
   markScheme      String   @default("{}") // per-nugget colour meanings: JSON { "hl:yellow": "These", … } (see lib/marking.ts)
+  markTemplateId  String? // which MarkTemplate the scheme came from; only labels the popup header + glossary
   domainId        String?
   aiInputTokens   Int      @default(0)
   aiOutputTokens  Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  domain      Domain?         @relation(fields: [domainId], references: [id])
-  reviews     Review[]
-  concepts    NuggetConcept[]
-  bookmarks   Bookmark[]
-  annotations Annotation[]
-  shortLinks  ShortLink[]
+  domain       Domain?         @relation(fields: [domainId], references: [id])
+  markTemplate MarkTemplate?   @relation(fields: [markTemplateId], references: [id], onDelete: SetNull)
+  reviews      Review[]
+  concepts     NuggetConcept[]
+  bookmarks    Bookmark[]
+  annotations  Annotation[]
+  shortLinks   ShortLink[]
 
+  @@index([markTemplateId])
   @@map("nuggets")
+}
+
+/**
+ * A reusable naming scheme for the 12 (style, colour) marking slots.
+ *
+ * The colour→dimension frame itself is fixed in code (MARK_DIMENSIONS in
+ * lib/marking.ts); a template only specializes the LABELS inside that frame for
+ * a text genre ("Exegese", "Position", "Bibeltext"). Applying one copies
+ * `scheme` into `Nugget.markScheme` — so nothing downstream needs to resolve a
+ * template to render marks; the reference is kept only to show the template's
+ * name and its long-form glossary in the markings popup.
+ *
+ * `scheme`/`glossary` are JSON strings keyed by markKey ("hl:yellow"), the same
+ * storage pattern as `Nugget.tags` and `Nugget.markScheme`.
+ */
+model MarkTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String   @default("")
+  scheme      String // JSON Record<markKey, string> — short labels (≤ 6 chars, swatch width)
+  glossary    String   @default("{}") // JSON Record<markKey, string> — long explanations
+  builtIn     Boolean  @default(false) // seeded templates: editable but not deletable
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  nuggets Nugget[]
+
+  @@map("mark_templates")
 }
 
 /**

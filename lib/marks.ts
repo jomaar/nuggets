@@ -10,6 +10,7 @@ import {
   markLabel,
   hasMarkLabel,
   parseMarkScheme,
+  markDimension,
 } from '@/lib/marking'
 import type { AnchorToken } from '@/lib/bookmarkLink'
 
@@ -33,6 +34,79 @@ const MAX_MARKS = 2000
 /** Collapse any run of whitespace to a single space (mirrors the reading view's squashWhitespace). */
 function squashWhitespace(text: string): string {
   return text.replace(/\s+/g, ' ')
+}
+
+/**
+ * The document's plain text plus, per marking element, where its text starts and
+ * ends within that string. Built in ONE walk so anchors and the merge test can
+ * be answered by slicing instead of by serializing DOM ranges.
+ *
+ * Why this exists: the obvious implementation asks jsdom for a Range from the
+ * document start to each mark and calls `toString()`. That serializes the WHOLE
+ * document once per marking — O(marks x document) — which measured 37 s for one
+ * real domain (45 nuggets, 1.4 MB of HTML, single documents up to 10.5 s). The
+ * offsets below make it a single linear pass.
+ */
+interface TextIndex {
+  /** Concatenated text of every text node, in document order — what Range.toString() would yield. */
+  full: string
+  /** Element -> [startOffset, endOffset) within `full`. */
+  bounds: Map<Element, [number, number]>
+}
+
+function buildTextIndex(root: Element, marks: Element[]): TextIndex {
+  const wanted = new Set(marks)
+  const bounds = new Map<Element, [number, number]>()
+  const parts: string[] = []
+  let offset = 0
+
+  // Iterative walk (a deeply nested document must not blow the stack).
+  const walk = (node: Node) => {
+    if (node.nodeType === 3 /* TEXT_NODE */) {
+      const text = node.nodeValue ?? ''
+      parts.push(text)
+      offset += text.length
+      return
+    }
+    const isMark = node.nodeType === 1 && wanted.has(node as Element)
+    const start = offset
+    for (let child = node.firstChild; child; child = child.nextSibling) walk(child)
+    // Recorded on the way out so nested markings (an hl and a ul over the same
+    // text nest in the HTML) each get their own true span.
+    if (isMark) bounds.set(node as Element, [start, offset])
+  }
+  walk(root)
+
+  return { full: parts.join(''), bounds }
+}
+
+/**
+ * Last `len` characters of `raw` after whitespace-squashing, without squashing
+ * all of `raw`.
+ *
+ * Exactness: squashing only ever removes characters, and slicing a window off
+ * the FRONT can only disturb the front of the result (a run of whitespace cut in
+ * half yields one leading space either way). So once a window squashes to more
+ * than `len` characters, its last `len` are identical to squashing the whole
+ * string and taking the last `len`. The loop widens until that holds.
+ */
+function squashedTail(raw: string, len: number): string {
+  let window = Math.min(raw.length, len * 8)
+  for (;;) {
+    const squashed = squashWhitespace(raw.slice(raw.length - window))
+    if (squashed.length > len || window >= raw.length) return squashed.slice(-len)
+    window = Math.min(raw.length, window * 4)
+  }
+}
+
+/** First `len` characters after squashing — the mirror image of squashedTail. */
+function squashedHead(raw: string, len: number): string {
+  let window = Math.min(raw.length, len * 8)
+  for (;;) {
+    const squashed = squashWhitespace(raw.slice(0, window))
+    if (squashed.length > len || window >= raw.length) return squashed.slice(0, len)
+    window = Math.min(raw.length, window * 4)
+  }
 }
 
 /** One extracted, merged marking within a single nugget's contentHtml. */
@@ -60,6 +134,9 @@ export function extractMarks(contentHtml: string): ExtractedMark[] {
     const document = dom.window.document
     const root = document.body
     const nodes = Array.from(root.querySelectorAll(MARK_SELECTOR))
+    // Offsets for every marking, computed once; the merge test and the anchor
+    // context below are then plain string slices rather than DOM range walks.
+    const index = buildTextIndex(root, nodes)
 
     interface Group { text: string; color: string; kind: MarkKind; firstEl: Element; lastEl: Element }
     const groups: Group[] = []
@@ -72,10 +149,13 @@ export function extractMarks(contentHtml: string): ExtractedMark[] {
 
       let contiguous = false
       if (prev && prev.color === color && prev.kind === kind) {
-        const between = document.createRange()
-        between.setStartAfter(prev.lastEl)
-        between.setEndBefore(el)
-        contiguous = between.toString().replace(/\s+/g, '') === ''
+        // Same question as before ("is there only whitespace between them?"),
+        // answered from the offset index instead of a serialized Range.
+        const prevEnd = index.bounds.get(prev.lastEl)?.[1]
+        const elStart = index.bounds.get(el)?.[0]
+        if (prevEnd !== undefined && elStart !== undefined) {
+          contiguous = index.full.slice(prevEnd, elStart).replace(/\s+/g, '') === ''
+        }
       }
 
       if (prev && contiguous) {
@@ -95,16 +175,11 @@ export function extractMarks(contentHtml: string): ExtractedMark[] {
       // merged multi-paragraph quote spans several text nodes and would never
       // resolve later anyway, since findRanges/resolveAnchor only match within
       // a single text node (documented limitation; falls back to "jump to top").
-      const before = document.createRange()
-      before.setStart(root, 0)
-      before.setEndBefore(group.firstEl)
-      const after = document.createRange()
-      after.setStartAfter(group.firstEl)
-      after.setEnd(root, root.childNodes.length)
+      const [start, end] = index.bounds.get(group.firstEl) ?? [0, 0]
       const anchor: AnchorToken = {
         quote: squashWhitespace(group.firstEl.textContent ?? '').trim(),
-        prefix: squashWhitespace(before.toString()).slice(-ANCHOR_CONTEXT_LEN),
-        suffix: squashWhitespace(after.toString()).slice(0, ANCHOR_CONTEXT_LEN),
+        prefix: squashedTail(index.full.slice(0, start), ANCHOR_CONTEXT_LEN),
+        suffix: squashedHead(index.full.slice(end), ANCHOR_CONTEXT_LEN),
       }
 
       const truncated = group.text.length > MARK_TEXT_MAX
@@ -135,6 +210,8 @@ export interface DomainMark extends ExtractedMark {
   nuggetTitle: string
   label: string
   hasCustomLabel: boolean
+  /** The colour's fixed semantic dimension ("Kern", "Grund", …) — see lib/marking.ts. */
+  dimension: string
 }
 
 /** A (kind, colour) bucket — the primary facet (see lib/marks.ts's facet-nuance doc below). */
@@ -162,11 +239,32 @@ export interface MeaningFacet {
   custom: boolean
 }
 
+/**
+ * A bucket per semantic dimension — the colour's fixed meaning, merging a hue's
+ * highlight and underline (statement level + language level of the same idea).
+ *
+ * This is the only bucketing that is BOTH meaningful and total: unlike
+ * `meanings` it needs no per-nugget scheme, and unlike `facets` it says
+ * something. It works because the dimension is a property of the COLOUR
+ * (MARK_DIMENSIONS in lib/marking.ts), not of any applied template.
+ */
+export interface DimensionFacet {
+  /** The dimension's colour, e.g. "yellow" — also the bucket key. */
+  color: string
+  /** Dimension name, e.g. "Kern". */
+  name: string
+  count: number
+  nuggetCount: number
+  /** The (kind, colour) keys that fed this bucket, e.g. ["hl:yellow", "ul:yellow"]. */
+  keys: string[]
+}
+
 export interface DomainMarks {
   domain: { id: string; name: string; slug: string; icon: string | null; color: string | null } | null
   marks: DomainMark[]
   facets: MarkFacet[]
   meanings: MeaningFacet[]
+  dimensions: DimensionFacet[]
   stats: { nuggetsScanned: number; nuggetsWithMarks: number; totalMarks: number; truncated: boolean }
 }
 
@@ -220,6 +318,7 @@ export function collectDomainMarks(sources: NuggetMarkSource[]): Omit<DomainMark
         nuggetTitle,
         label: markLabel(scheme, mark.kind, mark.color),
         hasCustomLabel: hasMarkLabel(scheme, mark.kind, mark.color),
+        dimension: markDimension(mark.color).name,
       })
     }
   }
@@ -292,10 +391,35 @@ export function collectDomainMarks(sources: NuggetMarkSource[]): Omit<DomainMark
   })
   meanings.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
 
+  // --- dimensions: bucket by colour, merging highlight + underline ------------
+  const dimensionMap = new Map<string, { nuggetIds: Set<string>; keys: Set<string>; count: number }>()
+  for (const mark of marks) {
+    let bucket = dimensionMap.get(mark.color)
+    if (!bucket) {
+      bucket = { nuggetIds: new Set(), keys: new Set(), count: 0 }
+      dimensionMap.set(mark.color, bucket)
+    }
+    bucket.count += 1
+    bucket.nuggetIds.add(mark.nuggetId)
+    bucket.keys.add(mark.key)
+  }
+
+  const dimensions: DimensionFacet[] = Array.from(dimensionMap.entries()).map(([color, bucket]) => ({
+    color,
+    name: markDimension(color).name,
+    count: bucket.count,
+    nuggetCount: bucket.nuggetIds.size,
+    keys: Array.from(bucket.keys),
+  }))
+  // Palette order, not by count: the dimension bar must read in the same order
+  // as the swatch rows the reader already knows.
+  dimensions.sort((a, b) => paletteIndex('hl', a.color) - paletteIndex('hl', b.color))
+
   return {
     marks,
     facets,
     meanings,
+    dimensions,
     stats: {
       nuggetsScanned: sources.length,
       nuggetsWithMarks,

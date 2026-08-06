@@ -25,13 +25,21 @@ export interface MarkColor {
   cssVar: string
 }
 
-/** Highlight (background) palette — pastel, Kindle-style washes. */
+/**
+ * Highlight (background) palette — pastel, Kindle-style washes.
+ *
+ * ORDER IS SEMANTIC, not arbitrary: it follows the dimension spectrum below
+ * (Kern · Grund · Gegen · Folge · Aufbau · Ich), which runs warm → cool and
+ * deliberately puts the opposing pair pink/green side by side. Reordering this
+ * array only changes DISPLAY order (swatch rows, legend, Denkspuren facet bar)
+ * — `name` stays the stored `data-color` value, so there is nothing to migrate.
+ */
 export const HIGHLIGHT_PALETTE: readonly MarkColor[] = [
   { name: 'yellow', label: 'Gelb', cssVar: 'var(--hl-yellow)' },
-  { name: 'blue', label: 'Blau', cssVar: 'var(--hl-blue)' },
-  { name: 'green', label: 'Grün', cssVar: 'var(--hl-green)' },
-  { name: 'pink', label: 'Pink', cssVar: 'var(--hl-pink)' },
   { name: 'orange', label: 'Orange', cssVar: 'var(--hl-orange)' },
+  { name: 'pink', label: 'Pink', cssVar: 'var(--hl-pink)' },
+  { name: 'green', label: 'Grün', cssVar: 'var(--hl-green)' },
+  { name: 'blue', label: 'Blau', cssVar: 'var(--hl-blue)' },
   { name: 'purple', label: 'Lila', cssVar: 'var(--hl-purple)' },
 ] as const
 
@@ -42,10 +50,10 @@ export const HIGHLIGHT_PALETTE: readonly MarkColor[] = [
  */
 export const UNDERLINE_PALETTE: readonly MarkColor[] = [
   { name: 'yellow', label: 'Gelb', cssVar: 'var(--ul-yellow)' },
-  { name: 'blue', label: 'Blau', cssVar: 'var(--ul-blue)' },
-  { name: 'green', label: 'Grün', cssVar: 'var(--ul-green)' },
-  { name: 'pink', label: 'Pink', cssVar: 'var(--ul-pink)' },
   { name: 'orange', label: 'Orange', cssVar: 'var(--ul-orange)' },
+  { name: 'pink', label: 'Pink', cssVar: 'var(--ul-pink)' },
+  { name: 'green', label: 'Grün', cssVar: 'var(--ul-green)' },
+  { name: 'blue', label: 'Blau', cssVar: 'var(--ul-blue)' },
   { name: 'purple', label: 'Lila', cssVar: 'var(--ul-purple)' },
 ] as const
 
@@ -56,6 +64,94 @@ export const UNDERLINE_PALETTE: readonly MarkColor[] = [
 export function markColorVar(kind: MarkKind, name: string): string {
   const palette = kind === 'hl' ? HIGHLIGHT_PALETTE : UNDERLINE_PALETTE
   return (palette.find(c => c.name === name) ?? palette[0]).cssVar
+}
+
+// --- Semantic dimensions (colour → meaning) ----------------------------------
+// The one rule that makes markings comparable across the whole corpus:
+//
+//   COLOUR carries the dimension, STYLE carries the level.
+//
+// Highlights mark STATEMENTS (what the text claims), underlines mark LANGUAGE
+// (how the text works) — so a colour's highlight and underline are the same
+// idea one level apart. Derived from a real corpus analysis: the average span
+// length separates the two styles cleanly (underlines 2.8–5.6 words: connectors,
+// imperatives, lexemes; highlights 7.4–14.9 words: theses, poles, own thoughts).
+//
+// The dimension depends ONLY on the colour, never on the applied template. That
+// makes it a TOTAL function over every mark in the app — which is exactly what
+// the Denkspuren "Nach Dimension" facet needs, with zero configuration and no
+// template lookup. Templates (see `MarkTemplate`) only specialize the LABELS
+// inside this fixed frame.
+
+/** One colour's semantic dimension, with a gloss per marking style. */
+export interface MarkDimension {
+  /** The colour this dimension belongs to (= `data-color` value). */
+  color: string
+  /** Short dimension name, e.g. "Kern". */
+  name: string
+  /** What a highlight in this colour means (statement level). */
+  hlGloss: string
+  /** What an underline in this colour means (language level). */
+  ulGloss: string
+}
+
+/**
+ * The six dimensions, in palette order.
+ *
+ * Mnemonic: Gelb = worum es geht · Orange = woher es kommt · Pink = wogegen es
+ * steht · Grün = was folgt · Blau = wie es gebaut ist · Lila = was ich denke.
+ */
+export const MARK_DIMENSIONS: readonly MarkDimension[] = [
+  {
+    color: 'yellow',
+    name: 'Kern',
+    hlGloss: 'Die zentrale Aussage — worum es in diesem Abschnitt geht.',
+    ulGloss: 'Das zentrale Wort — Lexem, Leitwort, Wortfeld.',
+  },
+  {
+    color: 'orange',
+    name: 'Grund',
+    hlGloss: 'Worauf es sich stützt — Beleg, Parallelstelle, Wortbedeutung.',
+    ulGloss: 'Die Verweis- oder Zitatformel, die den Beleg einführt.',
+  },
+  {
+    color: 'pink',
+    name: 'Gegen',
+    hlGloss: 'Was verneint oder abgewehrt wird — Abgrenzung, Einwand, Warnung.',
+    ulGloss: 'Die Negation im Wortlaut — οὐ, μή, ἀλλά, „nicht … sondern".',
+  },
+  {
+    color: 'green',
+    name: 'Folge',
+    hlGloss: 'Was gilt oder zugesagt wird — der Positiv-Pol, der Indikativ.',
+    ulGloss: 'Der Imperativ oder die Folgerung — was daraus zu tun ist.',
+  },
+  {
+    color: 'blue',
+    name: 'Aufbau',
+    hlGloss: 'Die Denkbewegung — Gliederung, Argumentationsgang, Blaupause.',
+    ulGloss: 'Der Konnektor — γάρ, οὖν, δέ, „deshalb", „wenn".',
+  },
+  {
+    color: 'purple',
+    name: 'Ich',
+    hlGloss: 'Mein eigener Gedanke — Hypothese, Bewertung, Beobachtung.',
+    ulGloss: 'Meine offene Frage — unklar, zu prüfen.',
+  },
+] as const
+
+/**
+ * The dimension a colour carries. Unknown/legacy colours fall back to the first
+ * dimension, mirroring `markColorVar`'s tolerance.
+ */
+export function markDimension(color: string): MarkDimension {
+  return MARK_DIMENSIONS.find(d => d.color === color) ?? MARK_DIMENSIONS[0]
+}
+
+/** The dimension's gloss for a given marking style. */
+export function markGloss(kind: MarkKind, color: string): string {
+  const dimension = markDimension(color)
+  return kind === 'hl' ? dimension.hlGloss : dimension.ulGloss
 }
 
 // --- Named colour schemes (per nugget) ---------------------------------------

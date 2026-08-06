@@ -15,14 +15,77 @@ import { recordRecentNugget, removeRecentNugget, updateRecentScroll, getRecentSc
 import {
   HIGHLIGHT_PALETTE, UNDERLINE_PALETTE, MARK_LABEL_MAX,
   markColorVar, markKey, markLabel, hasMarkLabel, parseMarkScheme,
+  markDimension, markGloss,
   type MarkKind, type MarkScheme,
 } from '@/lib/marking'
+import type { MarkTemplateView } from '@/lib/markTemplates'
 import { useOwner } from '@/components/OwnerContext'
 import {
   getNuggetFontSize, setNuggetFontSize,
   MIN_FONT_SIZE, MAX_FONT_SIZE, DEFAULT_FONT_SIZE, FONT_SIZE_STEP,
 } from '@/lib/nuggetFontSize'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer, Pencil, Trash2, ArrowLeft, MessageSquareText, ALargeSmall, Eye, EyeOff, Plus } from 'lucide-react'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer, Pencil, Trash2, ArrowLeft, MessageSquareText, ALargeSmall, Eye, EyeOff, Plus, BookOpen, Save } from 'lucide-react'
+
+/**
+ * A scheme the legend can adopt: either a curated template or another nugget's
+ * scheme. `templateId` is set only for the former — it is what the popup header
+ * shows and what unlocks the template's long-form glossary.
+ */
+interface ImportSource {
+  id: string
+  title: string
+  scheme: MarkScheme
+  templateId: string | null
+  description?: string
+}
+
+/**
+ * One pickable scheme in the import dialog — a curated template or another
+ * nugget. Shared so both sections look identical; the only visible difference
+ * is the optional description line a template carries.
+ */
+function SchemeSourceCard({ source, onPick }: { source: ImportSource; onPick: () => void }) {
+  return (
+    <button
+      onClick={onPick}
+      className="text-left px-3 py-2.5 rounded-lg flex flex-col gap-1.5 transition-all active:scale-[0.99]"
+      style={{ background: 'var(--warm)' }}
+    >
+      <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+        {source.title}
+      </span>
+      {source.description && (
+        <span className="text-xs" style={{ color: 'var(--muted)' }}>{source.description}</span>
+      )}
+      {/* Mini preview: every named colour as swatch + name. */}
+      <span className="flex flex-wrap gap-x-3 gap-y-1">
+        {Object.entries(source.scheme).map(([key, label]) => {
+          const [kind, color] = key.split(':') as [MarkKind, string]
+          return (
+            <span key={key} className="inline-flex items-center gap-1.5 text-xs" style={{ color: 'var(--muted)' }}>
+              <span
+                className="flex-shrink-0"
+                style={kind === 'hl'
+                  ? {
+                      width: 12, height: 12, borderRadius: '50%',
+                      background: markColorVar('hl', color),
+                      border: '1px solid rgba(0,0,0,0.18)',
+                    }
+                  : {
+                      width: 12, height: 12, borderRadius: 4,
+                      background: 'var(--surface)',
+                      border: '1px solid rgba(0,0,0,0.18)',
+                      boxShadow: `inset 0 -3px 0 ${markColorVar('ul', color)}`,
+                    }}
+              />
+              {label}
+            </span>
+          )
+        })}
+      </span>
+    </button>
+  )
+}
 
 interface Domain {
   id: string
@@ -59,6 +122,7 @@ interface Nugget {
   aiChatUrl: string | null
   tags: string
   markScheme: string
+  markTemplateId: string | null
   domain: Domain | null
   concepts: NuggetConceptEntry[]
   createdAt: string
@@ -494,9 +558,23 @@ export default function NuggetDetailPage() {
   const [scheme, setScheme]           = useState<MarkScheme>({})
   // Scheme import ("Schema übernehmen von …"): dialog open, candidate nuggets
   // (null = loading), and the picked source while the replace/merge question shows.
+  // A source is either a curated MarkTemplate or another nugget — both funnel
+  // through the same pick/replace/merge path, so `templateId` rides along and is
+  // simply null for a nugget source.
   const [importOpen, setImportOpen]       = useState(false)
-  const [importSources, setImportSources] = useState<{ id: string; title: string; scheme: MarkScheme }[] | null>(null)
-  const [importSource, setImportSource]   = useState<{ id: string; title: string; scheme: MarkScheme } | null>(null)
+  const [importSources, setImportSources] = useState<ImportSource[] | null>(null)
+  const [importSource, setImportSource]   = useState<ImportSource | null>(null)
+  // Curated templates (null = not loaded yet). Also resolves the header pill and
+  // the glossary texts, so it is fetched on mount, not only when the dialog opens.
+  const [templates, setTemplates]         = useState<MarkTemplateView[] | null>(null)
+  const [templateId, setTemplateId]       = useState<string | null>(null)
+  // Glossary panel inside the legend: shows each row's long-form meaning while
+  // the colour system is still being learned. Pure display state.
+  const [glossaryOpen, setGlossaryOpen]   = useState(false)
+  // "Als Vorlage speichern": name prompt open + in-flight/error feedback.
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false)
+  const [templateName, setTemplateName]   = useState('')
+  const [templateError, setTemplateError] = useState('')
   // Manual concept linking: force a connection the AI extraction missed (or
   // remove one), without waiting for a re-extraction. Mirrors an
   // `existingConcepts` entry from lib/concepts.ts — id + required thesis-note.
@@ -784,8 +862,22 @@ export default function NuggetDetailPage() {
 
   // Seed the live colour-meaning scheme whenever a (new) nugget arrives.
   useEffect(() => {
-    if (nugget) setScheme(parseMarkScheme(nugget.markScheme))
+    if (nugget) {
+      setScheme(parseMarkScheme(nugget.markScheme))
+      setTemplateId(nugget.markTemplateId)
+    }
   }, [nugget])
+
+  // Templates back the header pill and the glossary texts, not just the picker
+  // dialog — so they load once on mount rather than on first dialog open.
+  useEffect(() => {
+    fetch('/api/mark-templates')
+      .then(r => (r.ok ? r.json() : []))
+      .then(setTemplates)
+      .catch(() => setTemplates([]))
+  }, [])
+
+  const activeTemplate = templates?.find(t => t.id === templateId) ?? null
 
   /**
    * Rename a (style, colour) combination in the legend: update the live scheme
@@ -809,7 +901,8 @@ export default function NuggetDetailPage() {
 
   /**
    * Open the scheme-import dialog and (re)load the candidates: every other
-   * nugget with at least one named colour (list GET ships markScheme).
+   * nugget with at least one named colour (list GET ships markScheme). Curated
+   * templates are rendered from `templates` state and listed above these.
    */
   const openImport = () => {
     setImportOpen(true)
@@ -819,29 +912,61 @@ export default function NuggetDetailPage() {
       .then(r => (r.ok ? r.json() : []))
       .then((rows: { id: string; title: string; markScheme?: string }[]) =>
         setImportSources(rows
-          .map(r => ({ id: r.id, title: r.title, scheme: parseMarkScheme(r.markScheme) }))
+          .map(r => ({ id: r.id, title: r.title, scheme: parseMarkScheme(r.markScheme), templateId: null }))
           .filter(r => r.id !== id && Object.keys(r.scheme).length > 0)))
       .catch(() => setImportSources([]))
   }
 
   /**
-   * A source nugget was picked. With no local names the import is unambiguous
-   * (plain copy); otherwise hold the source and ask replace vs. merge.
+   * A source was picked (template or nugget). With no local names the import is
+   * unambiguous (plain copy); otherwise hold the source and ask replace vs. merge.
    */
-  const pickImportSource = (source: { id: string; title: string; scheme: MarkScheme }) => {
-    if (Object.keys(scheme).length === 0) applyImport(source.scheme)
+  const pickImportSource = (source: ImportSource) => {
+    if (Object.keys(scheme).length === 0) applyImport(source.scheme, source.templateId)
     else setImportSource(source)
   }
 
-  /** Persist an imported scheme — metadata copy only, contentHtml untouched. */
-  const applyImport = async (next: MarkScheme) => {
+  /**
+   * Persist an imported scheme — metadata copy only, contentHtml untouched.
+   * `nextTemplateId` records which template the labels came from (null for a
+   * nugget source), which is what the popup header and glossary key off.
+   */
+  const applyImport = async (next: MarkScheme, nextTemplateId: string | null) => {
     setImportOpen(false)
     setScheme(next)
+    setTemplateId(nextTemplateId)
     await fetch(`/api/nuggets/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ markScheme: next }),
+      body: JSON.stringify({ markScheme: next, markTemplateId: nextTemplateId }),
     })
+  }
+
+  /** Save this nugget's current legend as a new reusable template. */
+  const saveAsTemplate = async () => {
+    const name = templateName.trim()
+    if (!name) return
+    setTemplateError('')
+    const res = await fetch('/api/mark-templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, scheme }),
+    })
+    if (!res.ok) {
+      setTemplateError(res.status === 409 ? 'Dieser Name ist schon vergeben.' : 'Speichern fehlgeschlagen.')
+      return
+    }
+    const created: MarkTemplateView = await res.json()
+    setTemplates(prev => [...(prev ?? []), created])
+    // Link the nugget to the template it just defined, so the header names it.
+    setTemplateId(created.id)
+    await fetch(`/api/nuggets/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markTemplateId: created.id }),
+    })
+    setSaveTemplateOpen(false)
+    setTemplateName('')
   }
 
   /**
@@ -2119,9 +2244,35 @@ export default function NuggetDetailPage() {
               {(legendRows.length > 0 || isOwner) && (
                 <div className="flex flex-col gap-1.5 pb-2 mb-1" style={{ borderBottom: '1px solid var(--border)' }}>
                   <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-xs tracking-widest uppercase flex-1" style={{ color: 'var(--muted)' }}>
+                    <h3 className="text-xs tracking-widest uppercase flex-shrink-0" style={{ color: 'var(--muted)' }}>
                       Legende
                     </h3>
+                    {/* Which template these labels came from — the colour system
+                        is only learnable if the reader can see which one is in
+                        force. Blank when the scheme is hand-made. */}
+                    <span
+                      className="text-xs px-2 py-0.5 rounded-full flex-1 min-w-0 truncate"
+                      style={activeTemplate
+                        ? { color: 'var(--accent)', background: 'var(--warm)' }
+                        : { color: 'var(--muted)' }}
+                      title={activeTemplate?.description || undefined}
+                    >
+                      {activeTemplate ? activeTemplate.name : 'Keine Vorlage'}
+                    </span>
+                    {/* Glossary — expands every legend row with its dimension and
+                        long-form meaning. Any reader; it is a reading aid. */}
+                    <button
+                      onClick={() => setGlossaryOpen(o => !o)}
+                      aria-pressed={glossaryOpen}
+                      aria-label="Bedeutungen erklären"
+                      title={glossaryOpen ? 'Erklärungen ausblenden' : 'Was bedeuten die Farben?'}
+                      className="flex items-center justify-center p-1.5 rounded-lg flex-shrink-0"
+                      style={glossaryOpen
+                        ? { color: 'var(--surface)', background: 'var(--accent)' }
+                        : { color: 'var(--muted)', border: '1px solid var(--border)' }}
+                    >
+                      <BookOpen size={15} />
+                    </button>
                     {/* Master visibility toggle — hide/show ALL marking styles
                         at once (viewing preference, available to any reader).
                         Disabled while "Nur Text" hides everything anyway. */}
@@ -2140,26 +2291,75 @@ export default function NuggetDetailPage() {
                         {allLegendHidden ? <EyeOff size={15} /> : <Eye size={15} />}
                       </button>
                     )}
-                    {/* Scheme import — copy another nugget's colour meanings here. */}
+                    {/* Save the current legend as a reusable template. */}
+                    {isOwner && Object.keys(scheme).length > 0 && (
+                      <button
+                        onClick={() => { setSaveTemplateOpen(true); setTemplateError(''); setTemplateName('') }}
+                        aria-label="Als Vorlage speichern"
+                        title="Als Vorlage speichern"
+                        className="flex items-center justify-center p-1.5 rounded-lg flex-shrink-0"
+                        style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+                      >
+                        <Save size={15} />
+                      </button>
+                    )}
+                    {/* Scheme import — adopt a template or another nugget's meanings. */}
                     {isOwner && (
                       <button
                         onClick={openImport}
                         className="text-xs px-2.5 py-1 rounded-full flex-shrink-0"
                         style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
                       >
-                        Übernehmen von …
+                        Vorlage …
                       </button>
                     )}
                   </div>
+                  {/* Name prompt for "Als Vorlage speichern". */}
+                  {isOwner && saveTemplateOpen && (
+                    <div className="flex flex-col gap-1.5 p-2 rounded-lg" style={{ background: 'var(--warm)' }}>
+                      <div className="flex items-center gap-2">
+                        <input
+                          autoFocus
+                          value={templateName}
+                          onChange={e => setTemplateName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveAsTemplate() }}
+                          placeholder="Name der Vorlage"
+                          maxLength={40}
+                          className="flex-1 min-w-0 text-sm px-2.5 py-1.5 rounded-lg outline-none"
+                          style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                        />
+                        <button
+                          onClick={saveAsTemplate}
+                          disabled={!templateName.trim()}
+                          className="text-xs px-2.5 py-1.5 rounded-full flex-shrink-0 disabled:opacity-40"
+                          style={{ color: 'var(--surface)', background: 'var(--accent)' }}
+                        >
+                          Speichern
+                        </button>
+                        <button
+                          onClick={() => setSaveTemplateOpen(false)}
+                          aria-label="Abbrechen"
+                          className="flex items-center justify-center p-1.5 rounded-lg flex-shrink-0"
+                          style={{ color: 'var(--muted)' }}
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+                      {templateError && (
+                        <p className="text-xs" style={{ color: 'var(--act-delete)' }}>{templateError}</p>
+                      )}
+                    </div>
+                  )}
                   {legendRows.map(r => {
                     const rowHidden = hiddenMarks.includes(markKey(r.kind, r.name))
                     return (
                     <div
                       key={markKey(r.kind, r.name)}
-                      className="flex items-center gap-2.5"
+                      className="flex flex-col gap-1"
                       // Dim the whole row while its marking style is hidden.
                       style={{ opacity: rowHidden ? 0.45 : 1 }}
                     >
+                    <div className="flex items-center gap-2.5">
                       <span
                         className="flex-shrink-0"
                         style={r.kind === 'hl'
@@ -2206,6 +2406,18 @@ export default function NuggetDetailPage() {
                       >
                         {rowHidden ? <EyeOff size={15} /> : <Eye size={15} />}
                       </button>
+                    </div>
+                    {/* Glossary line: the colour's fixed dimension plus what it
+                        means here. The template's own wording wins; without one
+                        the built-in dimension gloss still explains the colour,
+                        so the panel is never empty. */}
+                    {glossaryOpen && (
+                      <p className="text-xs pl-[30px] pr-1 leading-snug" style={{ color: 'var(--muted)' }}>
+                        <span style={{ color: 'var(--accent)' }}>{markDimension(r.name).name}</span>
+                        {' · '}
+                        {activeTemplate?.glossary[markKey(r.kind, r.name)] ?? markGloss(r.kind, r.name)}
+                      </p>
+                    )}
                     </div>
                     )
                   })}
@@ -2314,15 +2526,17 @@ export default function NuggetDetailPage() {
                     „{importSource.title}“ übernommen werden?
                   </p>
                   <button
-                    onClick={() => applyImport(importSource.scheme)}
+                    onClick={() => applyImport(importSource.scheme, importSource.templateId)}
                     className="text-left text-sm px-3 py-2.5 rounded-lg transition-all active:scale-[0.99]"
                     style={{ background: 'var(--accent)', color: 'white' }}
                   >
-                    Ersetzen — Schema des Quell-Nuggets 1:1 übernehmen
+                    Ersetzen — Schema der Quelle 1:1 übernehmen
                   </button>
                   <button
                     // Merge: local names win; the source only fills unnamed colours.
-                    onClick={() => applyImport({ ...importSource.scheme, ...scheme })}
+                    // This is what keeps a nugget-specific meaning like
+                    // "Leiden-Bedrängnis-Schmach-Tod" alive when a template lands.
+                    onClick={() => applyImport({ ...importSource.scheme, ...scheme }, importSource.templateId)}
                     className="text-left text-sm px-3 py-2.5 rounded-lg transition-all active:scale-[0.99]"
                     style={{ color: 'var(--accent)', border: '1px solid var(--accent)' }}
                   >
@@ -2336,57 +2550,39 @@ export default function NuggetDetailPage() {
                     ← Zurück zur Auswahl
                   </button>
                 </>
-              ) : importSources === null ? (
-                <p className="text-sm text-center py-6" style={{ color: 'var(--muted)' }}>
-                  Lädt…
-                </p>
-              ) : importSources.length === 0 ? (
-                <p className="text-sm text-center py-6" style={{ color: 'var(--muted)' }}>
-                  Kein anderes Nugget hat benannte Farben.
-                </p>
               ) : (
-                importSources.map(src => (
-                  <button
-                    key={src.id}
-                    onClick={() => pickImportSource(src)}
-                    className="text-left px-3 py-2.5 rounded-lg flex flex-col gap-1.5 transition-all active:scale-[0.99]"
-                    style={{ background: 'var(--warm)' }}
-                  >
-                    <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
-                      {src.title}
-                    </span>
-                    {/* Mini preview: every named colour as swatch + name. */}
-                    <span className="flex flex-wrap gap-x-3 gap-y-1">
-                      {Object.entries(src.scheme).map(([key, label]) => {
-                        const [kind, color] = key.split(':') as [MarkKind, string]
-                        return (
-                          <span
-                            key={key}
-                            className="inline-flex items-center gap-1.5 text-xs"
-                            style={{ color: 'var(--muted)' }}
-                          >
-                            <span
-                              className="flex-shrink-0"
-                              style={kind === 'hl'
-                                ? {
-                                    width: 12, height: 12, borderRadius: '50%',
-                                    background: markColorVar('hl', color),
-                                    border: '1px solid rgba(0,0,0,0.18)',
-                                  }
-                                : {
-                                    width: 12, height: 12, borderRadius: 4,
-                                    background: 'var(--surface)',
-                                    border: '1px solid rgba(0,0,0,0.18)',
-                                    boxShadow: `inset 0 -3px 0 ${markColorVar('ul', color)}`,
-                                  }}
-                            />
-                            {label}
-                          </span>
-                        )
-                      })}
-                    </span>
-                  </button>
-                ))
+                <>
+                  {/* Curated templates first — the intended default path. */}
+                  {templates && templates.length > 0 && (
+                    <>
+                      <h3 className="text-xs tracking-widest uppercase px-1" style={{ color: 'var(--muted)' }}>
+                        Vorlagen
+                      </h3>
+                      {templates.map(t => (
+                        <SchemeSourceCard
+                          key={t.id}
+                          source={{ id: t.id, title: t.name, scheme: t.scheme, templateId: t.id, description: t.description }}
+                          onPick={() => pickImportSource({ id: t.id, title: t.name, scheme: t.scheme, templateId: t.id })}
+                        />
+                      ))}
+                    </>
+                  )}
+
+                  <h3 className="text-xs tracking-widest uppercase px-1 mt-2" style={{ color: 'var(--muted)' }}>
+                    Andere Nuggets
+                  </h3>
+                  {importSources === null ? (
+                    <p className="text-sm text-center py-4" style={{ color: 'var(--muted)' }}>Lädt…</p>
+                  ) : importSources.length === 0 ? (
+                    <p className="text-sm text-center py-4" style={{ color: 'var(--muted)' }}>
+                      Kein anderes Nugget hat benannte Farben.
+                    </p>
+                  ) : (
+                    importSources.map(src => (
+                      <SchemeSourceCard key={src.id} source={src} onPick={() => pickImportSource(src)} />
+                    ))
+                  )}
+                </>
               )}
             </div>
           </div>

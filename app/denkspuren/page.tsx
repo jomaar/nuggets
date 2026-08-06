@@ -5,9 +5,11 @@ import DomainIcon from '@/components/DomainIcon'
 import { shortName } from '@/components/DomainChips'
 import MarkSwatch from '@/components/MarkSwatch'
 import MarkBrowseRow from '@/components/MarkBrowseRow'
+import AnnotationBrowseRow from '@/components/AnnotationBrowseRow'
 import { getLastDomainSlug, setLastDomainSlug } from '@/lib/lastDomain'
 import type { DomainMarks, DomainMark } from '@/lib/marks'
-import { Footprints, Palette, Tag } from 'lucide-react'
+import type { DomainAnnotations } from '@/lib/annotations'
+import { Footprints, Palette, Tag, Layers, Highlighter, MessageSquareText } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -17,7 +19,20 @@ interface Domain {
   color: string | null
 }
 
-type Mode = 'color' | 'meaning'
+/** Top-level view: markings, or margin comments (which have no colour axis). */
+type Tab = 'marks' | 'comments'
+
+/**
+ * How marks are bucketed.
+ * - `dimension` — by the colour's fixed meaning (Kern, Grund, …), merging a
+ *   hue's highlight and underline. The default: it is the only cut that is both
+ *   meaningful AND total over the corpus, since the dimension is a property of
+ *   the colour itself, not of any per-nugget naming.
+ * - `color` — by the exact (style, colour) slot. Finest granularity.
+ * - `meaning` — by the per-nugget custom label. Meaningful where schemes were
+ *   actually named, sparse elsewhere.
+ */
+type Mode = 'dimension' | 'color' | 'meaning'
 
 /** Same normalization as the server's meaning-bucket key (lib/marks.ts), so a
  *  mark can be matched against the active meaning facet client-side without
@@ -33,8 +48,10 @@ export default function DenkspurenPage() {
   // (empty) slug before the init effect resolves the real one.
   const [domainSlug, setDomainSlug]   = useState<string | null>(null)
   const [data, setData]               = useState<DomainMarks | null>(null)
+  const [comments, setComments]       = useState<DomainAnnotations | null>(null)
   const [loading, setLoading]         = useState(true)
-  const [mode, setMode]               = useState<Mode>('color')
+  const [tab, setTab]                 = useState<Tab>('marks')
+  const [mode, setMode]               = useState<Mode>('dimension')
   const [activeFacet, setActiveFacet] = useState<string | null>(null)
   const [search, setSearch]           = useState('')
   // Guards against out-of-order responses (e.g. rapid domain switching) —
@@ -52,19 +69,28 @@ export default function DenkspurenPage() {
     fetch('/api/domains').then(r => r.json()).then(setDomains).catch(() => {})
   }, [])
 
+  // Both tabs load together: the payloads are small, the tab toggle stays
+  // instant, and the header can show honest counts for both without a fetch.
   const load = useCallback(async (slug: string) => {
     const id = ++requestId.current
     setLoading(true)
     try {
-      const query = slug ? `?domain=${encodeURIComponent(slug)}` : ''
-      const res = await fetch(`/api/marks${query}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = await res.json()
+      const query = slug ? `?domain=${encodeURIComponent(slug)}` : '?domain='
+      const [marksRes, commentsRes] = await Promise.all([
+        fetch(`/api/marks${slug ? query : ''}`),
+        fetch(`/api/annotations${query}`),
+      ])
+      if (!marksRes.ok) throw new Error(`HTTP ${marksRes.status}`)
+      const [marksJson, commentsJson] = await Promise.all([
+        marksRes.json(),
+        commentsRes.ok ? commentsRes.json() : Promise.resolve(null),
+      ])
       if (id !== requestId.current) return // a newer request already landed
-      setData(json)
+      setData(marksJson)
+      setComments(commentsJson)
     } catch (e) {
-      console.error('Fehler beim Laden der Markierungen:', e)
-      if (id === requestId.current) setData(null)
+      console.error('Fehler beim Laden der Denkspuren:', e)
+      if (id === requestId.current) { setData(null); setComments(null) }
     } finally {
       if (id === requestId.current) setLoading(false)
     }
@@ -88,15 +114,47 @@ export default function DenkspurenPage() {
     setActiveFacet(null)
   }
 
+  const switchTab = (next: Tab) => {
+    setTab(next)
+    setActiveFacet(null)
+    setSearch('')
+  }
+
   const filteredMarks: DomainMark[] = useMemo(() => {
     if (!data) return []
     const needle = search.trim().toLowerCase()
     return data.marks.filter(m => {
       if (needle && !m.text.toLowerCase().includes(needle)) return false
       if (!activeFacet) return true
-      return mode === 'color' ? m.key === activeFacet : normalizeLabel(m.label) === activeFacet
+      if (mode === 'color') return m.key === activeFacet
+      if (mode === 'dimension') return m.color === activeFacet
+      return normalizeLabel(m.label) === activeFacet
     })
   }, [data, search, activeFacet, mode])
+
+  // Comments have no facet axis — only free-text search over quote and body.
+  const filteredComments = useMemo(() => {
+    if (!comments) return []
+    const needle = search.trim().toLowerCase()
+    if (!needle) return comments.annotations
+    return comments.annotations.filter(a =>
+      a.body.toLowerCase().includes(needle) || a.quote.toLowerCase().includes(needle))
+  }, [comments, search])
+
+  const commentGroups = useMemo(() => {
+    const order: string[] = []
+    const byNugget = new Map<string, { nuggetId: string; nuggetTitle: string; items: typeof filteredComments }>()
+    for (const a of filteredComments) {
+      let group = byNugget.get(a.nuggetId)
+      if (!group) {
+        group = { nuggetId: a.nuggetId, nuggetTitle: a.nuggetTitle, items: [] }
+        byNugget.set(a.nuggetId, group)
+        order.push(a.nuggetId)
+      }
+      group.items.push(a)
+    }
+    return order.map(id => byNugget.get(id)!)
+  }, [filteredComments])
 
   // Marks arrive already grouped by nugget (collectDomainMarks appends one
   // nugget's marks contiguously) — preserve that order rather than re-sorting.
@@ -123,12 +181,18 @@ export default function DenkspurenPage() {
           <h1 className="text-3xl">Denkspuren</h1>
         </div>
         <p className="text-sm mb-2" style={{ color: 'var(--muted)' }}>
-          Alle Markierungen dieser Domäne an einem Ort.
+          Alle Markierungen und Kommentare dieser Domäne an einem Ort.
         </p>
-        {data && (
+        {tab === 'marks' && data && (
           <p className="text-xs mb-3" style={{ color: 'var(--muted)' }}>
             {data.stats.totalMarks} Markierung{data.stats.totalMarks === 1 ? '' : 'en'} aus {data.stats.nuggetsWithMarks} Nugget{data.stats.nuggetsWithMarks === 1 ? '' : 's'}
             {data.stats.truncated && ' · gekürzt'}
+          </p>
+        )}
+        {tab === 'comments' && comments && (
+          <p className="text-xs mb-3" style={{ color: 'var(--muted)' }}>
+            {comments.stats.total} Kommentar{comments.stats.total === 1 ? '' : 'e'} aus {comments.stats.nuggetsWithComments} Nugget{comments.stats.nuggetsWithComments === 1 ? '' : 's'}
+            {comments.stats.truncated && ' · gekürzt'}
           </p>
         )}
 
@@ -167,34 +231,58 @@ export default function DenkspurenPage() {
           </div>
         )}
 
-        {/* Mode toggle */}
+        {/* Tab toggle — comments get their own view because they carry no
+            colour/dimension axis to bucket by. */}
         <div className="flex gap-1 mb-3 p-1 rounded-xl w-fit" style={{ background: 'var(--warm)' }}>
-          <button
-            onClick={() => switchMode('color')}
-            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
-            style={{
-              background: mode === 'color' ? 'var(--surface)' : 'transparent',
-              color: mode === 'color' ? 'var(--ink)' : 'var(--muted)',
-              boxShadow: mode === 'color' ? '0 1px 4px rgba(26,23,20,0.08)' : undefined,
-            }}
-          >
-            <Palette size={13} /> Nach Farbe
-          </button>
-          <button
-            onClick={() => switchMode('meaning')}
-            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
-            style={{
-              background: mode === 'meaning' ? 'var(--surface)' : 'transparent',
-              color: mode === 'meaning' ? 'var(--ink)' : 'var(--muted)',
-              boxShadow: mode === 'meaning' ? '0 1px 4px rgba(26,23,20,0.08)' : undefined,
-            }}
-          >
-            <Tag size={13} /> Nach Bedeutung
-          </button>
+          {([
+            ['marks', 'Markierungen', Highlighter],
+            ['comments', 'Kommentare', MessageSquareText],
+          ] as const).map(([value, label, Icon]) => (
+            <button
+              key={value}
+              onClick={() => switchTab(value)}
+              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+              style={{
+                background: tab === value ? 'var(--surface)' : 'transparent',
+                color: tab === value ? 'var(--ink)' : 'var(--muted)',
+                boxShadow: tab === value ? '0 1px 4px rgba(26,23,20,0.08)' : undefined,
+              }}
+            >
+              <Icon size={13} /> {label}
+            </button>
+          ))}
         </div>
 
+        {/* Mode toggle — marks only. */}
+        {tab === 'marks' && (
+          <div className="flex gap-1 mb-3 p-1 rounded-xl w-fit" style={{ background: 'var(--warm)' }}>
+            {([
+              ['dimension', 'Nach Dimension', Layers],
+              ['color', 'Nach Farbe', Palette],
+              ['meaning', 'Nach Bedeutung', Tag],
+            ] as const).map(([value, label, Icon]) => (
+              <button
+                key={value}
+                onClick={() => switchMode(value)}
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
+                style={{
+                  background: mode === value ? 'var(--surface)' : 'transparent',
+                  color: mode === value ? 'var(--ink)' : 'var(--muted)',
+                  boxShadow: mode === value ? '0 1px 4px rgba(26,23,20,0.08)' : undefined,
+                }}
+              >
+                <Icon size={13} /> {label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Facet bar */}
-        {data && (mode === 'color' ? data.facets.length > 0 : data.meanings.length > 0) && (
+        {tab === 'marks' && data && (
+          mode === 'color' ? data.facets.length > 0
+          : mode === 'dimension' ? data.dimensions.length > 0
+          : data.meanings.length > 0
+        ) && (
           <div className="flex gap-2 mb-3 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             <button
               onClick={() => setActiveFacet(null)}
@@ -207,7 +295,28 @@ export default function DenkspurenPage() {
             >
               Alle
             </button>
-            {mode === 'color'
+            {mode === 'dimension'
+              ? data.dimensions.map(d => (
+                  <button
+                    key={d.color}
+                    onClick={() => setActiveFacet(activeFacet === d.color ? null : d.color)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-all flex-shrink-0"
+                    style={{
+                      background: activeFacet === d.color ? 'var(--accent)' : 'var(--surface)',
+                      color:      activeFacet === d.color ? 'white'         : 'var(--muted)',
+                      border: `1px solid ${activeFacet === d.color ? 'var(--accent)' : 'var(--border)'}`,
+                    }}
+                  >
+                    {/* Both styles of the hue — the dimension spans them. */}
+                    <span className="inline-flex gap-0.5">
+                      <MarkSwatch kind="hl" color={d.color} size={12} />
+                      <MarkSwatch kind="ul" color={d.color} size={12} />
+                    </span>
+                    {d.name}
+                    <span style={{ opacity: 0.7 }}>{d.count}</span>
+                  </button>
+                ))
+              : mode === 'color'
               ? data.facets.map(f => (
                   <button
                     key={f.key}
@@ -254,7 +363,7 @@ export default function DenkspurenPage() {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Markierungstext durchsuchen…"
+          placeholder={tab === 'marks' ? 'Markierungstext durchsuchen…' : 'Kommentare durchsuchen…'}
           className="w-full rounded-xl px-4 py-3 text-sm"
           style={{
             background: 'var(--surface)',
@@ -274,36 +383,66 @@ export default function DenkspurenPage() {
         </p>
       )}
 
-      {!loading && data && data.stats.nuggetsScanned > 0 && data.stats.totalMarks === 0 && (
+      {!loading && tab === 'marks' && data && data.stats.nuggetsScanned > 0 && data.stats.totalMarks === 0 && (
         <p className="text-sm text-center py-12" style={{ color: 'var(--muted)' }}>
           Noch keine Markierungen. Markiere beim Lesen Stellen mit Highlight oder Unterstreichung —
           hier laufen sie zusammen.
         </p>
       )}
 
-      {!loading && data && data.stats.totalMarks > 0 && filteredMarks.length === 0 && (
+      {!loading && tab === 'marks' && data && data.stats.totalMarks > 0 && filteredMarks.length === 0 && (
+        <p className="text-sm text-center py-12" style={{ color: 'var(--muted)' }}>
+          Keine Treffer.
+        </p>
+      )}
+
+      {!loading && tab === 'comments' && data && data.stats.nuggetsScanned > 0 && comments?.stats.total === 0 && (
+        <p className="text-sm text-center py-12" style={{ color: 'var(--muted)' }}>
+          Noch keine Kommentare. Markiere beim Lesen eine Stelle und tippe auf die Sprechblase —
+          hier laufen sie zusammen.
+        </p>
+      )}
+
+      {!loading && tab === 'comments' && comments && comments.stats.total > 0 && filteredComments.length === 0 && (
         <p className="text-sm text-center py-12" style={{ color: 'var(--muted)' }}>
           Keine Treffer.
         </p>
       )}
 
       <div className="flex flex-col gap-4">
-        {groups.map(group => (
-          <div key={group.nuggetId} className="flex flex-col gap-2">
-            <a
-              href={`/nugget/${group.nuggetId}`}
-              className="text-xs font-medium truncate px-1"
-              style={{ color: 'var(--muted)' }}
-            >
-              {group.nuggetTitle}
-            </a>
-            <div className="flex flex-col gap-2">
-              {group.marks.map(m => (
-                <MarkBrowseRow key={m.id} mark={m} />
-              ))}
-            </div>
-          </div>
-        ))}
+        {tab === 'marks'
+          ? groups.map(group => (
+              <div key={group.nuggetId} className="flex flex-col gap-2">
+                <a
+                  href={`/nugget/${group.nuggetId}`}
+                  className="text-xs font-medium truncate px-1"
+                  style={{ color: 'var(--muted)' }}
+                >
+                  {group.nuggetTitle}
+                </a>
+                <div className="flex flex-col gap-2">
+                  {group.marks.map(m => (
+                    <MarkBrowseRow key={m.id} mark={m} />
+                  ))}
+                </div>
+              </div>
+            ))
+          : commentGroups.map(group => (
+              <div key={group.nuggetId} className="flex flex-col gap-2">
+                <a
+                  href={`/nugget/${group.nuggetId}`}
+                  className="text-xs font-medium truncate px-1"
+                  style={{ color: 'var(--muted)' }}
+                >
+                  {group.nuggetTitle}
+                </a>
+                <div className="flex flex-col gap-2">
+                  {group.items.map(a => (
+                    <AnnotationBrowseRow key={a.id} annotation={a} />
+                  ))}
+                </div>
+              </div>
+            ))}
       </div>
     </>
   )
