@@ -17,7 +17,11 @@ jobs:
         with:
           host:     ${{ secrets.NETCUP_HOST }}
           username: ${{ secrets.NETCUP_USER }}
-          password: ${{ secrets.NETCUP_PASSWORD }}
+          # SSH key, not a password: the server sets `PasswordAuthentication no`
+          # and `PermitRootLogin prohibit-password`, so password auth is closed.
+          # Rotating this key = drop the "github-actions-deploy" line from
+          # /root/.ssh/authorized_keys and replace the NETCUP_SSH_KEY secret.
+          key: ${{ secrets.NETCUP_SSH_KEY }}
           script: |
             set -e
             export NVM_DIR="$HOME/.nvm"
