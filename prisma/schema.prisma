@@ -226,6 +226,29 @@ model ShortLink {
   @@map("short_links")
 }
 
+/**
+ * The owner's Google Drive connection — a SINGLETON row (fixed id "global",
+ * same pattern as AppSettings). Exists so a Google Doc can be picked and
+ * imported from the iPhone, where there is no way to download a Doc as
+ * Markdown by hand (see lib/googleDrive.ts).
+ *
+ * Holds the OAuth refresh token, so it is the only genuinely secret row in
+ * this database: every route touching it is owner-guarded, unlike the rest of
+ * the app whose reads are deliberately public.
+ */
+model GoogleAuth {
+  id           String   @id @default("global")
+  email        String   @default("") // which Google account is connected, for the UI
+  refreshToken String // long-lived; the access token is derived from it on demand
+  accessToken  String   @default("")
+  expiresAt    DateTime @default(now()) // access-token expiry; refreshed when past
+  scope        String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("google_auth")
+}
+
 model Review {
   id           String   @id @default(cuid())
   nuggetId     String

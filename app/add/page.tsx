@@ -9,6 +9,8 @@ import { detectBibleText, convertBibleText, type BibleConversion } from '@/lib/b
 import { countPlainText } from '@/lib/textStats'
 import DomainChips from '@/components/DomainChips'
 import TextStatsBar from '@/components/TextStatsBar'
+import GoogleDocPicker, { type PickedGoogleDoc } from '@/components/GoogleDocPicker'
+import { useOwner } from '@/components/OwnerContext'
 import { getLastDomainSlug, setLastDomainSlug } from '@/lib/lastDomain'
 
 interface Domain {
@@ -26,8 +28,12 @@ interface Domain {
  */
 const WARN_CHARS = 20_000
 
+/** Hard cap the server applies to an imported Doc (lib/googleDrive.ts). */
+const MAX_IMPORT_CHARS = 100_000
+
 export default function AddPage() {
   const router = useRouter()
+  const { isOwner } = useOwner()
   const [content, setContent]         = useState('')
   const [preview, setPreview]         = useState(false)
   const [domains, setDomains]         = useState<Domain[]>([])
@@ -56,6 +62,11 @@ export default function AddPage() {
   // are already saved), unlike aiWarning which means extraction failed.
   const [conceptWarning, setConceptWarning] = useState<{ message: string; nuggetId: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Google Drive import (owner-only): null until the status call answers, so
+  // the button stays hidden rather than flickering for non-owners.
+  const [googleStatus, setGoogleStatus]   = useState<{ configured: boolean; connected: boolean; email: string } | null>(null)
+  const [googlePickerOpen, setGooglePickerOpen] = useState(false)
+  const [googleNotice, setGoogleNotice]   = useState('')
 
   // Default the domain picker to the last domain worked in (shared with
   // app/all's filter, see lib/lastDomain.ts). If the last state was "Alle"
@@ -103,6 +114,51 @@ export default function AddPage() {
       setSourceUrl(resolvedUrl)
     }
   }, [])
+
+  // Google Drive: connection state, plus the outcome of a consent round trip.
+  // /api/google/callback redirects back here with ?gdrive=connected|error, the
+  // params being read from window.location for the same reason as above (no
+  // Suspense boundary needed). They are stripped afterwards so a reload does
+  // not resurrect an old message.
+  useEffect(() => {
+    if (!isOwner) return
+    fetch('/api/google/status')
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => { if (data) setGoogleStatus(data) })
+      .catch(() => {})
+
+    const params = new URLSearchParams(window.location.search)
+    const result = params.get('gdrive')
+    if (!result) return
+    setGoogleNotice(
+      result === 'connected'
+        ? `Google Drive verbunden${params.get('email') ? ` (${params.get('email')})` : ''}.`
+        : params.get('message') || 'Google Drive konnte nicht verbunden werden.',
+    )
+    params.delete('gdrive'); params.delete('email'); params.delete('message')
+    const rest = params.toString()
+    window.history.replaceState(null, '', rest ? `/add?${rest}` : '/add')
+  }, [isOwner])
+
+  /**
+   * A picked Doc fills the form the way the file picker does — content plus
+   * the fields that are free information: the Doc's own name as title (never
+   * overwriting one already typed) and its Drive URL as the source, so the
+   * nugget keeps a way back to the original.
+   */
+  const handleGoogleDocPicked = (doc: PickedGoogleDoc) => {
+    setContent(doc.markdown)
+    setBibleConverted(null)
+    if (!title.trim())       setTitle(doc.title)
+    if (!sourceLabel.trim()) setSourceLabel(doc.title)
+    if (!sourceUrl.trim())   setSourceUrl(doc.webViewLink)
+    setGooglePickerOpen(false)
+    setGoogleNotice(
+      doc.truncated
+        ? `„${doc.title}“ geladen — gekürzt, das Dokument war länger als ${MAX_IMPORT_CHARS.toLocaleString('de-DE')} Zeichen.`
+        : `„${doc.title}“ geladen.`,
+    )
+  }
 
   const handleDomainSelect = (id: string) => {
     setDomainId(id)
@@ -301,6 +357,30 @@ export default function AddPage() {
               >
                 {extracting ? '⏳ Lädt…' : '⥥ Text aus Link'}
               </button>
+              {/* Google Doc import — the iPhone's only route to a Doc's text,
+                  since iOS offers no Markdown export. Not connected yet? The
+                  same button starts the consent flow (a full page navigation,
+                  not a fetch — the consent screen has to be seen). */}
+              {googleStatus?.configured && (
+                googleStatus.connected ? (
+                  <button
+                    type="button"
+                    onClick={() => setGooglePickerOpen(true)}
+                    className="text-xs px-2 py-0.5 rounded-lg"
+                    style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+                  >
+                    ▤ Google Doc
+                  </button>
+                ) : (
+                  <a
+                    href="/api/google/connect"
+                    className="text-xs px-2 py-0.5 rounded-lg"
+                    style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+                  >
+                    ▤ Drive verbinden
+                  </a>
+                )
+              )}
             </div>
             <div className="flex gap-1">
               <button
@@ -378,6 +458,11 @@ export default function AddPage() {
           {extractError && (
             <p className="text-xs mt-2" style={{ color: 'var(--accent)' }}>
               {extractError}
+            </p>
+          )}
+          {googleNotice && (
+            <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>
+              {googleNotice}
             </p>
           )}
           {tooLong && !extractError && (
@@ -609,6 +694,13 @@ export default function AddPage() {
             Zum Nugget →
           </button>
         </div>
+      )}
+
+      {googlePickerOpen && (
+        <GoogleDocPicker
+          onClose={() => setGooglePickerOpen(false)}
+          onPicked={handleGoogleDocPicked}
+        />
       )}
     </>
   )
