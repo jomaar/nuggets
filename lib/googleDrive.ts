@@ -88,21 +88,43 @@ export function isGoogleConfigured(): boolean {
 }
 
 /**
+ * Origin of the current request, inferred from the Host header rather than
+ * `req.nextUrl.origin` or `req.url`: this app runs behind nginx WITHOUT Next
+ * trusting the proxy, so both of those report the plain-HTTP connection Next
+ * itself sees — `req.url`/`nextUrl.origin` come back `http://nuggets.jomaar.de`
+ * or, worse, the literal fallback `http://localhost:3000` Next uses when it
+ * can't resolve a host at all (verified 2026-08-14: a Google-callback redirect
+ * back to `/add` landed the browser on `localhost:3000`).
+ *
+ * `x-forwarded-proto` is DELIBERATELY not read either: Next synthesizes that
+ * header itself from its own (always-plain-HTTP) connection to nginx, so it
+ * reads `http` even though nginx received real HTTPS — verified by inspecting
+ * the actual header Next handed to this function. The proto is inferred from
+ * the host string instead (only a bare `localhost` origin is ever plain HTTP
+ * in this app's deployments).
+ */
+function inferOrigin(req: Request): string {
+  const host  = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? 'localhost:3000'
+  const proto = host.startsWith('localhost') ? 'http' : 'https'
+  return `${proto}://${host}`
+}
+
+/** Same-origin base for redirects back into the app (e.g. the OAuth callback → /add). */
+export function siteOrigin(req: Request): string {
+  return inferOrigin(req)
+}
+
+/**
  * The redirect URI must match a value registered in the Google Cloud console
  * EXACTLY. It is derived from the incoming request so prod and the dev host
  * work from one deployment; GOOGLE_REDIRECT_URI overrides when the derived
- * value is wrong (e.g. an extra proxy hop).
- *
- * `origin` is built from the forwarded headers rather than req.url: behind
- * nginx the request arrives over plain HTTP, so req.url reports http:// and
- * Google would reject the mismatch.
+ * value is wrong (e.g. an extra proxy hop) — set on both instances in
+ * practice, since the header-based inference has repeatedly proven unreliable.
  */
 export function redirectUri(req: Request): string {
   const override = process.env.GOOGLE_REDIRECT_URI
   if (override) return override
-  const host  = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? 'localhost:3000'
-  const proto = req.headers.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https')
-  return `${proto}://${host}/api/google/callback`
+  return `${inferOrigin(req)}/api/google/callback`
 }
 
 /** Builds the consent-screen URL. `state` is the CSRF token from the cookie. */

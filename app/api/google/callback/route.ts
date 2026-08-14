@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isOwner } from '@/lib/auth'
-import { completeAuthorization } from '@/lib/googleDrive'
+import { completeAuthorization, siteOrigin } from '@/lib/googleDrive'
 
 /**
  * GET /api/google/callback — where Google sends the user back with the code.
@@ -11,7 +11,7 @@ import { completeAuthorization } from '@/lib/googleDrive'
  */
 export async function GET(req: NextRequest) {
   const back = (params: Record<string, string>) =>
-    NextResponse.redirect(new URL(`/add?${new URLSearchParams(params)}`, req.nextUrl.origin))
+    NextResponse.redirect(new URL(`/add?${new URLSearchParams(params)}`, siteOrigin(req)))
 
   if (!await isOwner()) return back({ gdrive: 'error', message: 'Nicht angemeldet.' })
 
