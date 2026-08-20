@@ -66,6 +66,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             __html: `try{var s=parseInt(localStorage.getItem('nugget-font-size'),10);if(s>=13&&s<=24)document.documentElement.style.setProperty('--nugget-font-size',s+'px')}catch(e){}`,
           }}
         />
+        {/* Flag an iPad running us as a standalone (windowed) web app, so the
+            sticky bars can keep their top-left controls out from under the
+            iPadOS window-control pill (.win-controls-inset in globals.css).
+            iPadOS reports itself as a Mac, so touch points are what tells the
+            two apart — a real Mac has none, and neither has window controls
+            painted over web content. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var ua=navigator.userAgent||'',p=navigator.platform||'';if((navigator.maxTouchPoints||0)>1&&(/iPad/.test(ua)||/Mac/.test(p))&&(matchMedia('(display-mode: standalone)').matches||navigator.standalone))document.documentElement.classList.add('win-controls')}catch(e){}`,
+          }}
+        />
       </head>
       <body>
         <OwnerProvider initialIsOwner={owner}>

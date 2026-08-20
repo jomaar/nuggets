@@ -16,6 +16,10 @@
 
   --text-base:    17px;     /* iOS body size; hook for a later size switcher */
 
+  /* How far the iPadOS window-control pill (●●●) reaches in from the window's
+     left edge, plus a small gap. The single number to tune if Apple resizes it. */
+  --win-controls-w: 80px;
+
   /* Multi-color highlight palette (Kindle-style) */
   --hl-yellow:  #fff0a8;
   --hl-blue:    #c7e4f7;
@@ -104,6 +108,34 @@ h1, h2, h3, .serif {
   padding: 0.5rem max(0.75rem, env(safe-area-inset-left)) 0.5rem max(0.75rem, env(safe-area-inset-right));
   background: var(--surface);
   border-top: 1px solid var(--border);
+}
+
+/* iPadOS window controls: the ●●● pill floats INSIDE the window's top-left
+   corner, over page content. Unlike the notch and the home indicator it is NOT
+   reported through env(safe-area-inset-*), so nothing reserves space for it and
+   it lands squarely on the single view's back button. `.win-controls` is set on
+   <html> at boot (app/layout.tsx) — iPad in standalone display mode only, since
+   in Safari the pill sits over Safari's own chrome, not over us.
+
+   The inset is COMPUTED, not fixed: the content column is centred at max-w-2xl
+   (42rem), so as soon as the window is wide enough its own left margin already
+   clears the pill and the outer max() falls back to the normal 1rem the bar has
+   anyway. The INNER max() floors that margin at 0 — below 42rem the column is
+   flush left and there is no margin to subtract, so without it a narrow window
+   would over-correct and push the row inward twice.
+   Two class levels out-specify Tailwind's .px-4 on the same element.
+
+   Two variants, because the corner sits at a different x depending on the
+   element: `-inset` is for the sticky bars, which break out to the column's
+   outer edge with -mx-4 and pad themselves back in; `-shift` is for a plain
+   in-flow control (the ← Zurück buttons on /graph and /concepts/[id]), which
+   already starts one 1rem column padding further right — hence the extra 1rem
+   subtracted, and a 0 floor so it is a true no-op when nothing is in the way. */
+.win-controls .win-controls-inset {
+  padding-left: max(1rem, calc(var(--win-controls-w) - max(0px, (100vw - 42rem) / 2)));
+}
+.win-controls .win-controls-shift {
+  margin-left: max(0px, calc(var(--win-controls-w) - 1rem - max(0px, (100vw - 42rem) / 2)));
 }
 
 /* Nugget content rendering */

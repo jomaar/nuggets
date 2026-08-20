@@ -165,7 +165,7 @@ export default function ConceptPage() {
       <header className="pt-3 pb-6">
         <button
           onClick={() => router.back()}
-          className="text-xs mb-4 flex items-center gap-1"
+          className="text-xs mb-4 flex items-center gap-1 win-controls-shift"
           style={{ color: 'var(--muted)' }}
         >
           ← Zurück

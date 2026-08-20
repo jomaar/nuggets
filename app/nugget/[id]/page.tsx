@@ -1719,7 +1719,7 @@ export default function NuggetDetailPage() {
           scroll position, so editing a long nugget never means scrolling up. */}
       <div
         ref={stickyRef}
-        className="sticky top-0 z-30 -mx-4 px-4 pt-3 pb-3"
+        className="sticky top-0 z-30 -mx-4 px-4 pt-3 pb-3 win-controls-inset"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
         {/* All actions as equal-sized icon buttons in ONE flat row, spread
