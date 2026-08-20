@@ -6,7 +6,7 @@ import DomainIcon from '@/components/DomainIcon'
 import { shortName } from '@/components/DomainChips'
 import { useOwner } from '@/components/OwnerContext'
 import { getLastDomainSlug, setLastDomainSlug } from '@/lib/lastDomain'
-import { Settings, Footprints } from 'lucide-react'
+import { Settings, Footprints, BookOpen } from 'lucide-react'
 
 interface Domain {
   id: string
@@ -20,6 +20,7 @@ interface Nugget {
   id: string
   title: string // already resolved server-side (falls back to a derived title)
   domain: Domain | null
+  isBible: boolean // derived server-side from the <sup data-verse> markers
 }
 
 interface Stats {
@@ -34,6 +35,10 @@ export default function AllPage() {
   const [domains, setDomains]           = useState<Domain[]>([])
   const [search, setSearch]             = useState('')
   const [activeDomain, setActiveDomain] = useState<string>('')
+  // "Bibel" filter — a sibling of the domain chips (selecting one clears the
+  // other), but not a domain: Bible texts are recognised by their verse markers,
+  // so this filters the loaded rows client-side via the derived `isBible` flag.
+  const [bibleOnly, setBibleOnly]       = useState(false)
   const [loading, setLoading]           = useState(true)
   const { isOwner, setIsOwner }         = useOwner()
   const [stats, setStats]               = useState<Stats | null>(null)
@@ -81,6 +86,8 @@ export default function AllPage() {
     const t = setTimeout(load, 300)
     return () => clearTimeout(t)
   }, [load])
+
+  const visible = bibleOnly ? nuggets.filter(n => n.isBible) : nuggets
 
   return (
     <>
@@ -145,12 +152,12 @@ export default function AllPage() {
         {domains.length > 0 && (
           <div className="flex gap-2 mb-3 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             <button
-              onClick={() => { setActiveDomain(''); setLastDomainSlug('') }}
+              onClick={() => { setActiveDomain(''); setBibleOnly(false); setLastDomainSlug('') }}
               className="px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-all flex-shrink-0"
               style={{
-                background: activeDomain === '' ? 'var(--accent)' : 'var(--surface)',
-                color:      activeDomain === '' ? 'white'         : 'var(--muted)',
-                border: `1px solid ${activeDomain === '' ? 'var(--accent)' : 'var(--border)'}`,
+                background: activeDomain === '' && !bibleOnly ? 'var(--accent)' : 'var(--surface)',
+                color:      activeDomain === '' && !bibleOnly ? 'white'         : 'var(--muted)',
+                border: `1px solid ${activeDomain === '' && !bibleOnly ? 'var(--accent)' : 'var(--border)'}`,
               }}
             >
               Alle
@@ -161,6 +168,7 @@ export default function AllPage() {
                 onClick={() => {
                   const next = activeDomain === d.slug ? '' : d.slug
                   setActiveDomain(next)
+                  setBibleOnly(false)
                   setLastDomainSlug(next)
                 }}
                 className="px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-all flex-shrink-0"
@@ -177,6 +185,26 @@ export default function AllPage() {
                 </span>
               </button>
             ))}
+            {/* Bible texts — not a domain, so it clears the domain filter and
+                filters the loaded rows by their verse markers instead. */}
+            <button
+              onClick={() => {
+                const next = !bibleOnly
+                setBibleOnly(next)
+                if (next) { setActiveDomain(''); setLastDomainSlug('') }
+              }}
+              className="px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-all flex-shrink-0"
+              style={{
+                background: bibleOnly ? 'var(--accent)' : 'var(--surface)',
+                color:      bibleOnly ? 'white'         : 'var(--muted)',
+                border: `1px solid ${bibleOnly ? 'var(--accent)' : 'var(--border)'}`,
+              }}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <BookOpen size={14} strokeWidth={1.75} />
+                <span className="hidden sm:inline">Bibel</span>
+              </span>
+            </button>
           </div>
         )}
 
@@ -197,15 +225,15 @@ export default function AllPage() {
 
       {loading && <p className="text-sm" style={{ color: 'var(--muted)' }}>Lädt…</p>}
 
-      {!loading && nuggets.length === 0 && (
+      {!loading && visible.length === 0 && (
         <p className="text-sm text-center py-12" style={{ color: 'var(--muted)' }}>
-          {search || activeDomain ? 'Keine Treffer.' : 'Noch keine Nuggets. Leg den ersten an!'}
+          {search || activeDomain || bibleOnly ? 'Keine Treffer.' : 'Noch keine Nuggets. Leg den ersten an!'}
         </p>
       )}
 
       {/* Title-only list — tap a row to open the single view */}
       <div className="flex flex-col gap-2">
-        {nuggets.map(n => (
+        {visible.map(n => (
           <Link
             key={n.id}
             href={search ? `/nugget/${n.id}?q=${encodeURIComponent(search)}` : `/nugget/${n.id}`}

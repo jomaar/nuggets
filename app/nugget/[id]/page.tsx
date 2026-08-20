@@ -207,6 +207,62 @@ function findRanges(root: HTMLElement, query: string): Range[] {
   return ranges
 }
 
+/** A query that is nothing but a verse reference: "6,2" / "6.2" / "6:2". */
+const VERSE_QUERY_RE = /^\s*(\d{1,3})\s*[.,:]\s*(\d{1,3})\s*$/
+
+/**
+ * Normalize a pure verse-reference query to the `data-verse` format ("6.2"),
+ * or null if the query isn't one. All three separators are accepted because the
+ * marker stores "C.V" while German Bible references are written "C,V".
+ */
+function parseVerseQuery(query: string): string | null {
+  const m = VERSE_QUERY_RE.exec(query)
+  return m ? `${Number(m[1])}.${Number(m[2])}` : null
+}
+
+/**
+ * Find the verse markers matching `verse` and return a range over the FIRST
+ * WORD of each verse. The marker itself (`<sup data-verse>`) is an empty atom
+ * whose "[6.2]" is CSS-generated, so it carries no text to match and no box to
+ * scroll to while verse numbers are hidden — the following word does, and it is
+ * glued to the marker by construction (lib/bible.ts), so it is exactly the
+ * start of that verse either way.
+ *
+ * One pass over elements AND text nodes keeps everything in document order: a
+ * matching marker is remembered and consumed by the next non-blank text node.
+ */
+function findVerseRanges(root: HTMLElement, verse: string): Range[] {
+  const ranges: Range[] = []
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT)
+  let pending = false
+  let node: Node | null
+  while ((node = walker.nextNode())) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as Element
+      if (el.tagName === 'SUP' && el.getAttribute('data-verse') === verse) pending = true
+      continue
+    }
+    if (!pending) continue
+    const text = node.nodeValue ?? ''
+    const start = text.search(/\S/)
+    if (start === -1) continue // whitespace-only node — keep looking
+    const rest = text.slice(start).search(/\s/)
+    const range = document.createRange()
+    range.setStart(node, start)
+    range.setEnd(node, rest === -1 ? text.length : start + rest)
+    ranges.push(range)
+    pending = false
+  }
+  return ranges
+}
+
+/** Merge two already-ordered range lists into one document-ordered list. */
+function mergeRanges(a: Range[], b: Range[]): Range[] {
+  if (!a.length) return b
+  if (!b.length) return a
+  return [...a, ...b].sort((x, y) => x.compareBoundaryPoints(Range.START_TO_START, y))
+}
+
 /** The CSS Custom Highlight registry, or null where unsupported (e.g. old iOS). */
 function highlightRegistry(): Map<string, unknown> | null {
   return typeof CSS !== 'undefined' && 'highlights' in CSS
@@ -1414,7 +1470,16 @@ export default function NuggetDetailPage() {
    */
   const applySearch = (q: string): boolean => {
     const root = contentRef.current
-    const ranges = root ? findRanges(root, q.trim()) : []
+    const term = q.trim()
+    // A pure verse reference ("6,2") also matches the Bible verse markers —
+    // they carry no text, so plain text search alone can never find them, and
+    // that holds whether or not verse numbers are currently displayed.
+    const verse = parseVerseQuery(term)
+    const ranges = !root
+      ? []
+      : verse
+        ? mergeRanges(findRanges(root, term), findVerseRanges(root, verse))
+        : findRanges(root, term)
     matchRanges.current = ranges
     setMatchCount(ranges.length)
     const idx = ranges.length ? 0 : -1

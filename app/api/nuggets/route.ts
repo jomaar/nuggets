@@ -38,9 +38,13 @@ export async function GET(req: NextRequest) {
 
   // Resolve the fallback title server-side and drop contentHtml from the payload —
   // a title-only list otherwise shipped potentially hundreds of KB of full HTML.
+  // `isBible` is derived here for the same reason: Bible imports are recognised
+  // only by their <sup data-verse> markers (no DB flag), and the client must not
+  // need the HTML to tell. It powers the "Bibel" filter chip in app/all.
   const rows = nuggets.map(({ contentHtml, title, ...rest }) => ({
     ...rest,
     title: title || fallbackTitle(contentHtml),
+    isBible: contentHtml.includes('data-verse='),
   }))
 
   return NextResponse.json(rows)
