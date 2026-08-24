@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
+import { ChevronRight, Wrench } from 'lucide-react'
 import DomainIcon from '@/components/DomainIcon'
 
 interface DomainPrompt {
@@ -97,6 +99,20 @@ export default function AdminPage() {
       </header>
 
       <div className="flex flex-col gap-6">
+        {/* Werkzeuge — owner-only utilities that aren't prompt settings; this
+            link is their only entry point (no nav tab, see app/tools). */}
+        <Link
+          href="/tools"
+          className="p-4 rounded-2xl flex items-center justify-between gap-3"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+        >
+          <span className="flex items-center gap-2.5 text-sm" style={{ color: 'var(--ink)' }}>
+            <Wrench size={16} style={{ color: 'var(--muted)' }} />
+            Werkzeuge <span style={{ color: 'var(--muted)' }}>(PDF → Markdown)</span>
+          </span>
+          <ChevronRight size={16} style={{ color: 'var(--muted)' }} />
+        </Link>
+
         {/* AI heartbeat — a metadata-only call (no token cost), so it catches
             an invalid/spend-limit-disabled API key before it silently breaks
             a nugget save. */}

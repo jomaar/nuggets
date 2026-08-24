@@ -12,6 +12,7 @@ import TextStatsBar from '@/components/TextStatsBar'
 import GoogleDocPicker, { type PickedGoogleDoc } from '@/components/GoogleDocPicker'
 import { useOwner } from '@/components/OwnerContext'
 import { getLastDomainSlug, setLastDomainSlug } from '@/lib/lastDomain'
+import { takeToolsHandoff } from '@/lib/toolsHandoff'
 
 interface Domain {
   id: string
@@ -28,7 +29,7 @@ interface Domain {
  */
 const WARN_CHARS = 20_000
 
-/** Hard cap the server applies to an imported Doc (lib/googleDrive.ts). */
+/** Hard cap the server applies to imported text (lib/googleDrive.ts, lib/pdfToMarkdown.ts). */
 const MAX_IMPORT_CHARS = 100_000
 
 export default function AddPage() {
@@ -66,7 +67,9 @@ export default function AddPage() {
   // the button stays hidden rather than flickering for non-owners.
   const [googleStatus, setGoogleStatus]   = useState<{ configured: boolean; connected: boolean; email: string } | null>(null)
   const [googlePickerOpen, setGooglePickerOpen] = useState(false)
-  const [googleNotice, setGoogleNotice]   = useState('')
+  // Shared by every import path that fills this form from the outside (Drive,
+  // Werkzeuge) — one line under the content field saying what just landed.
+  const [importNotice, setImportNotice]   = useState('')
 
   // Default the domain picker to the last domain worked in (shared with
   // app/all's filter, see lib/lastDomain.ts). If the last state was "Alle"
@@ -115,6 +118,24 @@ export default function AddPage() {
     }
   }, [])
 
+  // A conversion handed over by the Werkzeuge page (app/tools) — currently the
+  // PDF → Markdown tool. Read-once from sessionStorage (the payload is a whole
+  // document, far too big for a query param), and only into fields that are
+  // still empty, exactly like the Google Doc import.
+  useEffect(() => {
+    const handoff = takeToolsHandoff()
+    if (!handoff) return
+    setContent(handoff.markdown)
+    setBibleConverted(null)
+    setTitle(prev => prev.trim() ? prev : handoff.title)
+    setSourceLabel(prev => prev.trim() ? prev : handoff.sourceLabel)
+    setImportNotice(
+      handoff.truncated
+        ? `${handoff.kind} übernommen — gekürzt, der Text war länger als ${MAX_IMPORT_CHARS.toLocaleString('de-DE')} Zeichen.`
+        : `${handoff.kind} übernommen.`,
+    )
+  }, [])
+
   // Google Drive: connection state, plus the outcome of a consent round trip.
   // /api/google/callback redirects back here with ?gdrive=connected|error, the
   // params being read from window.location for the same reason as above (no
@@ -130,7 +151,7 @@ export default function AddPage() {
     const params = new URLSearchParams(window.location.search)
     const result = params.get('gdrive')
     if (!result) return
-    setGoogleNotice(
+    setImportNotice(
       result === 'connected'
         ? `Google Drive verbunden${params.get('email') ? ` (${params.get('email')})` : ''}.`
         : params.get('message') || 'Google Drive konnte nicht verbunden werden.',
@@ -153,7 +174,7 @@ export default function AddPage() {
     if (!sourceLabel.trim()) setSourceLabel(doc.title)
     if (!sourceUrl.trim())   setSourceUrl(doc.webViewLink)
     setGooglePickerOpen(false)
-    setGoogleNotice(
+    setImportNotice(
       doc.truncated
         ? `„${doc.title}“ geladen — gekürzt, das Dokument war länger als ${MAX_IMPORT_CHARS.toLocaleString('de-DE')} Zeichen.`
         : `„${doc.title}“ geladen.`,
@@ -460,9 +481,9 @@ export default function AddPage() {
               {extractError}
             </p>
           )}
-          {googleNotice && (
+          {importNotice && (
             <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>
-              {googleNotice}
+              {importNotice}
             </p>
           )}
           {tooLong && !extractError && (

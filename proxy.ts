@@ -15,7 +15,12 @@ export function proxy(req: NextRequest) {
   const auth = isAuthenticated(req)
 
   // Protect pages → redirect to login
-  if (pathname.startsWith('/add') || pathname.startsWith('/edit') || pathname.startsWith('/admin')) {
+  if (
+    pathname.startsWith('/add') ||
+    pathname.startsWith('/edit') ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/tools')
+  ) {
     if (!auth) {
       const loginUrl = new URL('/login', req.url)
       loginUrl.searchParams.set('from', pathname)
@@ -34,5 +39,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/add', '/edit/:path*', '/admin', '/api/:path*'],
+  matcher: ['/add', '/edit/:path*', '/admin', '/tools', '/api/:path*'],
 }

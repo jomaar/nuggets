@@ -1,0 +1,12 @@
+# Python side of the Werkzeuge page (app/tools). Installed ONCE per server into
+# a venv OUTSIDE the checkout (/opt/nuggets-python/venv), so a deploy's
+# `git reset --hard` can never touch it — see the "Werkzeuge" rule in CLAUDE.md.
+#
+#   sudo apt-get install -y python3-venv
+#   python3 -m venv /opt/nuggets-python/venv
+#   /opt/nuggets-python/venv/bin/pip install -r python/requirements.txt
+#
+# Pinned: pymupdf4llm's Markdown output changes between releases, and the whole
+# point of the tool is a predictable conversion. Bump deliberately, not by drift.
+# Licence note: PyMuPDF is AGPL-3.0 — same as this repo, so nothing to reconcile.
+pymupdf4llm==1.28.2
