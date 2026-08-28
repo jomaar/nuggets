@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { ChevronUp, ChevronDown, X, Trash2, Maximize2, Minimize2 } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronUp, ChevronDown, X, Maximize2, Minimize2 } from 'lucide-react'
 import { commentMarkdownToHtml } from '@/lib/content'
+import HoldToDeleteButton from './HoldToDeleteButton'
 
 /**
  * A margin comment as the API ships it. Anchored to the text via a text-quote
@@ -58,9 +59,6 @@ export default function AnnotationSheet({
   annotations, resolvedIds, activeId, isOwner,
   onStep, onJump, onChangeBody, onFlush, onDelete, onClose, onNuggetLink,
 }: AnnotationSheetProps) {
-  // Two-tap delete confirmation, mirroring the single view's delete button.
-  const [confirmDelete, setConfirmDelete] = useState(false)
-
   // Fullscreen mode: the sheet grows from the 42dvh peek to the full viewport
   // for focused reading/editing of a long comment. Deliberately a toggle, not
   // the default — fullscreen covers the text, so the scroll-sync with the
@@ -74,8 +72,8 @@ export default function AnnotationSheet({
   // editor doesn't fall back to the rendered view after the first keystroke.
   const [editingId, setEditingId] = useState<string | null>(null)
 
-  // A pending confirmation must not carry over to another comment.
-  useEffect(() => setConfirmDelete(false), [activeId])
+  // (No confirmation state to reset when stepping to another comment any more —
+  // the delete button confirms via a hold gesture, which cannot stay armed.)
 
   const active = annotations.find(a => a.id === activeId) ?? null
   const index = active ? annotations.findIndex(a => a.id === active.id) : -1
@@ -224,33 +222,12 @@ export default function AnnotationSheet({
           )}
 
           {isOwner && (
-            <div className="flex items-center justify-end gap-1.5 flex-shrink-0">
-              <button
-                onClick={() => {
-                  if (!confirmDelete) { setConfirmDelete(true); return }
-                  setConfirmDelete(false)
-                  onDelete(active.id)
-                }}
-                aria-label={confirmDelete ? 'Wirklich löschen?' : 'Kommentar löschen'}
-                className="flex items-center justify-center p-1.5 rounded-lg transition-colors"
-                style={{
-                  background: confirmDelete ? '#c0392b' : 'transparent',
-                  color: confirmDelete ? 'white' : '#c0392b',
-                  border: '1px solid #c0392b',
-                }}
-              >
-                <Trash2 size={15} />
-              </button>
-              {confirmDelete && (
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  aria-label="Löschen abbrechen"
-                  className="flex items-center justify-center p-1.5 rounded-lg"
-                  style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-                >
-                  <X size={15} />
-                </button>
-              )}
+            <div className="flex items-center justify-end flex-shrink-0">
+              <HoldToDeleteButton
+                onConfirm={() => onDelete(active.id)}
+                label="Kommentar löschen"
+                hint="Halten zum Löschen"
+              />
             </div>
           )}
         </div>

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import NuggetEditor from './NuggetEditor'
 import { useHighlightSave } from './useHighlightSave'
 import DomainIcon from './DomainIcon'
+import HoldToDeleteButton from './HoldToDeleteButton'
 import { parseMarkScheme } from '@/lib/marking'
 import { removeRecentNugget } from '@/lib/recentNuggets'
 
@@ -75,7 +76,6 @@ export default function NuggetCard({
   const [expanded, setExpanded]       = useState(defaultExpanded)
   const [reviewed, setReviewed]       = useState(false)
   const [loading, setLoading]         = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
 
   // Debounced highlight persistence for the read-only reading view (shared hook).
   const { html, handleContentChange, handleEditorReady } = useHighlightSave(id, contentHtml)
@@ -90,8 +90,9 @@ export default function NuggetCard({
     setLoading(false)
   }
 
+  // Confirmation is the hold gesture on the button itself, so there is no
+  // confirm state to track here (see HoldToDeleteButton).
   const handleDelete = async () => {
-    if (!confirmDelete) { setConfirmDelete(true); return }
     await fetch(`/api/nuggets/${id}`, { method: 'DELETE' })
     removeRecentNugget(id)
     onDelete?.(id)
@@ -229,38 +230,19 @@ export default function NuggetCard({
             )}
           </div>
 
-          {/* Edit + Delete buttons */}
+          {/* Edit + Delete buttons. Default flex alignment (stretch) makes the
+              Bearbeiten link match the taller hold-to-delete button, so the two
+              read as one pair; the link centres its own text inside that height. */}
           {onDelete && (
             <div className="flex justify-end gap-2 mt-3">
-              {!confirmDelete && (
-                <Link
-                  href={`/edit/${id}`}
-                  className="text-xs px-3 py-1 rounded-lg transition-all"
-                  style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-                >
-                  Bearbeiten
-                </Link>
-              )}
-              <button
-                onClick={handleDelete}
-                className="text-xs px-3 py-1 rounded-lg transition-all"
-                style={{
-                  background: confirmDelete ? '#c0392b' : 'transparent',
-                  color: confirmDelete ? 'white' : 'var(--muted)',
-                  border: `1px solid ${confirmDelete ? '#c0392b' : 'var(--border)'}`,
-                }}
+              <Link
+                href={`/edit/${id}`}
+                className="flex items-center text-xs px-3 rounded-lg transition-all"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
               >
-                {confirmDelete ? 'Wirklich löschen?' : 'Löschen'}
-              </button>
-              {confirmDelete && (
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="text-xs px-3 py-1 rounded-lg"
-                  style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-                >
-                  Abbrechen
-                </button>
-              )}
+                Bearbeiten
+              </Link>
+              <HoldToDeleteButton onConfirm={handleDelete} />
             </div>
           )}
 
