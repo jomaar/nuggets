@@ -8,7 +8,7 @@ import { TableKit } from '@tiptap/extension-table'
 import { selectionCell, findTable, TableMap } from '@tiptap/pm/tables'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bold, Italic, MessageSquarePlus, Sparkles, Share2, Check,
+  Bold, Italic, MessageSquarePlus, Sparkles, Link2, Share2, Check, ArrowLeft,
   Table2, Rows3, Columns3, TableCellsMerge, Trash2,
   AlignLeft, AlignCenter, AlignRight,
 } from 'lucide-react'
@@ -49,16 +49,22 @@ interface NuggetEditorProps {
    */
   onComment?: () => void
   /**
-   * Opt-in: show a "copy external link" action in the selection menu (reading
-   * view). Copies an ABSOLUTE deep link to the selection for sharing outside
-   * the app; the handler reads the live DOM selection itself (same pattern as
-   * onComment). Unlike onComment, the selection is NOT collapsed afterward —
-   * there's no sheet to open as confirmation, so `externalLinkCopied` flips
-   * the button's icon to a checkmark in place while the menu stays open.
+   * Opt-in: show a "copy link to this spot" action in the selection menu
+   * (reading view). Both handlers read the live DOM selection themselves (same
+   * pattern as onComment); passing either one turns the link button on, and the
+   * button opens a labelled chooser for the two flavours — which one is right
+   * depends on where the link is going, and the icons alone can't say that:
+   *   internal — pasted into another nugget, to branch one note off another.
+   *   external — shared outside the app (Reminders, Kalender, chat, mail).
+   *
+   * Unlike onComment, the selection is NOT collapsed afterward — there's no
+   * sheet to open as confirmation, so `linkCopiedKind` flips the chosen entry
+   * to a check mark in place while the menu stays open.
    */
-  onExternalLink?: () => void
-  /** Briefly true after a successful onExternalLink copy (see above). */
-  externalLinkCopied?: boolean
+  onCopyInternalLink?: () => void
+  onCopyExternalLink?: () => void
+  /** Which flavour was just copied, if any (see above). */
+  linkCopiedKind?: 'internal' | 'external' | null
   /**
    * Per-nugget colour meanings (lib/marking.ts). Named colours show their name
    * as a mini label under the swatch (iOS has no hover tooltips).
@@ -132,8 +138,9 @@ export default function NuggetEditor({
   editable = true,
   enableAiRework = false,
   onComment,
-  onExternalLink,
-  externalLinkCopied = false,
+  onCopyInternalLink,
+  onCopyExternalLink,
+  linkCopiedKind = null,
   markScheme = {},
   renderMermaid = false,
 }: NuggetEditorProps) {
@@ -143,6 +150,9 @@ export default function NuggetEditor({
   // opens, because focusing the popup's inputs drops the visible DOM selection —
   // ProseMirror keeps its state, but we replace by explicit range to be safe.
   const reworkRange = useRef<{ from: number; to: number } | null>(null)
+  // Selection menu showing the internal/external link chooser instead of its
+  // swatch rows (reading view only — see the render for why it is a swap).
+  const [linkMenuOpen, setLinkMenuOpen] = useState(false)
   // Lets handlePaste (captured once by useEditor) reach the live editor instance.
   const editorRef = useRef<Editor | null>(null)
   const editor = useEditor({
@@ -283,6 +293,19 @@ export default function NuggetEditor({
     window.getSelection()?.removeAllRanges()
   }
 
+  /** Whether the selection menu offers deep links at all (reading view). */
+  const hasLinkActions = Boolean(onCopyInternalLink || onCopyExternalLink)
+
+  // A new selection always starts the menu back on its swatch rows: a chooser
+  // left open from the previous selection would copy a link for whatever is
+  // selected NOW, which is not what the open panel appears to promise.
+  useEffect(() => {
+    if (!editor) return
+    const reset = () => setLinkMenuOpen(false)
+    editor.on('selectionUpdate', reset)
+    return () => { editor.off('selectionUpdate', reset) }
+  }, [editor])
+
   /** Open the AI rework popup for the current selection (edit view only). */
   const openRework = () => {
     if (!editor) return
@@ -405,6 +428,38 @@ export default function NuggetEditor({
           shouldShow={bubbleMenuShouldShow}
         >
           <div className="highlight-menu">
+            {linkMenuOpen ? (
+              /* The chooser REPLACES the swatch rows instead of adding a third
+                 action button: the underline row already measures ~337px of a
+                 375px iPhone (see the budget comment on .swatch-label in
+                 globals.css), and only full-width labelled entries can say which
+                 link is which — as icons the two are indistinguishable. Safe as
+                 a content swap because the menu is pinned to a fixed point under
+                 the sticky bar rather than to the selection, so nothing shifts
+                 under the finger. */
+              <>
+                {onCopyInternalLink && (
+                  <button type="button" className="link-choice" onClick={onCopyInternalLink}>
+                    {linkCopiedKind === 'internal' ? <Check size={18} /> : <Link2 size={18} />}
+                    <span>In ein Nugget einfügen</span>
+                  </button>
+                )}
+                {onCopyExternalLink && (
+                  <button type="button" className="link-choice" onClick={onCopyExternalLink}>
+                    {linkCopiedKind === 'external' ? <Check size={18} /> : <Share2 size={18} />}
+                    <span>Extern teilen (Kurzlink)</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="link-choice is-back"
+                  onClick={() => setLinkMenuOpen(false)}
+                >
+                  <ArrowLeft size={18} />
+                  <span>Zurück</span>
+                </button>
+              </>
+            ) : (<>
             {/* Bold/Italic toggle — edit view only. No colour-mark keyboard-shortcut
                 fallback exists on iOS (no Cmd+B without a physical keyboard), so this
                 is the only way to remove bold/italic there. */}
@@ -501,18 +556,19 @@ export default function NuggetEditor({
                   {ulRowNamed && <span className="swatch-label">{'\u00a0'}</span>}
                 </div>
               )}
-              {/* Reading view only: copy an absolute link to the selection for
-                  sharing outside the app. */}
-              {onExternalLink && (
+              {/* Reading view only: copy a link to the selected spot. Works on
+                  ANY selection — no highlight or bookmark needed first, which is
+                  what makes branching one nugget off another cheap. */}
+              {hasLinkActions && (
                 <div className="swatch-cell">
                   <button
                     type="button"
                     className="highlight-ai"
-                    aria-label="Externen Link kopieren"
-                    title="Externen Link kopieren"
-                    onClick={onExternalLink}
+                    aria-label="Link zu dieser Stelle kopieren"
+                    title="Link zu dieser Stelle kopieren"
+                    onClick={() => setLinkMenuOpen(true)}
                   >
-                    {externalLinkCopied ? <Check size={22} /> : <Share2 size={22} />}
+                    {linkCopiedKind ? <Check size={22} /> : <Link2 size={22} />}
                   </button>
                   {ulRowNamed && <span className="swatch-label">{'\u00a0'}</span>}
                 </div>
@@ -533,6 +589,7 @@ export default function NuggetEditor({
                 </div>
               )}
             </div>
+            </>)}
           </div>
         </BubbleMenu>
       )}

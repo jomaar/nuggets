@@ -13,11 +13,26 @@ import { useEffect, useRef } from 'react'
  * stops the synthetic click (touchend is NOT in React's passive-listener set,
  * unlike touchstart/touchmove), and the `fired` ref catches any click that
  * slips through anyway.
+ *
+ * `onPressStart`/`onPressCancel` are optional and exist so a caller can render
+ * the countdown (e.g. the filling ring on the hold-to-delete button) without
+ * reimplementing any of the gesture handling above. A press that COMPLETES is
+ * not a cancel — the visual should stay finished rather than snap back.
  */
 export default function useLongPress<T>(
   onLongPress: (payload: T) => void,
   onTap: (payload: T) => void,
-  { delayMs = 500, moveTolerance = 10 }: { delayMs?: number; moveTolerance?: number } = {},
+  {
+    delayMs = 500,
+    moveTolerance = 10,
+    onPressStart,
+    onPressCancel,
+  }: {
+    delayMs?: number
+    moveTolerance?: number
+    onPressStart?: () => void
+    onPressCancel?: () => void
+  } = {},
 ) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fired = useRef(false)
@@ -33,17 +48,21 @@ export default function useLongPress<T>(
     fired.current = false
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
+      // Cleared BEFORE firing so the touchend that follows sees nothing pending
+      // and therefore reports no cancel.
+      timer.current = null
       fired.current = true
       onLongPress(payload)
     }, delayMs)
+    onPressStart?.()
   }
 
   /** Cancels a pending (not yet fired) long-press. */
   const disarm = () => {
-    if (timer.current) {
-      clearTimeout(timer.current)
-      timer.current = null
-    }
+    if (!timer.current) return
+    clearTimeout(timer.current)
+    timer.current = null
+    onPressCancel?.()
   }
 
   return (payload: T) => ({

@@ -446,6 +446,34 @@ h1, h2, h3, .serif {
 .highlight-ai:hover {
   color: var(--accent-strong, var(--accent, #3f4da2));
 }
+/* Entries of the deep-link chooser, which takes over the whole menu when the
+   link button is tapped. Full-width and LABELLED on purpose: an internal
+   (paste-into-a-nugget) and an external (share) link are indistinguishable as
+   icons, and there is no room for both on the swatch rows anyway (see the
+   budget note on .swatch-label). min-width keeps the menu from shrinking to the
+   longest label's wrap point on narrow phones. */
+.link-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 13rem;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.8rem;
+  text-align: left;
+  color: var(--accent, #3f4da2);
+  background: transparent;
+  border: none;
+  border-radius: 0.6rem;
+  cursor: pointer;
+}
+.link-choice:hover {
+  background: var(--warm, #f4efe6);
+}
+.link-choice.is-back {
+  color: var(--muted, #888);
+  border-top: 1px solid var(--border, #e0d8c8);
+  border-radius: 0 0 0.6rem 0.6rem;
+}
 .format-toggle {
   width: 1.9rem;
   height: 1.9rem;

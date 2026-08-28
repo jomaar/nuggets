@@ -11,7 +11,7 @@ import { useHighlightSave } from '@/components/useHighlightSave'
 import DomainIcon from '@/components/DomainIcon'
 import TextStatsBar from '@/components/TextStatsBar'
 import { countHtml } from '@/lib/textStats'
-import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, copyExternalDeepLink, type AnchorToken } from '@/lib/bookmarkLink'
+import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, copyExternalDeepLink, shortLinkUrl, type AnchorToken } from '@/lib/bookmarkLink'
 import { recordRecentNugget, removeRecentNugget, updateRecentScroll, getRecentScroll } from '@/lib/recentNuggets'
 import {
   HIGHLIGHT_PALETTE, UNDERLINE_PALETTE, MARK_LABEL_MAX,
@@ -25,7 +25,8 @@ import {
   getNuggetFontSize, setNuggetFontSize,
   MIN_FONT_SIZE, MAX_FONT_SIZE, DEFAULT_FONT_SIZE, FONT_SIZE_STEP,
 } from '@/lib/nuggetFontSize'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Waypoints, Printer, Pencil, Trash2, ArrowLeft, MessageSquareText, ALargeSmall, Eye, EyeOff, Plus, BookOpen, Save } from 'lucide-react'
+import HoldToDeleteButton from '@/components/HoldToDeleteButton'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Share2, Waypoints, Printer, Pencil, ArrowLeft, MessageSquareText, Settings, Eye, EyeOff, Plus, BookOpen, Save } from 'lucide-react'
 
 /**
  * A scheme the legend can adopt: either a curated template or another nugget's
@@ -155,10 +156,36 @@ function primaryLabel(labels: ConceptLabel[]): string {
 const MARK_SELECTOR = 'mark, u[data-color]'
 
 /**
+ * The two deep-link flavours a reading spot can be copied as. They are NOT
+ * interchangeable (see lib/bookmarkLink.ts):
+ *   'internal' — site-relative `<a>` + Markdown fallback, for pasting into
+ *                another nugget's text (survives a domain/server move).
+ *   'external' — absolute short `/s/<code>` URL + "quote – url" plain text,
+ *                for Reminders/Kalender/chat/mail, which render no Markdown.
+ * Every copy entry point offers both and reports back which one was written, so
+ * only the tapped control shows its check mark.
+ */
+export type LinkKind = 'internal' | 'external'
+
+/**
+ * Below this much scrollable height the reading-progress hairline is hidden —
+ * on a nugget that barely scrolls it would jump from empty to full and mean
+ * nothing.
+ */
+const MIN_PROGRESS_SCROLL_PX = 600
+
+/**
  * Equal fixed box for every sticky-bar action button — sizing via padding only
  * left the coloured buttons looking slightly larger than their neighbours.
+ *
+ * ⚠️ WIDTH BUDGET — the bar is ONE flat row spread edge to edge, so every button
+ * added has to come out of this sum. Worst case is the owner's 8-button row on a
+ * 375px iPhone; the container's `px-4` leaves 343px:
+ *     8 × 36px (w-9) + 7 × 6px (gap-1.5) = 330px  ≤ 343px   (~13px spare)
+ * Do NOT add a ninth button or widen these boxes without redoing this sum —
+ * rare actions belong in the settings row (PDF, delete) instead.
  */
-const ACTION_BTN = 'flex items-center justify-center w-8 h-8 rounded-lg transition-colors shrink-0'
+const ACTION_BTN = 'flex items-center justify-center w-9 h-9 rounded-lg transition-colors shrink-0'
 
 /**
  * Look of the sticky-bar action buttons: each action carries its own colour
@@ -547,13 +574,14 @@ const SCROLL_RESTORE_KEY = 'nugget-restore-scroll'
  * Mounted only once the nugget is loaded so the highlight hook is seeded with
  * the real initial HTML (its baseline is captured at first render).
  */
-function NuggetReader({ id, contentHtml, markScheme, onComment, onExternalLink, externalLinkCopied }: {
+function NuggetReader({ id, contentHtml, markScheme, onComment, onCopyInternalLink, onCopyExternalLink, linkCopiedKind }: {
   id: string
   contentHtml: string
   markScheme: MarkScheme
   onComment?: () => void
-  onExternalLink?: () => void
-  externalLinkCopied?: boolean
+  onCopyInternalLink?: () => void
+  onCopyExternalLink?: () => void
+  linkCopiedKind?: LinkKind | null
 }) {
   const { html, handleContentChange, handleEditorReady } = useHighlightSave(id, contentHtml)
   return (
@@ -564,8 +592,9 @@ function NuggetReader({ id, contentHtml, markScheme, onComment, onExternalLink, 
       onReady={handleEditorReady}
       markScheme={markScheme}
       onComment={onComment}
-      onExternalLink={onExternalLink}
-      externalLinkCopied={externalLinkCopied}
+      onCopyInternalLink={onCopyInternalLink}
+      onCopyExternalLink={onCopyExternalLink}
+      linkCopiedKind={linkCopiedKind}
       renderMermaid
     />
   )
@@ -607,7 +636,6 @@ export default function NuggetDetailPage() {
   // so switching back restores the exact fine-grained state. Per nugget in
   // sessionStorage like its siblings.
   const [pureText, setPureText] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [marksOpen, setMarksOpen]     = useState(false)
   const [marks, setMarks]             = useState<{ text: string; color: string; kind: MarkKind; markIndex: number }[]>([])
   // Per-nugget colour meanings (legend), parsed from nugget.markScheme and kept
@@ -641,8 +669,9 @@ export default function NuggetDetailPage() {
   const [pickedConcept, setPickedConcept]       = useState<Concept | null>(null)
   const [conceptNote, setConceptNote]           = useState('')
   const [savingConcept, setSavingConcept]       = useState(false)
-  // Mark index whose deep-link was just copied (flips that row's icon to a check).
-  const [copiedMarkIndex, setCopiedMarkIndex] = useState<number | null>(null)
+  // Which mark row's deep link was just copied, and in which flavour — the row
+  // carries one button per flavour, so the index alone would check-mark both.
+  const [copiedMark, setCopiedMark] = useState<{ index: number; kind: LinkKind } | null>(null)
   // Margin comments (annotations): anchored the same way as bookmarks
   // (text-quote anchor), stored as metadata — contentHtml is never touched.
   const [annotations, setAnnotations] = useState<NuggetAnnotation[]>([])
@@ -681,9 +710,13 @@ export default function NuggetDetailPage() {
   const stickyRef = useRef<HTMLDivElement>(null)
   // Brief confirmation that a bookmark was saved (icon flips to a check).
   const [bookmarkSaved, setBookmarkSaved] = useState(false)
-  // Brief confirmation that an external deep link was copied (icon flips to a
-  // check in the BubbleMenu button itself — see copyExternalLink).
-  const [externalLinkCopied, setExternalLinkCopied] = useState(false)
+  // How far through the nugget the reader is (0…1), or null while the document
+  // is too short for that to be worth showing. Drives the hairline on the
+  // sticky bar's bottom edge.
+  const [readProgress, setReadProgress] = useState<number | null>(null)
+  // Which flavour of deep link the selection menu just copied (flips that entry
+  // to a check inside the BubbleMenu — see copySelectionLink).
+  const [selectionLinkCopied, setSelectionLinkCopied] = useState<LinkKind | null>(null)
   // Live Range objects for the current query, kept out of state so stepping
   // through matches doesn't trigger a re-render of the whole reading view.
   const matchRanges = useRef<Range[]>([])
@@ -1072,27 +1105,48 @@ export default function NuggetDetailPage() {
   /** Reset the reading font size to the default. */
   const resetFontSize = () => setFontSize(setNuggetFontSize(DEFAULT_FONT_SIZE))
 
-  // Persist the reading scroll position for this nugget, from any entry point,
-  // so the recent list can return here. A periodic save during a long scroll
-  // plus a trailing save when scrolling settles captures the resting position.
-  // We deliberately do NOT save on cleanup: leaving via an in-app link scrolls
-  // the page to the top first, so a cleanup read of window.scrollY would clobber
-  // the good value with 0 (this is exactly why it failed on iOS but not in a
-  // hard-reload test).
+  // One scroll listener serving two readers of the same position:
+  //
+  // 1. Persistence — the reading position for this nugget, from any entry point,
+  //    so the recent list can return here. A periodic save during a long scroll
+  //    plus a trailing save when scrolling settles captures the resting
+  //    position. We deliberately do NOT save on cleanup: leaving via an in-app
+  //    link scrolls the page to the top first, so a cleanup read of
+  //    window.scrollY would clobber the good value with 0 (this is exactly why
+  //    it failed on iOS but not in a hard-reload test).
+  // 2. The progress hairline under the sticky bar — updated on every event
+  //    (the throttling above applies only to the storage write).
   useEffect(() => {
     if (!nugget) return
     const id = nugget.id
     let lastSave = 0
     let trailing = 0
     const save = () => { lastSave = Date.now(); updateRecentScroll(id, window.scrollY) }
+    const updateProgress = () => {
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight
+      setReadProgress(
+        maxScroll < MIN_PROGRESS_SCROLL_PX
+          ? null
+          : Math.min(1, Math.max(0, window.scrollY / maxScroll)),
+      )
+    }
     const onScroll = () => {
+      updateProgress()
       if (Date.now() - lastSave > 400) save()       // periodic during continuous scroll
       clearTimeout(trailing)
       trailing = window.setTimeout(save, 200)         // resting position after scrolling stops
     }
+    updateProgress()
     window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', updateProgress)
+    // The Tiptap reader renders async and grows the page after mount — without
+    // watching the document size the bar would read 100 % until the first scroll.
+    const observer = new ResizeObserver(updateProgress)
+    observer.observe(document.documentElement)
     return () => {
       window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', updateProgress)
+      observer.disconnect()
       clearTimeout(trailing)
     }
   }, [nugget])
@@ -1161,8 +1215,12 @@ export default function NuggetDetailPage() {
     return () => cancelAnimationFrame(raf)
   }, [nugget])
 
+  /**
+   * Delete for good. Confirmation is the GESTURE, not a second tap: the button
+   * in the settings row only calls this once its hold has completed (see
+   * HoldToDeleteButton), so there is no confirm state to track here.
+   */
   const handleDelete = async () => {
-    if (!confirmDelete) { setConfirmDelete(true); return }
     await fetch(`/api/nuggets/${id}`, { method: 'DELETE' })
     // This device just opened the nugget to delete it, so it sits at the top
     // of the recent list — remove it or the list offers a dead link.
@@ -1235,22 +1293,38 @@ export default function NuggetDetailPage() {
   }
 
   /**
-   * Copy a deep link to a highlight. The marked text becomes a `?bm=` anchor;
-   * pasted into another nugget's text it turns into a clickable cross-reference
-   * that branches straight to this highlighted spot. The popup stays open so the
-   * row's check-mark confirmation is visible.
+   * Write a deep link to this nugget's spot into the clipboard, in the flavour
+   * asked for. The single funnel every copy entry point goes through (marks
+   * popup rows, selection menu), so the two flavours can never drift apart:
+   *
+   *  - internal: the path stays SITE-RELATIVE inside the `<a href>`, so a link
+   *    stored in another nugget's contentHtml survives a domain/server move.
+   *  - external: the path is minted into a short `/s/<code>` URL first, so the
+   *    plain-text paste into Reminders/Kalender stays short and readable.
+   *
+   * Returns whether the clipboard write succeeded, so callers can show (or skip)
+   * their confirmation.
    */
-  const copyMarkLink = async (markIndex: number) => {
+  const copyAnchorLink = async (anchor: AnchorToken, kind: LinkKind): Promise<boolean> => {
+    const path = `/nugget/${id}?bm=${encodeAnchorToken(anchor)}`
+    // Visible link text = the quoted passage itself; the URL stays hidden.
+    if (kind === 'internal') return copyDeepLink(path, anchor.quote)
+    return copyExternalDeepLink(await shortLinkUrl(id, path), anchor.quote)
+  }
+
+  /**
+   * Copy a deep link to a marking. The marked text becomes a `?bm=` anchor:
+   * pasted into another nugget it turns into a clickable cross-reference that
+   * branches straight to this spot, and shared externally it points a recipient
+   * at the same passage. The popup stays open so the row's check mark is visible.
+   */
+  const copyMarkLink = async (markIndex: number, kind: LinkKind) => {
     const root = contentRef.current
     const mark = root?.querySelectorAll(MARK_SELECTOR)[markIndex]
     if (!root || !mark) return
-    const anchor = anchorForMark(root, mark)
-    // Site-relative path so the stored link survives a domain/server move.
-    const path = `/nugget/${id}?bm=${encodeAnchorToken(anchor)}`
-    // Visible link text = the highlighted text itself; URL stays hidden in href.
-    if (await copyDeepLink(path, anchor.quote)) {
-      setCopiedMarkIndex(markIndex)
-      setTimeout(() => setCopiedMarkIndex(null), 1200)
+    if (await copyAnchorLink(anchorForMark(root, mark), kind)) {
+      setCopiedMark({ index: markIndex, kind })
+      setTimeout(() => setCopiedMark(null), 1200)
     }
   }
 
@@ -1312,46 +1386,25 @@ export default function NuggetDetailPage() {
   }
 
   /**
-   * Copy an ABSOLUTE deep link to the current selection, for sharing outside
-   * the app (Reminders, Kalender, chat, email) — TODO 8. Unlike the internal
-   * cross-nugget links (site-relative href, portable across domain moves), a
-   * link meant to leave the app must carry the domain. Reuses the exact anchor
-   * mechanic behind bookmarks/comments/highlight links, just built from an
-   * arbitrary selection instead of a `<mark>` or a sampled line. The selection
-   * is left intact (unlike the comment button) so the checkmark confirmation
-   * is visible in place before the menu closes.
+   * Copy a deep link to the CURRENT SELECTION — the entry point that needs no
+   * highlight and no bookmark first, which is what makes branching one nugget
+   * off another cheap. Reuses the exact anchor mechanic behind
+   * bookmarks/comments/mark links, just built from an arbitrary selection
+   * instead of a `<mark>` or a sampled line.
    *
-   * Mints a short `/s/<code>` link via `/api/shortlinks` before writing to the
-   * clipboard (see lib/shortLink.ts + app/s/[code]/route.ts) so the plain-text
-   * paste (Reminders/Kalender have no Markdown) stays short; any failure of
-   * that round trip falls back to today's long absolute URL.
+   * The selection is left intact (unlike the comment button, which collapses
+   * it) so the check-mark confirmation is visible in place before the menu
+   * closes.
    */
-  const copyExternalLink = async () => {
+  const copySelectionLink = async (kind: LinkKind) => {
     const root = contentRef.current
     const sel = selectionRangeRef.current
     if (!root || !sel) return
     const anchor = buildRangeAnchor(root, sel)
     if (!anchor) return
-    const path = `/nugget/${id}?bm=${encodeAnchorToken(anchor)}`
-
-    let url = `${window.location.origin}${path}`
-    try {
-      const res = await fetch('/api/shortlinks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nuggetId: id, path }),
-      })
-      if (res.ok) {
-        const { code } = await res.json()
-        url = `${window.location.origin}/s/${code}`
-      }
-    } catch {
-      /* network/API failure — keep the long-URL fallback assigned above */
-    }
-
-    if (await copyExternalDeepLink(url, anchor.quote)) {
-      setExternalLinkCopied(true)
-      setTimeout(() => setExternalLinkCopied(false), 1200)
+    if (await copyAnchorLink(anchor, kind)) {
+      setSelectionLinkCopied(kind)
+      setTimeout(() => setSelectionLinkCopied(null), 1200)
     }
   }
 
@@ -1716,19 +1769,24 @@ export default function NuggetDetailPage() {
 
   return (
     <>
-      {/* Sticky action bar — back / info / edit / delete reachable at any
-          scroll position, so editing a long nugget never means scrolling up. */}
+      {/* Sticky action bar — every READING action reachable at any scroll
+          position, so working through a long nugget never means scrolling up.
+          Rare document-level actions (PDF, delete) deliberately do NOT live
+          here; they sit in the settings row below, which keeps this row short
+          enough for comfortable targets. */}
       <div
         ref={stickyRef}
+        // No `relative` here: it would fight `sticky` for the position property,
+        // and a sticky box is already a containing block for the absolutely
+        // positioned progress hairline below.
         className="sticky top-0 z-30 -mx-4 px-4 pt-3 pb-3 win-controls-inset"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
         {/* All actions as equal-sized icon buttons in ONE flat row, spread
             evenly across the full bar width (justify-between) — a right-packed
             group left dead space next to the back arrow and made the tight
-            targets easy to mistap. gap-0.5 is the minimum spacing so ten
-            32px boxes still fit a 375px iPhone. */}
-        <div className="flex items-center justify-between gap-0.5">
+            targets easy to mistap. See ACTION_BTN for the width budget. */}
+        <div className="flex items-center justify-between gap-1.5">
           <button
             onClick={() => router.back()}
             aria-label="Zurück"
@@ -1774,16 +1832,20 @@ export default function NuggetDetailPage() {
               <MessageSquareText size={16} />
             </button>
           )}
+          {/* The gear, not "AA": this row carries the view settings AND the
+              rare document actions (PDF, delete), so it is the workbench for
+              this nugget rather than a font-size control. */}
           <button
             onClick={() => setViewOpen(o => !o)}
-            aria-label="Ansicht: Schriftgröße, Versangaben & Kommentarstellen"
+            aria-label="Einstellungen & Aktionen"
             className={ACTION_BTN}
             style={actionStyle('var(--act-view)', viewOpen)}
           >
-            <ALargeSmall size={16} />
+            <Settings size={16} />
           </button>
-          {/* Info + PDF stay neutral on purpose — colouring every single icon
-              would drown out the meaningful hues. */}
+          {/* Info stays neutral on purpose — colouring every single icon would
+              drown out the meaningful hues. It is now purely INFORMATION about
+              the nugget; anything you *do* to the nugget lives under the gear. */}
           <button
             onClick={() => setInfoOpen(o => !o)}
             aria-label="Details & Konzepte"
@@ -1792,15 +1854,7 @@ export default function NuggetDetailPage() {
           >
             <Info size={16} />
           </button>
-          <Link
-            href={`/nugget/${nugget.id}/print`}
-            aria-label="Als PDF exportieren"
-            className={ACTION_BTN}
-            style={actionStyle()}
-          >
-            <Printer size={16} />
-          </Link>
-          {isOwner && !confirmDelete && (
+          {isOwner && (
             <button
               onClick={goEdit}
               aria-label="Bearbeiten"
@@ -1810,27 +1864,21 @@ export default function NuggetDetailPage() {
               <Pencil size={16} />
             </button>
           )}
-          {isOwner && (
-            <button
-              onClick={handleDelete}
-              aria-label={confirmDelete ? 'Wirklich löschen?' : 'Löschen'}
-              className={ACTION_BTN}
-              style={actionStyle('var(--act-delete)', confirmDelete)}
-            >
-              <Trash2 size={16} />
-            </button>
-          )}
-          {isOwner && confirmDelete && (
-            <button
-              onClick={() => setConfirmDelete(false)}
-              aria-label="Löschen abbrechen"
-              className={ACTION_BTN}
-              style={actionStyle()}
-            >
-              <X size={16} />
-            </button>
-          )}
         </div>
+
+        {/* Reading progress — a hairline sitting ON the bar's bottom border, so
+            it reads as a property of the bar rather than another widget. */}
+        {readProgress !== null && (
+          <div
+            aria-hidden
+            className="absolute left-0 bottom-[-1px] h-0.5"
+            style={{
+              width: `${readProgress * 100}%`,
+              background: 'var(--accent)',
+              transition: 'width 120ms linear',
+            }}
+          />
+        )}
 
         {/* In-text search bar — kept inside the sticky bar so it (and the match
             counter) stays reachable while stepping through a long nugget. */}
@@ -1883,9 +1931,13 @@ export default function NuggetDetailPage() {
           </div>
         )}
 
-        {/* View-settings row — font size (+ verse markers for Bible imports)
-            live in the sticky bar so adjusting them never costs the reading
-            position; the info panel sits above the content and would. */}
+        {/* Settings row — the ONE home for everything that changes how this
+            nugget reads (font size, verse markers, comment indicators) plus the
+            rare document actions below. It expands INSIDE the sticky bar,
+            pushing the text down instead of covering it: reading has priority,
+            so no overlay ever sits on the words. Adjusting from here also never
+            costs the reading position, which the info panel above the content
+            would. */}
         {viewOpen && (
           <div className="mt-3 flex items-center gap-2 flex-wrap">
             {/* "Nur Text" master switch — completely unannotated reading in one
@@ -1964,12 +2016,31 @@ export default function NuggetDetailPage() {
             )}
           </div>
         )}
-        {/* "Vorlesen" sits in its own row — it has more states (bereitet vor
-            / spielt / pausiert) than the toggle chips above and needed room
-            for a stop button + error text without crowding that row. */}
+        {/* Actions block, separated by a rule from the view settings above:
+            these DO something to the nugget rather than change how it looks.
+            "Vorlesen" needs its own line — it has more states (bereitet vor /
+            spielt / pausiert) than the chips and needs room for a stop button
+            and error text. */}
         {viewOpen && (
-          <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+          <div className="mt-2 pt-2 flex flex-col gap-2" style={{ borderTop: '1px solid var(--border)' }}>
             <SpeechPlayer nuggetId={id} contentRef={contentRef} isOwner={isOwner} />
+            <div className="flex items-center gap-2 flex-wrap">
+              <Link
+                href={`/nugget/${nugget.id}/print`}
+                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                <Printer size={14} />
+                Als PDF
+              </Link>
+              {isOwner && (
+                <HoldToDeleteButton
+                  onConfirm={handleDelete}
+                  label="Löschen"
+                  className="ml-auto"
+                />
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -1994,7 +2065,11 @@ export default function NuggetDetailPage() {
       </header>
 
       {/* Collapsible info panel — toggled from the top bar, rendered above the
-          content so it stays visible without scrolling a long nugget. */}
+          content so it stays visible without scrolling a long nugget.
+          Strictly INFORMATION about the nugget: what it is, where it came from,
+          what it connects to. Reading settings and actions live under the gear
+          in the sticky bar, never in both places — font size and Versangaben
+          used to be duplicated here, on the same state, for no gain. */}
       {infoOpen && (
         <div
           className="mb-6 px-4 py-4 rounded-xl flex flex-col gap-5"
@@ -2009,73 +2084,6 @@ export default function NuggetDetailPage() {
                 Erstellt: {formatDate(nugget.createdAt)}
               </p>
             </div>
-
-            {/* Reading font size — scopes to nugget text only (--nugget-font-size). */}
-            <div>
-              <h2 className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--muted)' }}>
-                Schriftgröße
-              </h2>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => changeFontSize(-FONT_SIZE_STEP)}
-                  disabled={fontSize <= MIN_FONT_SIZE}
-                  aria-label="Schrift verkleinern"
-                  className="flex items-center justify-center w-9 h-9 rounded-lg disabled:opacity-40"
-                  style={{ color: 'var(--ink)', border: '1px solid var(--border)', fontSize: '13px' }}
-                >
-                  A
-                </button>
-                <span className="text-sm tabular-nums w-12 text-center" style={{ color: 'var(--ink)' }}>
-                  {fontSize} px
-                </span>
-                <button
-                  onClick={() => changeFontSize(FONT_SIZE_STEP)}
-                  disabled={fontSize >= MAX_FONT_SIZE}
-                  aria-label="Schrift vergrößern"
-                  className="flex items-center justify-center w-9 h-9 rounded-lg disabled:opacity-40"
-                  style={{ color: 'var(--ink)', border: '1px solid var(--border)', fontSize: '20px' }}
-                >
-                  A
-                </button>
-                <button
-                  onClick={resetFontSize}
-                  disabled={fontSize === DEFAULT_FONT_SIZE}
-                  className="text-xs px-2.5 py-1 rounded-lg disabled:opacity-40 ml-auto"
-                  style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-                >
-                  Zurücksetzen
-                </button>
-              </div>
-            </div>
-
-            {/* Bible verse markers toggle — only for nuggets that contain
-                <sup data-verse> atoms (Bible imports). Same state as the
-                sticky-bar view row; persisted per nugget in sessionStorage. */}
-            {hasVerses && (
-              <div>
-                <h2 className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--muted)' }}>
-                  Versangaben
-                </h2>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm" style={{ color: 'var(--ink)' }}>
-                    Kapitel.Vers im Text anzeigen
-                  </span>
-                  <button
-                    type="button"
-                    onClick={toggleVerses}
-                    disabled={pureText}
-                    className="text-xs px-3 py-1 rounded-lg transition-all disabled:opacity-40"
-                    style={{
-                      background: showVerses ? 'var(--accent)' : 'transparent',
-                      color:      showVerses ? 'white'         : 'var(--muted)',
-                      border: `1px solid ${showVerses ? 'var(--accent)' : 'var(--border)'}`,
-                    }}
-                  >
-                    {showVerses ? 'An' : 'Aus'}
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* Links */}
             {(nugget.sourceUrl || nugget.aiChatUrl) && (
@@ -2225,8 +2233,9 @@ export default function NuggetDetailPage() {
           contentHtml={nugget.contentHtml}
           markScheme={scheme}
           onComment={isOwner ? addAnnotation : undefined}
-          onExternalLink={copyExternalLink}
-          externalLinkCopied={externalLinkCopied}
+          onCopyInternalLink={() => copySelectionLink('internal')}
+          onCopyExternalLink={() => copySelectionLink('external')}
+          linkCopiedKind={selectionLinkCopied}
         />
       </div>
 
@@ -2498,6 +2507,22 @@ export default function NuggetDetailPage() {
                 </div>
               )}
 
+              {/* The two link icons per row are meaningless without this line —
+                  an internal and an external link look identical as icons. */}
+              {marks.length > 0 && (
+                <p
+                  className="flex items-center gap-3 flex-wrap text-[11px] leading-snug flex-shrink-0"
+                  style={{ color: 'var(--muted)' }}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    <Link2 size={12} /> Link für ein anderes Nugget
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Share2 size={12} /> Kurzlink zum Teilen
+                  </span>
+                </p>
+              )}
+
               {marks.length === 0 ? (
                 <p className="text-sm text-center py-6" style={{ color: 'var(--muted)' }}>
                   Keine Markierungen in diesem Nugget.
@@ -2545,13 +2570,26 @@ export default function NuggetDetailPage() {
                         {m.text || '—'}
                       </span>
                     </button>
+                    {/* Both deep-link flavours side by side — which one you want
+                        depends on where it is going, and that is not something
+                        the app can guess (see the legend line above the list). */}
                     <button
-                      onClick={() => copyMarkLink(m.markIndex)}
-                      aria-label="Link zur Markierung kopieren"
+                      onClick={() => copyMarkLink(m.markIndex, 'internal')}
+                      aria-label="Link zum Einfügen in ein Nugget kopieren"
+                      className="flex-shrink-0 flex items-center justify-center p-2 rounded-lg transition-transform active:scale-95"
+                      style={{ color: 'var(--ink)' }}
+                    >
+                      {copiedMark?.index === m.markIndex && copiedMark.kind === 'internal'
+                        ? <Check size={15} /> : <Link2 size={15} />}
+                    </button>
+                    <button
+                      onClick={() => copyMarkLink(m.markIndex, 'external')}
+                      aria-label="Kurzlink zum Teilen kopieren"
                       className="flex-shrink-0 flex items-center justify-center p-2 mr-1 rounded-lg transition-transform active:scale-95"
                       style={{ color: 'var(--ink)' }}
                     >
-                      {copiedMarkIndex === m.markIndex ? <Check size={15} /> : <Link2 size={15} />}
+                      {copiedMark?.index === m.markIndex && copiedMark.kind === 'external'
+                        ? <Check size={15} /> : <Share2 size={15} />}
                     </button>
                   </div>
                 ))

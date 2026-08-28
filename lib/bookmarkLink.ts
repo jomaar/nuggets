@@ -94,13 +94,37 @@ function truncateForPlainText(label: string): string {
 }
 
 /**
+ * Resolve a site-relative reading-spot path to an ABSOLUTE short `/s/<code>`
+ * URL for sharing outside the app. Falls back to the long absolute URL on any
+ * network/API failure, so a share never fails outright — it just stays long.
+ *
+ * Lives here rather than in the reading view because BOTH share entry points
+ * need it: the selection menu and the per-mark share button in the marks popup.
+ */
+export async function shortLinkUrl(nuggetId: string, path: string): Promise<string> {
+  const longUrl = `${window.location.origin}${path}`
+  try {
+    const res = await fetch('/api/shortlinks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nuggetId, path }),
+    })
+    if (!res.ok) return longUrl
+    const { code } = await res.json()
+    return code ? `${window.location.origin}/s/${code}` : longUrl
+  } catch {
+    return longUrl
+  }
+}
+
+/**
  * Copy an ABSOLUTE URL to the clipboard for sharing OUTSIDE the app
  * (Reminders, Kalender, chat, email) — unlike `copyDeepLink`'s internal
  * cross-nugget links (site-relative href, portable across domain moves), a
  * link meant to leave the app must carry the domain to work from anywhere it
  * lands. `url` is expected to already be absolute (either a short `/s/<code>`
- * link or a long fallback URL — see `copyExternalLink`'s caller, which does
- * the short-link round trip before calling this).
+ * link or a long fallback URL — `shortLinkUrl()` above does that round trip and
+ * is what every caller should use to build the `url` argument).
  *
  * A short code alone (e.g. `/s/x7k2`) is opaque by design (no slugify/content
  * leak in the URL), so the plain-text flavor puts the human-readable `label`
