@@ -6,6 +6,7 @@ import Link from 'next/link'
 import NuggetEditor from '@/components/NuggetEditor'
 import AnnotationSheet, { type NuggetAnnotation } from '@/components/AnnotationSheet'
 import ScrollJumpButton from '@/components/ScrollJumpButton'
+import SpeechPlayer from '@/components/SpeechPlayer'
 import { useHighlightSave } from '@/components/useHighlightSave'
 import DomainIcon from '@/components/DomainIcon'
 import TextStatsBar from '@/components/TextStatsBar'
@@ -1961,6 +1962,14 @@ export default function NuggetDetailPage() {
                 Kommentarstellen {showAnnotationMarks ? 'an' : 'aus'}
               </button>
             )}
+          </div>
+        )}
+        {/* "Vorlesen" sits in its own row — it has more states (bereitet vor
+            / spielt / pausiert) than the toggle chips above and needed room
+            for a stop button + error text without crowding that row. */}
+        {viewOpen && (
+          <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+            <SpeechPlayer nuggetId={id} contentRef={contentRef} isOwner={isOwner} />
           </div>
         )}
       </div>

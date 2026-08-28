@@ -43,6 +43,7 @@ model Nugget {
   markScheme      String   @default("{}") // per-nugget colour meanings: JSON { "hl:yellow": "These", … } (see lib/marking.ts)
   markTemplateId  String? // which MarkTemplate the scheme came from; only labels the popup header + glossary
   domainId        String?
+  speechSegments  String? // JSON { hash, segments: [{text, lang}] } — cached "Vorlesen" language-tagging (see lib/speech.ts); null = never generated
   aiInputTokens   Int      @default(0)
   aiOutputTokens  Int      @default(0)
   createdAt       DateTime @default(now())
