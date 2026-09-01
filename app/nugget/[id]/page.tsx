@@ -7,6 +7,7 @@ import NuggetEditor from '@/components/NuggetEditor'
 import AnnotationSheet, { type NuggetAnnotation } from '@/components/AnnotationSheet'
 import ScrollJumpButton from '@/components/ScrollJumpButton'
 import SpeechPlayer from '@/components/SpeechPlayer'
+import { useSpeech } from '@/components/useSpeech'
 import { useHighlightSave } from '@/components/useHighlightSave'
 import DomainIcon from '@/components/DomainIcon'
 import TextStatsBar from '@/components/TextStatsBar'
@@ -745,6 +746,9 @@ export default function NuggetDetailPage() {
   // Live Range objects for the current query, kept out of state so stepping
   // through matches doesn't trigger a re-render of the whole reading view.
   const matchRanges = useRef<Range[]>([])
+  // Read-aloud state. Held HERE, not in the button inside the settings panel:
+  // closing the panel to see the text again must not stop the reading.
+  const speech = useSpeech({ nuggetId: id, contentRef, stickyRef, isOwner })
 
   const load = useCallback(async () => {
     try {
@@ -2040,7 +2044,7 @@ export default function NuggetDetailPage() {
                 states (bereitet vor / spielt / pausiert) than a toggle and
                 needs space for a stop button and error text. */}
             <div className="nugget-settings-actions">
-              <SpeechPlayer nuggetId={id} nuggetTitle={nugget.title ?? ''} contentRef={contentRef} stickyRef={stickyRef} isOwner={isOwner} />
+              <SpeechPlayer {...speech} />
               <Link
                 href={`/nugget/${nugget.id}/print`}
                 className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg"
