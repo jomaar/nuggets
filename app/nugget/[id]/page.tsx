@@ -2040,7 +2040,7 @@ export default function NuggetDetailPage() {
                 states (bereitet vor / spielt / pausiert) than a toggle and
                 needs space for a stop button and error text. */}
             <div className="nugget-settings-actions">
-              <SpeechPlayer nuggetId={id} contentRef={contentRef} isOwner={isOwner} />
+              <SpeechPlayer nuggetId={id} nuggetTitle={nugget.title ?? ''} contentRef={contentRef} stickyRef={stickyRef} isOwner={isOwner} />
               <Link
                 href={`/nugget/${nugget.id}/print`}
                 className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg"
