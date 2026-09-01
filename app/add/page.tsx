@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { marked } from 'marked'
 import TurndownService from 'turndown'
-import { stripImportBallast } from '@/lib/content'
+import { htmlToMarkdown, stripImportBallast } from '@/lib/content'
 import { detectBibleText, convertBibleText, type BibleConversion } from '@/lib/bible'
 import { countPlainText } from '@/lib/textStats'
 import DomainChips from '@/components/DomainChips'
@@ -184,6 +184,48 @@ export default function AddPage() {
   const handleDomainSelect = (id: string) => {
     setDomainId(id)
     setLastDomainSlug(domains.find(d => d.id === id)?.slug ?? '')
+  }
+
+  /**
+   * Rich paste into the Markdown content field.
+   *
+   * A <textarea> only ever receives the clipboard's text/plain flavor — the
+   * browser drops text/html before it reaches the DOM. Copying a formatted
+   * answer out of a chat UI therefore lost bold, headings, links and tables
+   * HERE, while the identical paste into the Tiptap edit view kept all of it
+   * (ProseMirror reads text/html). That asymmetry is why re-pasting into an
+   * already-saved nugget looked like it "fixed" the formatting.
+   *
+   * So convert the HTML flavor to Markdown ourselves — same direction as the
+   * .html file import above, but through the shared htmlToMarkdown (GFM
+   * tables + fenced code blocks, which the local converter there lacks). The
+   * field stays Markdown; nothing else about this form changes.
+   */
+  const handleContentPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const html = e.clipboardData.getData('text/html').trim()
+    if (!html) return // plain text — the native paste is already correct
+
+    // A URL copied from the address bar or a link's context menu carries an
+    // <a> HTML flavor too; turning it into [url](url) would break "Text aus
+    // Link", which expects the bare URL to be the field's whole content.
+    const plain = e.clipboardData.getData('text/plain').trim()
+    if (/^https?:\/\/\S+$/i.test(plain)) return
+
+    const markdown = htmlToMarkdown(stripImportBallast(html)).trim()
+    if (!markdown) return
+
+    e.preventDefault()
+    const el = e.currentTarget
+    const start = el.selectionStart ?? content.length
+    const end   = el.selectionEnd   ?? start
+    setContent(content.slice(0, start) + markdown + content.slice(end))
+
+    // React re-renders with the new value and would otherwise leave the caret
+    // at the start of the field; put it back behind the inserted text.
+    const caret = start + markdown.length
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = caret
+    })
   }
 
   const handleFileLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -465,6 +507,7 @@ export default function AddPage() {
             <textarea
               value={content}
               onChange={e => setContent(e.target.value)}
+              onPaste={handleContentPaste}
               placeholder="Markdown hier schreiben…"
               rows={8}
               style={{ ...inputStyle, resize: 'vertical', lineHeight: '1.6' }}
