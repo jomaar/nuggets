@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, type CSSProperties } from 'react'
+import { useState, useEffect, useCallback, useRef, type CSSProperties, type ReactNode } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import NuggetEditor from '@/components/NuggetEditor'
@@ -26,7 +26,8 @@ import {
   MIN_FONT_SIZE, MAX_FONT_SIZE, DEFAULT_FONT_SIZE, FONT_SIZE_STEP,
 } from '@/lib/nuggetFontSize'
 import HoldToDeleteButton from '@/components/HoldToDeleteButton'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Share2, Waypoints, Printer, Pencil, ArrowLeft, MessageSquareText, Settings, Eye, EyeOff, Plus, BookOpen, Save } from 'lucide-react'
+import ToggleSwitch from '@/components/ToggleSwitch'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Share2, Waypoints, Printer, Pencil, ArrowLeft, MessageSquareText, Settings, Eye, EyeOff, Plus, BookOpen, Save, Type, Hash, MessageSquare, RotateCcw } from 'lucide-react'
 
 /**
  * A scheme the legend can adopt: either a curated template or another nugget's
@@ -201,6 +202,30 @@ function actionStyle(color?: string, active?: boolean): CSSProperties {
     background: `color-mix(in srgb, ${color} 12%, transparent)`,
     border: `1px solid color-mix(in srgb, ${color} 30%, transparent)`,
   }
+}
+
+/**
+ * One tile in the Ansicht-panel's settings grid: icon + static label + a real
+ * ToggleSwitch flush right. The label text never changes with state (unlike
+ * the old "Versangaben an/aus" buttons) — the switch alone carries the state,
+ * so there is nothing to memorize about what a colour means.
+ */
+function SettingsToggleTile({ icon, label, checked, onChange, disabled }: {
+  icon: ReactNode
+  label: string
+  checked: boolean
+  onChange: () => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="nugget-settings-tile" data-disabled={disabled}>
+      <span style={{ color: 'var(--muted)' }}>{icon}</span>
+      <span className="text-xs" style={{ color: 'var(--ink)' }}>{label}</span>
+      <span style={{ marginLeft: 'auto' }}>
+        <ToggleSwitch checked={checked} onChange={onChange} disabled={disabled} label={label} />
+      </span>
+    </div>
+  )
 }
 
 /** Formats an ISO date as a short German date (e.g. 9. Juni 2026). */
@@ -1931,100 +1956,91 @@ export default function NuggetDetailPage() {
           </div>
         )}
 
-        {/* Settings row — the ONE home for everything that changes how this
+        {/* Settings panel — the ONE home for everything that changes how this
             nugget reads (font size, verse markers, comment indicators) plus the
             rare document actions below. It expands INSIDE the sticky bar,
             pushing the text down instead of covering it: reading has priority,
             so no overlay ever sits on the words. Adjusting from here also never
             costs the reading position, which the info panel above the content
-            would. */}
+            would. Rendered as its own card (`.nugget-settings-panel`) so it
+            reads as a distinct surface, not a loose row of buttons floating
+            on the sticky bar's background. */}
         {viewOpen && (
-          <div className="mt-3 flex items-center gap-2 flex-wrap">
-            {/* "Nur Text" master switch — completely unannotated reading in one
-                tap. While on, the individual visibility toggles below (and the
-                legend eyes in the marks popup) are dimmed: the master wins. */}
-            <button
-              type="button"
-              onClick={togglePureText}
-              className="text-xs px-2.5 py-1.5 rounded-lg transition-all"
-              style={{
-                background: pureText ? 'var(--accent)' : 'transparent',
-                color:      pureText ? 'white'         : 'var(--muted)',
-                border: `1px solid ${pureText ? 'var(--accent)' : 'var(--border)'}`,
-              }}
-            >
-              Nur Text {pureText ? 'an' : 'aus'}
-            </button>
-            <button
-              onClick={() => changeFontSize(-FONT_SIZE_STEP)}
-              disabled={fontSize <= MIN_FONT_SIZE}
-              aria-label="Schrift verkleinern"
-              className="flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-40"
-              style={{ color: 'var(--ink)', border: '1px solid var(--border)', fontSize: '12px' }}
-            >
-              A
-            </button>
-            <span className="text-xs tabular-nums w-10 text-center" style={{ color: 'var(--ink)' }}>
-              {fontSize} px
-            </span>
-            <button
-              onClick={() => changeFontSize(FONT_SIZE_STEP)}
-              disabled={fontSize >= MAX_FONT_SIZE}
-              aria-label="Schrift vergrößern"
-              className="flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-40"
-              style={{ color: 'var(--ink)', border: '1px solid var(--border)', fontSize: '17px' }}
-            >
-              A
-            </button>
-            <button
-              onClick={resetFontSize}
-              disabled={fontSize === DEFAULT_FONT_SIZE}
-              className="text-xs px-2.5 py-1.5 rounded-lg disabled:opacity-40"
-              style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-            >
-              Zurücksetzen
-            </button>
-            {hasVerses && (
-              <button
-                type="button"
-                onClick={toggleVerses}
-                disabled={pureText}
-                className="text-xs px-2.5 py-1.5 rounded-lg ml-auto transition-all disabled:opacity-40"
-                style={{
-                  background: showVerses ? 'var(--accent)' : 'transparent',
-                  color:      showVerses ? 'white'         : 'var(--muted)',
-                  border: `1px solid ${showVerses ? 'var(--accent)' : 'var(--border)'}`,
-                }}
-              >
-                Versangaben {showVerses ? 'an' : 'aus'}
-              </button>
-            )}
-            {annotations.length > 0 && (
-              <button
-                type="button"
-                onClick={toggleAnnotationMarks}
-                disabled={pureText}
-                className={`text-xs px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-40${hasVerses ? '' : ' ml-auto'}`}
-                style={{
-                  background: showAnnotationMarks ? 'var(--accent)' : 'transparent',
-                  color:      showAnnotationMarks ? 'white'         : 'var(--muted)',
-                  border: `1px solid ${showAnnotationMarks ? 'var(--accent)' : 'var(--border)'}`,
-                }}
-              >
-                Kommentarstellen {showAnnotationMarks ? 'an' : 'aus'}
-              </button>
-            )}
-          </div>
-        )}
-        {/* Actions block, separated by a rule from the view settings above:
-            these DO something to the nugget rather than change how it looks.
-            "Vorlesen" needs its own line — it has more states (bereitet vor /
-            spielt / pausiert) than the chips and needs room for a stop button
-            and error text. */}
-        {viewOpen && (
-          <div className="mt-2 pt-2 flex flex-col gap-2" style={{ borderTop: '1px solid var(--border)' }}>
-            <SpeechPlayer nuggetId={id} contentRef={contentRef} isOwner={isOwner} />
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="nugget-settings-panel">
+            <div className="nugget-settings-grid">
+              {/* "Nur Text" master switch — completely unannotated reading in
+                  one tap. While on, the individual visibility toggles below
+                  (and the legend eyes in the marks popup) are dimmed: the
+                  master wins. Every tile's state lives in the switch position,
+                  never in the label text or a colour fill alone. */}
+              <SettingsToggleTile
+                icon={<Type size={15} />}
+                label="Nur Text"
+                checked={pureText}
+                onChange={togglePureText}
+              />
+              {hasVerses && (
+                <SettingsToggleTile
+                  icon={<Hash size={15} />}
+                  label="Versangaben"
+                  checked={showVerses}
+                  disabled={pureText}
+                  onChange={toggleVerses}
+                />
+              )}
+              {annotations.length > 0 && (
+                <SettingsToggleTile
+                  icon={<MessageSquare size={15} />}
+                  label="Kommentarstellen"
+                  checked={showAnnotationMarks}
+                  disabled={pureText}
+                  onChange={toggleAnnotationMarks}
+                />
+              )}
+            </div>
+
+            <div className="nugget-settings-fontrow">
+              <span className="text-xs" style={{ color: 'var(--ink)' }}>Schrift</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => changeFontSize(-FONT_SIZE_STEP)}
+                  disabled={fontSize <= MIN_FONT_SIZE}
+                  aria-label="Schrift verkleinern"
+                  className="flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-40"
+                  style={{ color: 'var(--ink)', border: '1px solid var(--border)', fontSize: '12px' }}
+                >
+                  A
+                </button>
+                <span className="text-xs tabular-nums w-10 text-center" style={{ color: 'var(--ink)' }}>
+                  {fontSize} px
+                </span>
+                <button
+                  onClick={() => changeFontSize(FONT_SIZE_STEP)}
+                  disabled={fontSize >= MAX_FONT_SIZE}
+                  aria-label="Schrift vergrößern"
+                  className="flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-40"
+                  style={{ color: 'var(--ink)', border: '1px solid var(--border)', fontSize: '17px' }}
+                >
+                  A
+                </button>
+                <button
+                  onClick={resetFontSize}
+                  disabled={fontSize === DEFAULT_FONT_SIZE}
+                  aria-label="Schriftgröße zurücksetzen"
+                  className="flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-40"
+                  style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+                >
+                  <RotateCcw size={14} />
+                </button>
+              </div>
+            </div>
+
+            {/* Actions: these DO something to the nugget rather than change
+                how it looks. "Vorlesen" needs room to grow — it has more
+                states (bereitet vor / spielt / pausiert) than a toggle and
+                needs space for a stop button and error text. */}
+            <div className="nugget-settings-actions">
+              <SpeechPlayer nuggetId={id} contentRef={contentRef} isOwner={isOwner} />
               <Link
                 href={`/nugget/${nugget.id}/print`}
                 className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg"

@@ -138,6 +138,82 @@ h1, h2, h3, .serif {
   margin-left: max(0px, calc(var(--win-controls-w) - 1rem - max(0px, (100vw - 42rem) / 2)));
 }
 
+/* Single-view "Ansicht" settings panel: rendered as its own card so it reads
+   as a distinct surface pushed down from the sticky bar's icon row, not a
+   loose row of buttons floating on the bar's own background. */
+.nugget-settings-panel {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.nugget-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.nugget-settings-tile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg);
+}
+.nugget-settings-tile[data-disabled="true"] { opacity: 0.45; }
+
+.nugget-settings-fontrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.nugget-settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* iOS-style on/off switch — state is the knob's physical position plus a
+   track-colour change, not a colour fill alone (see SettingsToggleTile). */
+.toggle-switch {
+  position: relative;
+  width: 40px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--border);
+  border: none;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease;
+}
+.toggle-switch[data-on="true"] { background: var(--accent); }
+.toggle-switch:disabled { opacity: 0.4; }
+.toggle-switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+.toggle-switch[data-on="true"] .toggle-switch-knob { transform: translateX(16px); }
+
 /* Nugget content rendering */
 /* Break long words / URLs so they never push the layout wider than the
    viewport (the root cause of iOS zoom-out). */
