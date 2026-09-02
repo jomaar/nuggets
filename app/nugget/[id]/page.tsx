@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import NuggetEditor from '@/components/NuggetEditor'
 import AnnotationSheet, { type NuggetAnnotation } from '@/components/AnnotationSheet'
+import NearbySheet, { type NearbyResult } from '@/components/NearbySheet'
 import ScrollJumpButton from '@/components/ScrollJumpButton'
 import SpeechPlayer from '@/components/SpeechPlayer'
 import { useSpeech } from '@/components/useSpeech'
@@ -28,7 +29,7 @@ import {
 } from '@/lib/nuggetFontSize'
 import HoldToDeleteButton from '@/components/HoldToDeleteButton'
 import ToggleSwitch from '@/components/ToggleSwitch'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Share2, Waypoints, Printer, Pencil, ArrowLeft, MessageSquareText, Settings, Eye, EyeOff, Plus, BookOpen, Save, Type, Hash, MessageSquare, RotateCcw } from 'lucide-react'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Share2, Waypoints, Printer, Pencil, ArrowLeft, MessageSquareText, Settings, Eye, EyeOff, Plus, BookOpen, Save, Type, Hash, MessageSquare, RotateCcw, Radar } from 'lucide-react'
 
 /**
  * A scheme the legend can adopt: either a curated template or another nugget's
@@ -419,6 +420,8 @@ function scrollRangeIntoView(range: Range, topOffset?: number): void {
 const ANCHOR_CONTEXT_LEN = 30
 /** Max length of the human-readable line shown in the bookmark list. */
 const ANCHOR_LINE_LEN = 120
+/** Cap on the text sampled for a "Naheliegendes" query — generous since it feeds a similarity search, not a UI label. */
+const NEARBY_QUERY_LEN = 1000
 /** Block-level tags whose text forms one readable "line" for the list display. */
 const BLOCK_TAGS = new Set(['P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'PRE', 'TD', 'TH', 'FIGCAPTION'])
 
@@ -474,6 +477,28 @@ function nearestBlockText(node: Node, root: HTMLElement): string {
   range.setStartBefore(node)
   range.setEnd(block, block.childNodes.length)
   return squashWhitespace(range.toString()).trim().slice(0, ANCHOR_LINE_LEN)
+}
+
+/**
+ * The FULL containing block's text (start to end, not just from the captured
+ * node onward) — generalizes nearestBlockText for "Naheliegendes": a search
+ * query benefits from the whole paragraph's context, not a truncated tail
+ * starting at the tap point. Capped much more generously than the bookmark
+ * line label, since this feeds a similarity search, not a UI label.
+ */
+function nearestBlockFullText(node: Node, root: HTMLElement): string {
+  let block: Node = root
+  let el: Node | null = node
+  while (el && el !== root) {
+    if (el.nodeType === Node.ELEMENT_NODE && BLOCK_TAGS.has((el as Element).tagName)) {
+      block = el
+      break
+    }
+    el = el.parentNode
+  }
+  const range = document.createRange()
+  range.selectNodeContents(block)
+  return squashWhitespace(range.toString()).trim().slice(0, NEARBY_QUERY_LEN)
 }
 
 /** Capture-time context: the text immediately before/after a whole text node. */
@@ -698,6 +723,15 @@ export default function NuggetDetailPage() {
   // Which mark row's deep link was just copied, and in which flavour — the row
   // carries one button per flavour, so the index alone would check-mark both.
   const [copiedMark, setCopiedMark] = useState<{ index: number; kind: LinkKind } | null>(null)
+  // "Naheliegendes" (Spinnennetz Stufe 1) — a MANUAL, one-shot lookup: tapping
+  // the toolbar button samples the current reading position and searches the
+  // fine-grained KnowledgeUnit index (see /api/nearby). Not live-tracked —
+  // results don't change again while the sheet is open.
+  const [nearbyOpen, setNearbyOpen] = useState(false)
+  const [nearbyLoading, setNearbyLoading] = useState(false)
+  const [nearbyError, setNearbyError] = useState<string | null>(null)
+  const [nearbyResults, setNearbyResults] = useState<NearbyResult[]>([])
+  const [nearbyQueryText, setNearbyQueryText] = useState('')
   // Margin comments (annotations): anchored the same way as bookmarks
   // (text-quote anchor), stored as metadata — contentHtml is never touched.
   const [annotations, setAnnotations] = useState<NuggetAnnotation[]>([])
@@ -1390,6 +1424,68 @@ export default function NuggetDetailPage() {
   }
 
   /**
+   * "Naheliegendes" (Spinnennetz Stufe 1): samples the reading position the
+   * same way addBookmark does (caret-at-point below the sticky bar), but
+   * takes the WHOLE containing block's text (nearestBlockFullText), not just
+   * the tail from the tap point — the search benefits from full paragraph
+   * context. A manual, one-shot query: opens the sheet immediately (loading
+   * state), then fills it once /api/nearby answers.
+   */
+  const openNearby = async () => {
+    const root = contentRef.current
+    if (!root) return
+    const contentLeft  = root.getBoundingClientRect().left + 24
+    const stickyBottom = stickyRef.current?.getBoundingClientRect().bottom ?? 0
+
+    let node: Text | null = null
+    for (const dy of [8, 28, 48, 80, 120]) {
+      const hit = caretTextNodeAtPoint(contentLeft, stickyBottom + dy)
+      if (hit && (hit.nodeValue ?? '').trim().length >= 2) { node = hit; break }
+    }
+    if (!node) return
+
+    const queryText = nearestBlockFullText(node, root)
+    if (!queryText) return
+
+    setNearbyQueryText(queryText)
+    setNearbyOpen(true)
+    setNearbyLoading(true)
+    setNearbyError(null)
+    setNearbyResults([])
+
+    try {
+      const res = await fetch(`/api/nearby?${new URLSearchParams({ nuggetId: id, text: queryText })}`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        setNearbyError(typeof body?.error === 'string' ? body.error : 'Suche fehlgeschlagen.')
+        return
+      }
+      const data = await res.json()
+      setNearbyResults(Array.isArray(data.results) ? data.results : [])
+    } catch {
+      setNearbyError('Suche fehlgeschlagen — Verbindung geprüft?')
+    } finally {
+      setNearbyLoading(false)
+    }
+  }
+
+  /**
+   * "Ganz öffnen" in the Naheliegendes preview: a result in THIS nugget jumps
+   * in place (jumpToAnchor, same as any other in-nugget anchor); a result in
+   * another nugget navigates there via the normal ?bm= deep link — mirrors
+   * followNuggetLink's same-nugget/cross-nugget split.
+   */
+  const openNearbyResultFull = (result: NearbyResult) => {
+    const anchor = { quote: result.quote, prefix: result.prefix, suffix: result.suffix }
+    setNearbyOpen(false)
+    if (result.nuggetId === id) {
+      jumpToAnchor(anchor)
+    } else {
+      router.push(`/nugget/${result.nuggetId}?bm=${encodeAnchorToken(anchor)}`)
+    }
+  }
+
+  /**
    * Create a comment from the captured selection and open the sheet on it.
    * The anchor is clamped to the selection's first text node — findRanges/
    * resolveAnchor match within single text nodes, mirroring the bookmark
@@ -2053,6 +2149,19 @@ export default function NuggetDetailPage() {
                 <Printer size={14} />
                 Als PDF
               </Link>
+              {/* "Naheliegendes" (Spinnennetz Stufe 1) — a manual, occasional
+                  lookup, not an always-reachable action, so it lives here
+                  rather than as a 9th icon in the already width-budgeted top
+                  action bar. Visible to any reader, not owner-gated — a
+                  read-only lookup like Denkspuren/Netz. */}
+              <button
+                onClick={openNearby}
+                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+              >
+                <Radar size={14} />
+                Naheliegendes
+              </button>
               {isOwner && (
                 <HoldToDeleteButton
                   onConfirm={handleDelete}
@@ -2278,6 +2387,20 @@ export default function NuggetDetailPage() {
           onDelete={deleteAnnotation}
           onClose={closeAnnotations}
           onNuggetLink={followNuggetLink}
+        />
+      )}
+
+      {/* "Naheliegendes" — Spinnennetz Stufe 1's manual retrieval view. Same
+          no-backdrop bottom-sheet pattern as AnnotationSheet; a tap on a
+          result opens an in-sheet preview rather than navigating away. */}
+      {nearbyOpen && (
+        <NearbySheet
+          results={nearbyResults}
+          loading={nearbyLoading}
+          error={nearbyError}
+          queryText={nearbyQueryText}
+          onOpenFull={openNearbyResultFull}
+          onClose={() => setNearbyOpen(false)}
         />
       )}
 

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { normalizeToHtml, htmlToMarkdown, htmlToPlain } from '@/lib/content'
 import { sanitizeMarkScheme } from '@/lib/marking'
+import { reindexNugget } from '@/lib/knowledgeUnits'
+import { bumpNearbyIndexVersion } from '@/lib/nearbyIndex'
 
 // GET /api/nuggets/:id  (?edit=1 to also return the Markdown/plain projections)
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -77,6 +79,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     data,
     include: { domain: true },
   })
+
+  // Only reindex when the text actually changed — a mark add/remove lives
+  // inside contentHtml too, so this also covers those; a title/tag/domain-only
+  // PATCH doesn't touch the knowledge units. Fire-and-forget, same as POST.
+  if (rawContent) void reindexNugget(id)
+
   return NextResponse.json(nugget)
 }
 
@@ -87,5 +95,8 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   // The delete cascades only this nugget's edges; concepts left without any
   // edge would linger as orphans and pollute every extraction prompt — sweep them.
   await prisma.concept.deleteMany({ where: { nuggets: { none: {} } } })
+  // The FK cascade already removed this nugget's KnowledgeUnit rows; the
+  // in-memory /api/nearby cache just doesn't know that yet.
+  bumpNearbyIndexVersion()
   return new NextResponse(null, { status: 204 })
 }

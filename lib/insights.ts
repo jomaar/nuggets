@@ -5,6 +5,7 @@ import { fallbackTitle } from './content'
 import { KnowledgeGraph } from './graph'
 import { detectConceptCommunities, type ConceptCommunity } from './conceptCommunities'
 import type { AnchorToken } from './bookmarkLink'
+import { buildAnchor } from './textAnchor'
 import type { Insight } from '@prisma/client'
 
 /**
@@ -801,38 +802,9 @@ Gib über das Werkzeug locate_passage ausschließlich ein WÖRTLICHES, zusammenh
 - Wähle die kürzeste, prägnanteste Stelle, die den Kern trifft.
 Findest du keine passende Stelle, gib ein leeres Zitat zurück.`
 
-/** Escape a string for safe use inside a RegExp. */
-function escapeRegex(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-const CONTEXT_LEN = 30 // chars of prefix/suffix, matching the bookmark anchor capture
-
-/**
- * Build a text-quote anchor (quote + prefix/suffix context, the bookmark shape)
- * from a verbatim quote the model claims to have copied from `contentPlain`.
- * Returns null unless the quote genuinely occurs in the text — exact match first,
- * then a whitespace-flexible fallback (the model occasionally re-spaces). Without
- * a real substring `findRanges` in the reader can't resolve it, so the caller
- * falls back to jumping to the nugget top rather than to a wrong or dead spot.
- */
-function buildAnchor(contentPlain: string, rawQuote: string): AnchorToken | null {
-  const q = rawQuote.trim()
-  if (!q) return null
-
-  let idx = contentPlain.indexOf(q)
-  let matched = q
-  if (idx === -1) {
-    const pattern = q.split(/\s+/).map(escapeRegex).join('\\s+')
-    const m = new RegExp(pattern).exec(contentPlain)
-    if (m) { idx = m.index; matched = m[0] }
-  }
-  if (idx === -1) return null
-
-  const prefix = contentPlain.slice(Math.max(0, idx - CONTEXT_LEN), idx)
-  const suffix = contentPlain.slice(idx + matched.length, idx + matched.length + CONTEXT_LEN)
-  return { quote: matched, prefix, suffix }
-}
+// buildAnchor (verbatim-quote → text-quote anchor verification) now lives in
+// lib/textAnchor.ts — lib/knowledgeUnits.ts needs the exact same check for its
+// own LLM-found quotes, so it was extracted rather than duplicated a second time.
 
 /**
  * On-demand locate: given an insight and one of the nuggets it references, ask

@@ -43,4 +43,11 @@ jobs:
             npm run build
             pm2 delete nuggets || true
             pm2 start npm --name nuggets -- start
+            # Embedding daemon behind "Naheliegendes" (Spinnennetz Stufe 1, see
+            # lib/embeddings.ts / python/embed_server.py) — long-lived, unlike
+            # the other python/ tools, because it's called on every nugget
+            # save, not rarely/manually. One more pm2-managed process, not a
+            # new supervision paradigm: pm2 already runs the Next process above.
+            pm2 delete nuggets-embed || true
+            pm2 start /opt/nuggets-python/venv/bin/python3 --name nuggets-embed -- python/embed_server.py
             pm2 save

@@ -49,13 +49,14 @@ model Nugget {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  domain       Domain?         @relation(fields: [domainId], references: [id])
-  markTemplate MarkTemplate?   @relation(fields: [markTemplateId], references: [id], onDelete: SetNull)
-  reviews      Review[]
-  concepts     NuggetConcept[]
-  bookmarks    Bookmark[]
-  annotations  Annotation[]
-  shortLinks   ShortLink[]
+  domain         Domain?         @relation(fields: [domainId], references: [id])
+  markTemplate   MarkTemplate?   @relation(fields: [markTemplateId], references: [id], onDelete: SetNull)
+  reviews        Review[]
+  concepts       NuggetConcept[]
+  bookmarks      Bookmark[]
+  annotations    Annotation[]
+  shortLinks     ShortLink[]
+  knowledgeUnits KnowledgeUnit[]
 
   @@index([markTemplateId])
   @@map("nuggets")
@@ -248,6 +249,48 @@ model GoogleAuth {
   updatedAt    DateTime @updatedAt
 
   @@map("google_auth")
+}
+
+/**
+ * A fine-grained, positionally-anchored piece of a nugget's text (paragraph-
+ * level thought, marking, or comment), embedded with a local sentence-
+ * embedding model — the retrieval index behind "Naheliegendes" (see the
+ * Spinnennetz Stufe-1 plan). A SEPARATE, parallel layer to Concept/
+ * NuggetConcept: concepts stay coarse (curated, LLM-labeled, feed
+ * Insights/Denkspuren); KnowledgeUnit is dense, uncurated, and exists only
+ * for nearest-neighbour retrieval. Never read by lib/graph.ts, lib/insights.ts,
+ * or lib/concepts.ts.
+ *
+ * Rebuilt per nugget on every content-changing save (lib/knowledgeUnits.ts
+ * `reindexNugget`) by diffing `contentHash` against the previous set, EXCEPT
+ * `kind:"comment"` rows, which key off the stable `Annotation.id` (`sourceId`)
+ * so a single comment edit/delete never forces a full-nugget re-embed.
+ */
+model KnowledgeUnit {
+  id          String   @id @default(cuid())
+  nuggetId    String
+  kind        String // "paragraph" | "mark" | "comment"
+  sourceId    String? // Annotation.id for kind="comment" (stable identity across edits); null otherwise
+  color       String? // mark colour (kind="mark" only) — lets the UI badge reuse MarkSwatch
+  markStyle   String? // "hl" | "ul" (kind="mark" only) — MarkSwatch needs this to render circle vs. bar; ExtractedMark.kind, distinct from KnowledgeUnit.kind above
+  text        String // the embedded + displayed snippet (also used as the preview content — no extra fetch needed)
+  gloss       String? // short AI label for the thought (kind="paragraph" only), e.g. "Demut als Vorbedingung"
+  quote       String // W3C text-quote anchor — same shape as Bookmark/Annotation
+  prefix      String
+  suffix      String
+  contentHash String // sha256(quote) — skips re-embedding unchanged chunks across saves
+  embedding   Bytes // packed Float32Array, NOT a JSON float array (smaller, no parse cost)
+  model       String // embedding model id; a model swap is filtered at query time + needs a backfill re-run
+  dim         Int      @default(384)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  nugget Nugget @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
+
+  @@index([nuggetId])
+  @@index([kind])
+  @@index([model])
+  @@map("knowledge_units")
 }
 
 model Review {

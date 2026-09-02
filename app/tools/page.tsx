@@ -27,7 +27,13 @@ interface PdfResult {
   filename: string
 }
 
-type ToolchainStatus = { ok: boolean; error?: string; packages?: Record<string, string> }
+type ToolchainStatus = {
+  ok: boolean
+  error?: string
+  packages?: Record<string, string>
+  /** The "Naheliegendes" embedding daemon (python/embed_server.py) — a separate, always-on process, reported independently of the PDF toolchain's `ok`. */
+  embed?: { ok: boolean; model?: string; dim?: number; error?: string }
+}
 
 /**
  * A PDF's metadata title is as often the authoring tool's leftover as a real
@@ -130,6 +136,17 @@ export default function ToolsPage() {
           style={{ background: 'var(--surface)', border: '1px solid var(--act-delete, #c0392b)', color: 'var(--ink)' }}
         >
           ⚠️ {status.error || 'Python-Werkzeuge sind nicht einsatzbereit.'}
+        </div>
+      )}
+      {/* Separate from the PDF-toolchain banner above — the embedding daemon
+          behind "Naheliegendes" is an unrelated process, so its own crash
+          shouldn't read as "PDF-Werkzeuge kaputt" or vice versa. */}
+      {status?.embed && !status.embed.ok && (
+        <div
+          className="p-4 rounded-2xl mb-6 text-sm"
+          style={{ background: 'var(--surface)', border: '1px solid var(--act-delete, #c0392b)', color: 'var(--ink)' }}
+        >
+          ⚠️ Embedding-Dienst (Naheliegendes) nicht erreichbar{status.embed.error ? `: ${status.embed.error}` : '.'}
         </div>
       )}
 

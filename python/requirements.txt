@@ -10,3 +10,13 @@
 # point of the tool is a predictable conversion. Bump deliberately, not by drift.
 # Licence note: PyMuPDF is AGPL-3.0 — same as this repo, so nothing to reconcile.
 pymupdf4llm==1.28.2
+
+# python/embed_server.py — the local embedding daemon behind "Naheliegendes"
+# (see the Spinnennetz Stufe-1 plan). Pulls in torch as a transitive
+# dependency; install the CPU-only wheel EXPLICITLY first to avoid pulling a
+# multi-GB CUDA build on a VPS with no GPU:
+#   .../venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   .../venv/bin/pip install -r python/requirements.txt
+# Venv footprint grows materially with this (~1-2GB vs. a few hundred MB for
+# the PDF tool alone) — expected, not a misconfiguration.
+sentence-transformers==3.3.1

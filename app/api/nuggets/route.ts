@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { normalizeToHtml, htmlToMarkdown, htmlToPlain, fallbackTitle } from '@/lib/content'
 import { extractAndLinkConcepts } from '@/lib/concepts'
+import { reindexNugget } from '@/lib/knowledgeUnits'
 
 // GET /api/nuggets?search=...&tag=...&domain=<slug>
 export async function GET(req: NextRequest) {
@@ -90,6 +91,12 @@ export async function POST(req: NextRequest) {
     reviseContent: reviseContent !== false,
     aiHint: typeof aiHint === 'string' ? aiHint : undefined,
   })
+
+  // Fire-and-forget: builds the Spinnennetz "Naheliegendes" index for this
+  // nugget (LLM segmentation + mark/comment units + local embeddings) in the
+  // background, AFTER the response the user is waiting on. Never awaited, and
+  // reindexNugget never throws — a failure here can't turn into a broken save.
+  void reindexNugget(nugget.id)
 
   // The nugget itself is already saved successfully at this point — an AI failure
   // (bad key, spend limit, model retired, …) must not turn into a 4xx/5xx for the

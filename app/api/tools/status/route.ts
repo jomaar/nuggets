@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { pythonBin, pythonToolsInstalled, runPythonTool } from '@/lib/pythonTools'
+import { embedDaemonHealth } from '@/lib/embeddings'
 
 export const runtime = 'nodejs'
 
@@ -21,14 +22,22 @@ interface Health {
  * Owner-only, like every route under /api/tools (they spawn processes).
  * Mirrors /api/ai/health: the Werkzeuge page asks once on mount so a server
  * that was never set up says so up front instead of on the first upload.
+ *
+ * `embed` reports the "Naheliegendes" embedding daemon (python/embed_server.py)
+ * SEPARATELY from `ok` — it's an unrelated, always-on process (see the
+ * Spinnennetz Stufe-1 plan), not part of the PDF subprocess toolchain, so a
+ * crashed daemon must not read as "PDF-Werkzeuge kaputt" or vice versa.
  */
 export async function GET(req: NextRequest) {
   if (!isOwner(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const embed = await embedDaemonHealth()
 
   if (!pythonToolsInstalled()) {
     return NextResponse.json({
       ok: false,
       error: `Kein Python-Interpreter unter ${pythonBin()} — venv anlegen (siehe python/requirements.txt).`,
+      embed,
     })
   }
 
@@ -38,14 +47,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         ok: false,
         error: `Python-Pakete fehlen: ${(health.missing ?? []).join(', ')}`,
+        embed,
       })
     }
-    return NextResponse.json({ ok: true, python: health.python, packages: health.packages })
+    return NextResponse.json({ ok: true, python: health.python, packages: health.packages, embed })
   } catch (error) {
     console.error('[tools/status] failed:', error)
     return NextResponse.json({
       ok: false,
       error: error instanceof Error ? error.message : 'Python-Werkzeuge nicht erreichbar.',
+      embed,
     })
   }
 }

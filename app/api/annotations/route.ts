@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { isOwner } from '@/lib/auth'
 import { loadDomainAnnotations } from '@/lib/annotations'
+import { syncCommentUnit } from '@/lib/knowledgeUnits'
 
 /** Hard cap on a comment's length — a margin note, not a second nugget. */
 const BODY_MAX = 10_000
@@ -51,5 +52,8 @@ export async function POST(req: NextRequest) {
       body: typeof body === 'string' ? body.slice(0, BODY_MAX) : '',
     },
   })
+  // Fire-and-forget, one local embedding call at most — no LLM step for
+  // comments (see lib/knowledgeUnits.ts's syncCommentUnit).
+  void syncCommentUnit(annotation.id)
   return NextResponse.json(annotation, { status: 201 })
 }
