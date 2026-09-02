@@ -18,6 +18,19 @@
  * Run on the server (needs ANTHROPIC_API_KEY + DATABASE_URL from .env):
  *   cd ~/nuggets.jomaar.de && set -a && source .env && set +a \
  *     && npx tsx scripts/backfill-knowledge-units.ts [nuggetId …]
+ *
+ * ⚠️ RESTART THE APP AFTER RUNNING THIS (`pm2 restart nuggets`). This script
+ * runs as its OWN process, separate from the long-running Next.js server —
+ * lib/nearbyIndex.ts's in-memory cache is per-process, so the write here
+ * bumps ITS OWN copy of the version counter, not the server's. If the
+ * server already answered one /api/nearby request before this script ran
+ * (e.g. right after a fresh deploy, before the backfill finished), its
+ * cache is stuck on that stale — possibly empty — snapshot forever, with
+ * no way for an external process to invalidate it. A plain server restart
+ * clears it (cache starts null, loads fresh on the next request). Verified
+ * live 2026-09-02: a fresh scratch process saw all rows and ranked them
+ * correctly, while the already-running prod server kept returning zero
+ * results until restarted.
  */
 import { prisma } from '../lib/prisma'
 import { reindexNugget } from '../lib/knowledgeUnits'
