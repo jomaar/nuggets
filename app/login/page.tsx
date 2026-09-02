@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 
 function LoginForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const from = searchParams.get('from') || '/'
 
@@ -23,8 +22,14 @@ function LoginForm() {
     })
     setLoading(false)
     if (res.ok) {
-      router.push(from)
-      router.refresh()
+      // A soft router.push() can serve `from` from the client Router Cache
+      // as it was BEFORE login (e.g. prefetched while still unauthenticated),
+      // which is exactly why login "worked only on the second try" — the
+      // cookie was already set, but the first navigation showed stale
+      // cached content. A hard navigation forces a real request, so
+      // proxy.ts's per-request cookie check sees the fresh session cookie
+      // immediately.
+      window.location.href = from
     } else {
       setError('Falsches Passwort.')
       setPassword('')
