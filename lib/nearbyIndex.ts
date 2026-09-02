@@ -91,7 +91,7 @@ export async function getNearbyIndex(): Promise<LoadedUnit[]> {
 
 /** At most this many results may come from any single source nugget, so one large, topically-adjacent nugget can't fill every slot. */
 const MAX_PER_NUGGET = 3
-const DEFAULT_LIMIT = 12
+const DEFAULT_LIMIT = 24
 /** Below this cosine score, the honest answer is an empty list ("Nichts Naheliegendes gefunden") rather than forcing K results — mirrors Insights' honest-empty philosophy. */
 const MIN_SCORE = 0.35
 

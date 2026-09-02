@@ -96,7 +96,28 @@ export async function segmentNuggetProse(nuggetId: string, contentPlain: string)
   try {
     const response = await anthropic.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 2048,
+      // 2048 (the original value) silently zeroed out every large nugget in
+      // the corpus: a full Bible book or a long exegesis note can ask for up
+      // to 20 verbatim quotes, but the model doesn't strictly honor "bis zu" —
+      // for a content-dense document it can try to segment far more (234 raw
+      // items for a full Gospel, only the first 20 of which are ever kept —
+      // see the `raw.slice(0, maxUnits)` below). The forced tool call then
+      // gets cut off mid-JSON (stop_reason "max_tokens"), the SDK hands back
+      // a truncated/incomplete `input`, `.units` is `undefined`, and
+      // segmentNuggetProse's `!Array.isArray(raw)` guard returns [] with NO
+      // error logged anywhere — reindexNugget "succeeds" but writes zero
+      // paragraph units. Verified live against the corpus's two largest
+      // nuggets: a 118k-character exegesis note (58,963 input tokens) needed
+      // >2048 (8192 completed cleanly); the single largest document, a full
+      // Gospel at 141k characters / 68,717 input tokens, still truncated at
+      // 8192 and only completed at 16000 (15,563 output tokens used). No
+      // hard proof this is bulletproof against an even larger future import —
+      // if a much bigger document is ever added and still shows up with zero
+      // paragraph units, the more robust fix is capping the INPUT text length
+      // for segmentation (this project already hard-caps other large-text AI
+      // calls at ~100k characters, e.g. lib/webpage.ts's extractor), not
+      // chasing max_tokens upward again.
+      max_tokens: 16000,
       system,
       tools: [SEGMENT_TOOL],
       tool_choice: { type: 'tool', name: 'save_units' },
