@@ -124,6 +124,37 @@ export function htmlToMarkdown(html: string): string {
 }
 
 /**
+ * Strips a foreign document's own PRESENTATION from imported HTML, keeping its
+ * structure. Applied to clipboard HTML before it is converted to Markdown.
+ *
+ * Motivation: most imported markup converts to Markdown, where styling can't
+ * survive anyway — but not all of it does. Turndown's GFM table rule only
+ * emits a pipe table when it can detect a heading row; a table without one
+ * (chat UIs emit those) is passed through as RAW HTML, carrying whatever
+ * `style="font-family: …"` the source put on it. That raw block then renders
+ * verbatim in the /add Markdown preview (plain `marked` + dangerouslySetInnerHTML,
+ * no Tiptap schema to filter it), which is how a pasted table ended up in the
+ * source's serif font while everything around it stayed in the app's.
+ *
+ * `class` is deliberately NOT touched: turndown reads `class="language-ts"` off
+ * a <pre><code> to emit the fenced block's language tag, and a foreign class
+ * name matches nothing in our CSS anyway.
+ */
+export function stripForeignStyling(html: string): string {
+  return html
+    .replace(/\sstyle="[^"]*"/gi, '')
+    .replace(/\sstyle='[^']*'/gi, '')
+    // Presentational attributes of the pre-CSS era, still emitted by some
+    // editors and copy sources (Word/Docs/mail clients). `align` is spared:
+    // turndown-plugin-gfm reads exactly that legacy attribute to emit a pipe
+    // table's alignment row, so stripping it would flatten column alignment.
+    .replace(/\s(?:bgcolor|background|valign|width|height|face|color)="[^"]*"/gi, '')
+    .replace(/\s(?:bgcolor|background|valign|width|height|face|color)='[^']*'/gi, '')
+    // <font> carries nothing but presentation — unwrap it, keep its text.
+    .replace(/<\/?font\b[^>]*>/gi, '')
+}
+
+/**
  * Removes ChatGPT-Exporter chrome from imported HTML before it becomes a nugget.
  *
  * The "ChatGPT Exporter" browser extension wraps a conversation in boilerplate:

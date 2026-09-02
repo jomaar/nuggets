@@ -245,7 +245,11 @@ h1, h2, h3, .serif {
 .nugget-content ol { list-style: decimal; padding-left: 1.3em; margin: 0.4em 0; }
 .nugget-content li { margin: 0.2em 0; }
 .nugget-content li::marker { color: var(--muted); }
-.nugget-content strong { font-weight: 500; color: var(--accent); }
+/* Real bold, not the old 500 — against the body's 400 that was so close to
+   invisible that pasted bold text read as "the formatting got lost". The
+   accent colour stays as the second, quieter signal. Requires the 700 cut of
+   DM Sans to be loaded (app/layout.tsx), otherwise the browser has to fake it. */
+.nugget-content strong { font-weight: 700; color: var(--accent); }
 .nugget-content a  { color: var(--accent-light); text-decoration: underline; }
 .nugget-content blockquote {
   border-left: 3px solid var(--accent);
@@ -273,6 +277,17 @@ h1, h2, h3, .serif {
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
+}
+/* Force the table to read as ordinary body text. Two things override the
+   surrounding font otherwise: browsers apply a UA font to tables in some
+   modes rather than inheriting, and a table imported as raw HTML (turndown
+   only builds a pipe table when the source has a heading row) can arrive
+   with the source document's own styling — which is how a pasted table
+   showed up in a serif face. `inherit` beats both, including in nuggets
+   that were saved before the import path started stripping foreign styles. */
+.nugget-content table, .nugget-content th, .nugget-content td {
+  font-family: inherit;
+  font-size: inherit;
 }
 .nugget-content td, .nugget-content th {
   border: 1px solid var(--border);

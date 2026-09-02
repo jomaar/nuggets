@@ -7,7 +7,10 @@ import './globals.css'
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
-  weight: ['300', '400', '500'],
+  // 600 for headings, 700 for <strong> in nugget content — without these cuts
+  // the browser can only synthesize a fake bold from the 500 weight, which is
+  // what made emphasised text look barely different from the body.
+  weight: ['300', '400', '500', '600', '700'],
   variable: '--font-dm-sans',
   display: 'swap',
 })

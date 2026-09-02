@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { marked } from 'marked'
 import TurndownService from 'turndown'
-import { htmlToMarkdown, stripImportBallast } from '@/lib/content'
+import { htmlToMarkdown, stripForeignStyling, stripImportBallast } from '@/lib/content'
 import { detectBibleText, convertBibleText, type BibleConversion } from '@/lib/bible'
 import { countPlainText } from '@/lib/textStats'
 import DomainChips from '@/components/DomainChips'
@@ -211,7 +211,7 @@ export default function AddPage() {
     const plain = e.clipboardData.getData('text/plain').trim()
     if (/^https?:\/\/\S+$/i.test(plain)) return
 
-    const markdown = htmlToMarkdown(stripImportBallast(html)).trim()
+    const markdown = htmlToMarkdown(stripForeignStyling(stripImportBallast(html))).trim()
     if (!markdown) return
 
     e.preventDefault()
