@@ -8,7 +8,7 @@ import { TableKit } from '@tiptap/extension-table'
 import { selectionCell, findTable, TableMap } from '@tiptap/pm/tables'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bold, Italic, MessageSquarePlus, Sparkles, Link2, Share2, Check, ArrowLeft,
+  Bold, Italic, MessageSquarePlus, Sparkles, Link2, Share2, Check, ArrowLeft, Radar,
   Table2, Rows3, Columns3, TableCellsMerge, Trash2,
   AlignLeft, AlignCenter, AlignRight,
 } from 'lucide-react'
@@ -48,6 +48,21 @@ interface NuggetEditorProps {
    * closes.
    */
   onComment?: () => void
+  /**
+   * Opt-in: show a "Naheliegendes" action in the selection menu (reading
+   * view) — Spinnennetz Stufe 2. Reads the caller's own tracked selection,
+   * same pattern as onComment. Placed in ROW 1 (highlight swatches), not row
+   * 2 (underline swatches) — row 2 already sits at ~337px/375px with
+   * Kommentar+Link, no headroom left; row 1 carries no action buttons yet.
+   */
+  onNearby?: () => void
+  /**
+   * false hides BOTH swatch rows — used by Peek-Tabs (Spinnennetz Stufe 2),
+   * which are read + reference-jump only, no marking/highlighting a nugget
+   * you only opened to look something up. Default true, no behavior change
+   * for any existing call site.
+   */
+  enableMarking?: boolean
   /**
    * Opt-in: show a "copy link to this spot" action in the selection menu
    * (reading view). Both handlers read the live DOM selection themselves (same
@@ -138,6 +153,8 @@ export default function NuggetEditor({
   editable = true,
   enableAiRework = false,
   onComment,
+  onNearby,
+  enableMarking = true,
   onCopyInternalLink,
   onCopyExternalLink,
   linkCopiedKind = null,
@@ -293,6 +310,20 @@ export default function NuggetEditor({
     window.getSelection()?.removeAllRanges()
   }
 
+  /**
+   * Hand the current selection to the "Naheliegendes" handler (reading view
+   * only, Spinnennetz Stufe 2), then collapse — same shape as commentSelection,
+   * the search has been triggered and the view is about to switch to the
+   * results tab, so nothing is served by leaving the BubbleMenu open.
+   */
+  const triggerNearby = () => {
+    if (!editor || !onNearby) return
+    const { to } = editor.state.selection
+    onNearby()
+    editor.chain().setTextSelection(to).run()
+    window.getSelection()?.removeAllRanges()
+  }
+
   /** Whether the selection menu offers deep links at all (reading view). */
   const hasLinkActions = Boolean(onCopyInternalLink || onCopyExternalLink)
 
@@ -388,8 +419,20 @@ export default function NuggetEditor({
    */
   const bubbleMenuAppendTo = useCallback(() => document.body, [])
   const bubbleMenuVirtualElement = useCallback(() => {
-    const bar = typeof document !== 'undefined' ? document.querySelector('.sticky') : null
-    const top = bar ? bar.getBoundingClientRect().bottom : 8
+    // Spinnennetz Stufe 2 added a SECOND sticky bar (TabBar, above the
+    // page's own action bar whenever it's visible) — `querySelector('.sticky')`
+    // used to grab whichever one happened to be first in the DOM (TabBar,
+    // since it's rendered by app/layout.tsx before the page content), pinning
+    // the menu too high and letting the action bar visually cover it. Taking
+    // the LOWEST bottom edge among every `.sticky` element is correct
+    // regardless of how many are currently stacked (0, 1, or 2).
+    let top = 8
+    if (typeof document !== 'undefined') {
+      document.querySelectorAll('.sticky').forEach(bar => {
+        const bottom = bar.getBoundingClientRect().bottom
+        if (bottom > top) top = bottom
+      })
+    }
     const x = (typeof window !== 'undefined' ? window.innerWidth : 360) / 2
     return { getBoundingClientRect: () => new DOMRect(x, top, 0, 0) }
   }, [])
@@ -490,9 +533,15 @@ export default function NuggetEditor({
             {/* Custom colour names show as a mini label under the swatch. When a
                 row has at least one name, EVERY cell in it gets a label slot
                 (blank if unnamed) so all swatches keep the same baseline. */}
-            {/* Row 1: highlight (background) colours + remove-both. */}
+            {/* Row 1: highlight (background) colours + remove-both, PLUS the
+                "Naheliegendes" action (Spinnennetz Stufe 2) — placed here
+                rather than row 2 because row 2 already sits at ~337px/375px
+                with Kommentar+Link (see globals.css), no headroom left; row 1
+                had none of that. enableMarking=false (Peek-Tabs) hides the
+                colour swatches but NOT this action — a peek tab can still
+                chain into a fresh search. */}
             <div className="highlight-menu-row">
-              {HIGHLIGHT_PALETTE.map((color) => {
+              {enableMarking && HIGHLIGHT_PALETTE.map((color) => {
                 const label = markLabel(markScheme, 'hl', color.name)
                 const named = hasMarkLabel(markScheme, 'hl', color.name)
                 return (
@@ -509,22 +558,38 @@ export default function NuggetEditor({
                   </div>
                 )
               })}
-              <div className="swatch-cell">
-                <button
-                  type="button"
-                  className="highlight-remove"
-                  aria-label="Markierung entfernen"
-                  title="Markierung entfernen"
-                  onClick={removeMarks}
-                >
-                  ✕
-                </button>
-                {hlRowNamed && <span className="swatch-label">{'\u00a0'}</span>}
-              </div>
+              {enableMarking && (
+                <div className="swatch-cell">
+                  <button
+                    type="button"
+                    className="highlight-remove"
+                    aria-label="Markierung entfernen"
+                    title="Markierung entfernen"
+                    onClick={removeMarks}
+                  >
+                    ✕
+                  </button>
+                  {hlRowNamed && <span className="swatch-label">{'\u00a0'}</span>}
+                </div>
+              )}
+              {onNearby && (
+                <div className="swatch-cell">
+                  <button
+                    type="button"
+                    className="highlight-ai"
+                    aria-label="Naheliegendes"
+                    title="Naheliegendes"
+                    onClick={triggerNearby}
+                  >
+                    <Radar size={22} />
+                  </button>
+                  {hlRowNamed && <span className="swatch-label">{'\u00a0'}</span>}
+                </div>
+              )}
             </div>
             {/* Row 2: underline colours (swatch = thick colour bar at the base). */}
             <div className="highlight-menu-row">
-              {UNDERLINE_PALETTE.map((color) => {
+              {enableMarking && UNDERLINE_PALETTE.map((color) => {
                 const label = markLabel(markScheme, 'ul', color.name)
                 const named = hasMarkLabel(markScheme, 'ul', color.name)
                 return (

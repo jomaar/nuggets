@@ -23,6 +23,15 @@ const STORAGE_KEY = 'nugget-recent-opened'
 /** Hard cap on stored entries; the UI shows only the first few of these. */
 const MAX_ENTRIES = 10
 
+/**
+ * sessionStorage key: set to a nugget id right before navigating there to ask
+ * the single view to restore that nugget's stored scroll position (via
+ * getRecentScroll below) once it loads — the handoff app/page.tsx uses, and
+ * (Spinnennetz Stufe 2) the same one a Peek-Tab's "Zum Haupt-Tab machen" uses
+ * so promoting a peek doesn't lose the reading spot.
+ */
+export const SCROLL_RESTORE_KEY = 'nugget-restore-scroll'
+
 /** Safely read and parse the stored list; returns [] on any problem. */
 function readAll(): RecentNugget[] {
   if (typeof window === 'undefined') return []

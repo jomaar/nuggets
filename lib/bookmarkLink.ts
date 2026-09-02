@@ -15,6 +15,18 @@ export interface AnchorToken {
   suffix: string
 }
 
+/**
+ * The two deep-link flavours a reading spot can be copied as. They are NOT
+ * interchangeable:
+ *   'internal' — site-relative `<a>` + Markdown fallback, for pasting into
+ *                another nugget's text (survives a domain/server move).
+ *   'external' — absolute short `/s/<code>` URL + "quote – url" plain text,
+ *                for Reminders/Kalender/chat/mail, which render no Markdown.
+ * Every copy entry point offers both and reports back which one was written, so
+ * only the tapped control shows its check mark.
+ */
+export type LinkKind = 'internal' | 'external'
+
 /** Base64url-encode a UTF-8 string (no padding), safe inside a URL query. */
 function base64UrlEncode(text: string): string {
   const bytes = new TextEncoder().encode(text)

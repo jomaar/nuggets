@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from 'next'
 import { DM_Sans } from 'next/font/google'
 import BottomNav from '@/components/BottomNav'
+import TabBar from '@/components/TabBar'
 import { OwnerProvider } from '@/components/OwnerContext'
+import { TabsProvider } from '@/components/TabsContext'
 import { isOwner } from '@/lib/auth'
 import './globals.css'
 
@@ -58,6 +60,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 ::highlight(search-current) { background: var(--accent); color: #fff; }
 ::highlight(annotation) { background: color-mix(in srgb, var(--accent) 12%, transparent); text-decoration: underline dotted var(--accent); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
 ::highlight(annotation-active) { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+/* Spinnennetz Stufe 2 — the passage a "Naheliegendes" search was triggered
+   from, persistently marked so returning to Haupt (or a Peek-Tab) shows
+   exactly what's currently being referenced. Deliberately teal + wavy: none
+   of the 6 mark/underline palette colours (lib/marking.ts) are teal, and
+   "wavy" is visually distinct from both the dotted comment underline and any
+   solid colour underline the owner applied themselves — this must never be
+   mistaken for a real markierung. */
+::highlight(nearby-source) { background: color-mix(in srgb, #0d9488 14%, transparent); text-decoration: underline wavy #0d9488; text-decoration-thickness: 2px; text-underline-offset: 0.22em; }
 `,
           }}
         />
@@ -83,17 +93,20 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body>
         <OwnerProvider initialIsOwner={owner}>
-          <BottomNav />
-          <div className="max-w-2xl mx-auto px-4 pb-24">
-            {children}
-            <p className="no-print text-center pb-1" style={{ fontSize: '10px', color: 'var(--muted)' }}>
-              {buildVersion}
-            </p>
-            <p className="no-print text-center pb-4 flex justify-center gap-4" style={{ fontSize: '10px' }}>
-              <a href="/impressum" style={{ color: 'var(--muted)' }}>Impressum</a>
-              <a href="/datenschutz" style={{ color: 'var(--muted)' }}>Datenschutz</a>
-            </p>
-          </div>
+          <TabsProvider>
+            <BottomNav />
+            <div className="max-w-2xl mx-auto px-4 pb-24">
+              <TabBar />
+              {children}
+              <p className="no-print text-center pb-1" style={{ fontSize: '10px', color: 'var(--muted)' }}>
+                {buildVersion}
+              </p>
+              <p className="no-print text-center pb-4 flex justify-center gap-4" style={{ fontSize: '10px' }}>
+                <a href="/impressum" style={{ color: 'var(--muted)' }}>Impressum</a>
+                <a href="/datenschutz" style={{ color: 'var(--muted)' }}>Datenschutz</a>
+              </p>
+            </div>
+          </TabsProvider>
         </OwnerProvider>
       </body>
     </html>

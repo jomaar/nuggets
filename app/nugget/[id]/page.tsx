@@ -3,18 +3,25 @@
 import { useState, useEffect, useCallback, useRef, type CSSProperties, type ReactNode } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
-import NuggetEditor from '@/components/NuggetEditor'
+import NuggetReader from '@/components/NuggetReader'
+import NearbyTabView from '@/components/NearbyTabView'
+import PeekTabView from '@/components/PeekTabView'
+import { useTabs } from '@/components/TabsContext'
 import AnnotationSheet, { type NuggetAnnotation } from '@/components/AnnotationSheet'
-import NearbySheet, { type NearbyResult } from '@/components/NearbySheet'
 import ScrollJumpButton from '@/components/ScrollJumpButton'
 import SpeechPlayer from '@/components/SpeechPlayer'
 import { useSpeech } from '@/components/useSpeech'
-import { useHighlightSave } from '@/components/useHighlightSave'
+import { useSelectionRange } from '@/components/useSelectionRange'
+import { useNearbySourceHighlight } from '@/components/useNearbySourceHighlight'
 import DomainIcon from '@/components/DomainIcon'
 import TextStatsBar from '@/components/TextStatsBar'
 import { countHtml } from '@/lib/textStats'
-import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, copyExternalDeepLink, shortLinkUrl, type AnchorToken } from '@/lib/bookmarkLink'
-import { recordRecentNugget, removeRecentNugget, updateRecentScroll, getRecentScroll } from '@/lib/recentNuggets'
+import { encodeAnchorToken, decodeAnchorToken, copyDeepLink, copyExternalDeepLink, shortLinkUrl, type AnchorToken, type LinkKind } from '@/lib/bookmarkLink'
+import {
+  findRanges, resolveAnchor, buildRangeAnchor, buildSelectionQueryText, scrollRangeIntoView, squashWhitespace,
+  ANCHOR_CONTEXT_LEN,
+} from '@/lib/textQuoteAnchor'
+import { recordRecentNugget, removeRecentNugget, updateRecentScroll, getRecentScroll, SCROLL_RESTORE_KEY } from '@/lib/recentNuggets'
 import {
   HIGHLIGHT_PALETTE, UNDERLINE_PALETTE, MARK_LABEL_MAX,
   markColorVar, markKey, markLabel, hasMarkLabel, parseMarkScheme,
@@ -29,7 +36,7 @@ import {
 } from '@/lib/nuggetFontSize'
 import HoldToDeleteButton from '@/components/HoldToDeleteButton'
 import ToggleSwitch from '@/components/ToggleSwitch'
-import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Share2, Waypoints, Printer, Pencil, ArrowLeft, MessageSquareText, Settings, Eye, EyeOff, Plus, BookOpen, Save, Type, Hash, MessageSquare, RotateCcw, Radar } from 'lucide-react'
+import { Info, Highlighter, Search, ChevronUp, ChevronDown, X, Bookmark, Check, Link2, Share2, Waypoints, Printer, Pencil, ArrowLeft, MessageSquareText, Settings, Eye, EyeOff, Plus, BookOpen, Save, Type, Hash, MessageSquare, RotateCcw } from 'lucide-react'
 
 /**
  * A scheme the legend can adopt: either a curated template or another nugget's
@@ -159,18 +166,6 @@ function primaryLabel(labels: ConceptLabel[]): string {
 const MARK_SELECTOR = 'mark, u[data-color]'
 
 /**
- * The two deep-link flavours a reading spot can be copied as. They are NOT
- * interchangeable (see lib/bookmarkLink.ts):
- *   'internal' — site-relative `<a>` + Markdown fallback, for pasting into
- *                another nugget's text (survives a domain/server move).
- *   'external' — absolute short `/s/<code>` URL + "quote – url" plain text,
- *                for Reminders/Kalender/chat/mail, which render no Markdown.
- * Every copy entry point offers both and reports back which one was written, so
- * only the tapped control shows its check mark.
- */
-export type LinkKind = 'internal' | 'external'
-
-/**
  * Below this much scrollable height the reading-progress hairline is hidden —
  * on a nugget that barely scrolls it would jump from empty to full and mean
  * nothing.
@@ -242,26 +237,6 @@ function formatDate(iso: string): string {
  * occurrence of `query` within a single text node. Matches that straddle
  * element boundaries are intentionally ignored (rare for search terms).
  */
-function findRanges(root: HTMLElement, query: string): Range[] {
-  const ranges: Range[] = []
-  if (!query) return ranges
-  const needle = query.toLowerCase()
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-  let node: Node | null
-  while ((node = walker.nextNode())) {
-    const hay = (node.nodeValue ?? '').toLowerCase()
-    let idx = hay.indexOf(needle)
-    while (idx !== -1) {
-      const range = document.createRange()
-      range.setStart(node, idx)
-      range.setEnd(node, idx + needle.length)
-      ranges.push(range)
-      idx = hay.indexOf(needle, idx + needle.length)
-    }
-  }
-  return ranges
-}
-
 /** A query that is nothing but a verse reference: "6,2" / "6.2" / "6:2". */
 const VERSE_QUERY_RE = /^\s*(\d{1,3})\s*[.,:]\s*(\d{1,3})\s*$/
 
@@ -403,32 +378,18 @@ function lineHeightOf(range: Range): number {
   return Number.isFinite(lh) ? lh : 24
 }
 
-function scrollRangeIntoView(range: Range, topOffset?: number): void {
-  const rect = range.getBoundingClientRect()
-  if (rect.height === 0 && rect.width === 0) return
-  const anchor = topOffset ?? window.innerHeight / 2
-  const top = window.scrollY + rect.top - anchor
-  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-}
-
 // --- Bookmark text-quote anchors (W3C Web Annotation style) -----------------
 // A bookmark stores the quoted line plus a little surrounding context so it can
 // be re-located later by *meaning* rather than by a fragile scroll offset or
 // document index — and resolved to the right spot even when the quote repeats.
+// findRanges/resolveAnchor/buildRangeAnchor/scrollRangeIntoView/squashWhitespace/
+// ANCHOR_CONTEXT_LEN/NEARBY_QUERY_LEN now live in lib/textQuoteAnchor.ts, shared
+// with the Peek-Tab reader (Spinnennetz Stufe 2).
 
-/** How many characters of context to keep on each side of the quote. */
-const ANCHOR_CONTEXT_LEN = 30
 /** Max length of the human-readable line shown in the bookmark list. */
 const ANCHOR_LINE_LEN = 120
-/** Cap on the text sampled for a "Naheliegendes" query — generous since it feeds a similarity search, not a UI label. */
-const NEARBY_QUERY_LEN = 1000
 /** Block-level tags whose text forms one readable "line" for the list display. */
 const BLOCK_TAGS = new Set(['P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'PRE', 'TD', 'TH', 'FIGCAPTION'])
-
-/** Collapse any run of whitespace to a single space. */
-function squashWhitespace(text: string): string {
-  return text.replace(/\s+/g, ' ')
-}
 
 /** The text node at a viewport point, across the standard and WebKit caret APIs. */
 function caretTextNodeAtPoint(x: number, y: number): Text | null {
@@ -479,28 +440,6 @@ function nearestBlockText(node: Node, root: HTMLElement): string {
   return squashWhitespace(range.toString()).trim().slice(0, ANCHOR_LINE_LEN)
 }
 
-/**
- * The FULL containing block's text (start to end, not just from the captured
- * node onward) — generalizes nearestBlockText for "Naheliegendes": a search
- * query benefits from the whole paragraph's context, not a truncated tail
- * starting at the tap point. Capped much more generously than the bookmark
- * line label, since this feeds a similarity search, not a UI label.
- */
-function nearestBlockFullText(node: Node, root: HTMLElement): string {
-  let block: Node = root
-  let el: Node | null = node
-  while (el && el !== root) {
-    if (el.nodeType === Node.ELEMENT_NODE && BLOCK_TAGS.has((el as Element).tagName)) {
-      block = el
-      break
-    }
-    el = el.parentNode
-  }
-  const range = document.createRange()
-  range.selectNodeContents(block)
-  return squashWhitespace(range.toString()).trim().slice(0, NEARBY_QUERY_LEN)
-}
-
 /** Capture-time context: the text immediately before/after a whole text node. */
 function nodeAnchorContext(root: HTMLElement, node: Text): { prefix: string; suffix: string } {
   const before = document.createRange()
@@ -535,125 +474,13 @@ function anchorForMark(root: HTMLElement, mark: Element): AnchorToken {
   }
 }
 
-/**
- * Build a text-quote anchor from an arbitrary DOM Range within the reading
- * content — the selection-based counterpart to `anchorForMark`. Clamped to the
- * range's start text node (findRanges/resolveAnchor only match within a single
- * text node), so a selection spanning several paragraphs anchors at its start,
- * mirroring the comment anchor. Returns null when the range holds no text.
- */
-function buildRangeAnchor(root: HTMLElement, sel: Range): AnchorToken | null {
-  let node: Text | null = null
-  let startOffset = 0
-  if (sel.startContainer.nodeType === Node.TEXT_NODE) {
-    node = sel.startContainer as Text
-    startOffset = sel.startOffset
-  } else {
-    const walker = document.createTreeWalker(sel.startContainer, NodeFilter.SHOW_TEXT)
-    let t = walker.nextNode() as Text | null
-    while (t && (t.nodeValue ?? '').trim() === '') t = walker.nextNode() as Text | null
-    node = t
-  }
-  if (!node) return null
-
-  const nodeText = node.nodeValue ?? ''
-  let endOffset = sel.endContainer === node ? sel.endOffset : nodeText.length
-  let quote = nodeText.slice(startOffset, endOffset).trim()
-  if (!quote) { startOffset = 0; endOffset = nodeText.length; quote = nodeText.trim() }
-  if (!quote) return null
-
-  const before = document.createRange()
-  before.setStart(root, 0)
-  before.setEnd(node, startOffset)
-  const after = document.createRange()
-  after.setStart(node, Math.min(endOffset, nodeText.length))
-  after.setEnd(root, root.childNodes.length)
-  return {
-    quote,
-    prefix: squashWhitespace(before.toString()).slice(-ANCHOR_CONTEXT_LEN),
-    suffix: squashWhitespace(after.toString()).slice(0, ANCHOR_CONTEXT_LEN),
-  }
-}
-
-/** Length of the longest common suffix of `a` and `b`. */
-function commonSuffixLen(a: string, b: string): number {
-  let i = 0
-  while (i < a.length && i < b.length && a[a.length - 1 - i] === b[b.length - 1 - i]) i++
-  return i
-}
-
-/** Length of the longest common prefix of `a` and `b`. */
-function commonPrefixLen(a: string, b: string): number {
-  let i = 0
-  while (i < a.length && i < b.length && a[i] === b[i]) i++
-  return i
-}
-
-/**
- * Re-locate a bookmark anchor in the rendered content. Finds every occurrence of
- * the quote, then — when several exist — picks the one whose surrounding text best
- * matches the stored prefix/suffix, so duplicate lines resolve to the right spot.
- */
-function resolveAnchor(root: HTMLElement, quote: string, prefix: string, suffix: string): Range | null {
-  const ranges = findRanges(root, quote)
-  if (ranges.length <= 1) return ranges[0] ?? null
-
-  let best = ranges[0]
-  let bestScore = -1
-  for (const range of ranges) {
-    const before = document.createRange()
-    before.setStart(root, 0)
-    before.setEnd(range.startContainer, range.startOffset)
-    const after = document.createRange()
-    after.setStart(range.endContainer, range.endOffset)
-    after.setEnd(root, root.childNodes.length)
-    const score =
-      commonSuffixLen(squashWhitespace(before.toString()), prefix) +
-      commonPrefixLen(squashWhitespace(after.toString()), suffix)
-    if (score > bestScore) { bestScore = score; best = range }
-  }
-  return best
-}
-
 /** sessionStorage key carrying a bookmark target across navigation to the nugget. */
 const BOOKMARK_JUMP_KEY = 'nugget-bookmark-jump'
-/** sessionStorage key signalling that the recent list wants the saved scroll restored. */
-const SCROLL_RESTORE_KEY = 'nugget-restore-scroll'
-
-/**
- * Read-only Tiptap reading view with debounced highlight persistence.
- * Mounted only once the nugget is loaded so the highlight hook is seeded with
- * the real initial HTML (its baseline is captured at first render).
- */
-function NuggetReader({ id, contentHtml, markScheme, onComment, onCopyInternalLink, onCopyExternalLink, linkCopiedKind }: {
-  id: string
-  contentHtml: string
-  markScheme: MarkScheme
-  onComment?: () => void
-  onCopyInternalLink?: () => void
-  onCopyExternalLink?: () => void
-  linkCopiedKind?: LinkKind | null
-}) {
-  const { html, handleContentChange, handleEditorReady } = useHighlightSave(id, contentHtml)
-  return (
-    <NuggetEditor
-      value={html}
-      editable={false}
-      onChange={handleContentChange}
-      onReady={handleEditorReady}
-      markScheme={markScheme}
-      onComment={onComment}
-      onCopyInternalLink={onCopyInternalLink}
-      onCopyExternalLink={onCopyExternalLink}
-      linkCopiedKind={linkCopiedKind}
-      renderMermaid
-    />
-  )
-}
 
 export default function NuggetDetailPage() {
   const router = useRouter()
   const { id } = useParams<{ id: string }>()
+  const tabs = useTabs()
 
   const [nugget, setNugget]   = useState<Nugget | null>(null)
   const [relatedNuggets, setRelatedNuggets] = useState<RelatedNugget[]>([])
@@ -723,15 +550,6 @@ export default function NuggetDetailPage() {
   // Which mark row's deep link was just copied, and in which flavour — the row
   // carries one button per flavour, so the index alone would check-mark both.
   const [copiedMark, setCopiedMark] = useState<{ index: number; kind: LinkKind } | null>(null)
-  // "Naheliegendes" (Spinnennetz Stufe 1) — a MANUAL, one-shot lookup: tapping
-  // the toolbar button samples the current reading position and searches the
-  // fine-grained KnowledgeUnit index (see /api/nearby). Not live-tracked —
-  // results don't change again while the sheet is open.
-  const [nearbyOpen, setNearbyOpen] = useState(false)
-  const [nearbyLoading, setNearbyLoading] = useState(false)
-  const [nearbyError, setNearbyError] = useState<string | null>(null)
-  const [nearbyResults, setNearbyResults] = useState<NearbyResult[]>([])
-  const [nearbyQueryText, setNearbyQueryText] = useState('')
   // Margin comments (annotations): anchored the same way as bookmarks
   // (text-quote anchor), stored as metadata — contentHtml is never touched.
   const [annotations, setAnnotations] = useState<NuggetAnnotation[]>([])
@@ -752,10 +570,6 @@ export default function NuggetDetailPage() {
   const [resolvedAnnotationIds, setResolvedAnnotationIds] = useState<string[]>([])
   // Bumped (debounced) when the reader DOM mutates, to re-resolve anchors.
   const [annotationResolveTick, setAnnotationResolveTick] = useState(0)
-  // Last non-collapsed DOM selection inside the content (via selectionchange):
-  // the comment button's raw material — reading the selection in its click
-  // handler is too late, iOS may already have collapsed it.
-  const selectionRangeRef = useRef<Range | null>(null)
   // Debounce timers for comment PATCHes, one per comment id.
   const annotationSaveTimers = useRef<Map<string, number>>(new Map())
   const [searchOpen, setSearchOpen]   = useState(false)
@@ -765,6 +579,13 @@ export default function NuggetDetailPage() {
   // Wraps the reading content; used to record how far into it the user scrolled
   // so the edit view can restore the same position, and to locate highlight marks.
   const contentRef = useRef<HTMLDivElement>(null)
+  // Last non-collapsed DOM selection inside the content — the raw material
+  // for the comment button, the link/Naheliegendes selection actions.
+  const selectionRangeRef = useSelectionRange(contentRef)
+  // Persistently marks the passage a currently-open Naheliegendes search came
+  // from, whenever THIS nugget is that search's source — so scrolling back
+  // to it (or returning from another tab) still shows what's being referenced.
+  useNearbySourceHighlight(contentRef, id)
   // The sticky action bar; its bottom edge marks where the visible reading area
   // starts, i.e. the point a bookmark samples as the user's current line.
   const stickyRef = useRef<HTMLDivElement>(null)
@@ -815,6 +636,14 @@ export default function NuggetDetailPage() {
     load()
   }, [load])
 
+  // Registers this nugget as "Haupt" with the tab system (Spinnennetz Stufe
+  // 2) — used only for open-result dedup (a Naheliegendes result pointing
+  // back at Haupt switches there instead of opening a redundant peek tab).
+  useEffect(() => {
+    tabs.setHauptId(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tabs.setHauptId is a raw useState setter (referentially stable); depending on the whole `tabs` object would re-run this on every unrelated tab-state change
+  }, [id, tabs.setHauptId])
+
   // Load this nugget's comments. A same-segment hop to another nugget resets
   // the whole comment state — the sheet must never show the previous nugget's.
   useEffect(() => {
@@ -830,21 +659,6 @@ export default function NuggetDetailPage() {
       .then((list: NuggetAnnotation[]) => setAnnotations(list))
       .catch(() => {})
   }, [id])
-
-  // Track the last non-collapsed selection inside the reading content. The
-  // BubbleMenu's comment button needs the DOM Range to build the anchor, and
-  // by the time its click handler runs the selection may already be collapsed.
-  useEffect(() => {
-    const onSelectionChange = () => {
-      const sel = document.getSelection()
-      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
-      const range = sel.getRangeAt(0)
-      if (!contentRef.current?.contains(range.commonAncestorContainer)) return
-      selectionRangeRef.current = range.cloneRange()
-    }
-    document.addEventListener('selectionchange', onSelectionChange)
-    return () => document.removeEventListener('selectionchange', onSelectionChange)
-  }, [])
 
   // Re-resolve comment anchors (debounced) whenever the reader DOM changes:
   // Tiptap renders async, and adding/removing highlights redraws nodes, which
@@ -1424,65 +1238,27 @@ export default function NuggetDetailPage() {
   }
 
   /**
-   * "Naheliegendes" (Spinnennetz Stufe 1): samples the reading position the
-   * same way addBookmark does (caret-at-point below the sticky bar), but
-   * takes the WHOLE containing block's text (nearestBlockFullText), not just
-   * the tail from the tap point — the search benefits from full paragraph
-   * context. A manual, one-shot query: opens the sheet immediately (loading
-   * state), then fills it once /api/nearby answers.
+   * "Naheliegendes" (Spinnennetz Stufe 2): the selection-based trigger,
+   * replacing the old scroll-position sampling — precise, WYSIWYG, same
+   * mechanism as addAnnotation/copySelectionLink below. The query text is
+   * sel.toString() (the FULL multi-node selection), not buildRangeAnchor's
+   * quote (clamped to the first text node — right for a jump-back anchor,
+   * wrong for a multi-paragraph search query). Opens/refreshes the shared
+   * Naheliegendes tab and switches to it.
    */
-  const openNearby = async () => {
+  const triggerNearbySearch = () => {
     const root = contentRef.current
-    if (!root) return
-    const contentLeft  = root.getBoundingClientRect().left + 24
-    const stickyBottom = stickyRef.current?.getBoundingClientRect().bottom ?? 0
-
-    let node: Text | null = null
-    for (const dy of [8, 28, 48, 80, 120]) {
-      const hit = caretTextNodeAtPoint(contentLeft, stickyBottom + dy)
-      if (hit && (hit.nodeValue ?? '').trim().length >= 2) { node = hit; break }
-    }
-    if (!node) return
-
-    const queryText = nearestBlockFullText(node, root)
+    const sel = selectionRangeRef.current
+    if (!root || !sel || !nugget) return
+    const queryText = buildSelectionQueryText(sel)
     if (!queryText) return
-
-    setNearbyQueryText(queryText)
-    setNearbyOpen(true)
-    setNearbyLoading(true)
-    setNearbyError(null)
-    setNearbyResults([])
-
-    try {
-      const res = await fetch(`/api/nearby?${new URLSearchParams({ nuggetId: id, text: queryText })}`)
-      if (!res.ok) {
-        const body = await res.json().catch(() => null)
-        setNearbyError(typeof body?.error === 'string' ? body.error : 'Suche fehlgeschlagen.')
-        return
-      }
-      const data = await res.json()
-      setNearbyResults(Array.isArray(data.results) ? data.results : [])
-    } catch {
-      setNearbyError('Suche fehlgeschlagen — Verbindung geprüft?')
-    } finally {
-      setNearbyLoading(false)
-    }
-  }
-
-  /**
-   * "Ganz öffnen" in the Naheliegendes preview: a result in THIS nugget jumps
-   * in place (jumpToAnchor, same as any other in-nugget anchor); a result in
-   * another nugget navigates there via the normal ?bm= deep link — mirrors
-   * followNuggetLink's same-nugget/cross-nugget split.
-   */
-  const openNearbyResultFull = (result: NearbyResult) => {
-    const anchor = { quote: result.quote, prefix: result.prefix, suffix: result.suffix }
-    setNearbyOpen(false)
-    if (result.nuggetId === id) {
-      jumpToAnchor(anchor)
-    } else {
-      router.push(`/nugget/${result.nuggetId}?bm=${encodeAnchorToken(anchor)}`)
-    }
+    const anchor = buildRangeAnchor(root, sel)
+    tabs.triggerNearby({
+      sourceNuggetId: id,
+      sourceNuggetTitle: nugget.title,
+      queryText,
+      anchor,
+    })
   }
 
   /**
@@ -1702,6 +1478,42 @@ export default function NuggetDetailPage() {
   useEffect(() => clearSearchHighlights, [])
   useEffect(() => clearAnnotationHighlights, [])
 
+  // Spinnennetz Stufe 2: switching away from Haupt to another tab closes any
+  // open panel/search first — the SAME "transient UI state doesn't survive
+  // an underlying identity change" pattern this page already applies when
+  // `id` itself changes (the annotation-loading effect resets on a new id,
+  // above). Necessary, not just tidy: search/comment highlighting uses the
+  // CSS Custom Highlight API, registered GLOBALLY per document — leaving a
+  // stale registration behind while a Peek/Naheliegendes tab is shown risks
+  // it bleeding into whatever that tab renders once Haupt's own DOM unmounts.
+  useEffect(() => {
+    if (tabs.activeTab.kind === 'haupt') return
+    closeSearch()
+    closeAnnotations()
+    setMarksOpen(false)
+    setInfoOpen(false)
+    setViewOpen(false)
+    setAddConceptOpen(false)
+    setImportOpen(false)
+    setSaveTemplateOpen(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately only reacts to the tab kind, not the (unmemoized) close functions' identity
+  }, [tabs.activeTab.kind])
+
+  // Restores roughly where the reader left off when switching BACK to Haupt
+  // from another tab: Haupt's own DOM was unmounted while a Peek/Naheliegendes
+  // tab was shown, so window.scrollY currently reflects THAT tab's (usually
+  // much shorter) content, not Haupt's. Instant, not smooth — same reasoning
+  // as ScrollJumpButton's long jumps.
+  const wasHauptRef = useRef(true)
+  useEffect(() => {
+    const isHaupt = tabs.activeTab.kind === 'haupt'
+    if (isHaupt && !wasHauptRef.current && nugget) {
+      const target = getRecentScroll(nugget.id)
+      if (target !== undefined) window.scrollTo({ top: target })
+    }
+    wasHauptRef.current = isHaupt
+  }, [tabs.activeTab.kind, nugget])
+
   // Guards the one-shot auto-search seeded from the all-list (`?q=`).
   const didInitSearch = useRef(false)
 
@@ -1834,6 +1646,29 @@ export default function NuggetDetailPage() {
     if (followNuggetLink(href)) event.preventDefault()
   }
 
+  // Spinnennetz Stufe 2 — "swap, not stack": only ONE tab's content is ever
+  // mounted. Checked BEFORE Haupt's own loading/not-found states, since a
+  // Peek/Naheliegendes tab is independent of whether Haupt's nugget has
+  // (re-)loaded yet — e.g. after a hard navigation to a different /nugget/
+  // URL while a peek tab was still active. NuggetDetailPage itself is never
+  // unmounted by this branch (same component instance, same effects/state
+  // above) — only ITS OWN content stops being rendered while another tab is
+  // shown; the tab-away cleanup effect above handles the resulting stale
+  // search/panel state.
+  if (tabs.activeTab.kind === 'nearby') return <NearbyTabView />
+  if (tabs.activeTab.kind === 'peek') {
+    const slot = tabs.activeTab.slot
+    // Keyed by BOTH slot and its current occupant: switching between already-
+    // open peek pills changes only the `slot` PROP on the same component type
+    // at this position, which React reuses rather than remounts by default —
+    // and useHighlightSave (inside NuggetReader) seeds its content state only
+    // ONCE at mount, exactly the same "key={nugget.id}" gotcha this file's own
+    // Haupt reader already has to observe (see the NuggetReader usage below).
+    // Without this key, switching slot 0 → slot 1 → slot 2 kept showing
+    // whichever nugget was loaded at the LAST real mount, not the active slot's.
+    return <PeekTabView key={`${slot}-${tabs.peeks[slot]?.nuggetId ?? ''}`} slot={slot} />
+  }
+
   if (loading) {
     return (
       <div className="pt-3">
@@ -1904,8 +1739,8 @@ export default function NuggetDetailPage() {
         // No `relative` here: it would fight `sticky` for the position property,
         // and a sticky box is already a containing block for the absolutely
         // positioned progress hairline below.
-        className="sticky top-0 z-30 -mx-4 px-4 pt-3 pb-3 win-controls-inset"
-        style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
+        className="sticky z-30 -mx-4 px-4 pt-3 pb-3 win-controls-inset"
+        style={{ top: 'var(--tabbar-h, 0px)', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
         {/* All actions as equal-sized icon buttons in ONE flat row, spread
             evenly across the full bar width (justify-between) — a right-packed
@@ -2149,19 +1984,6 @@ export default function NuggetDetailPage() {
                 <Printer size={14} />
                 Als PDF
               </Link>
-              {/* "Naheliegendes" (Spinnennetz Stufe 1) — a manual, occasional
-                  lookup, not an always-reachable action, so it lives here
-                  rather than as a 9th icon in the already width-budgeted top
-                  action bar. Visible to any reader, not owner-gated — a
-                  read-only lookup like Denkspuren/Netz. */}
-              <button
-                onClick={openNearby}
-                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg"
-                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
-              >
-                <Radar size={14} />
-                Naheliegendes
-              </button>
               {isOwner && (
                 <HoldToDeleteButton
                   onConfirm={handleDelete}
@@ -2365,6 +2187,7 @@ export default function NuggetDetailPage() {
           onCopyInternalLink={() => copySelectionLink('internal')}
           onCopyExternalLink={() => copySelectionLink('external')}
           linkCopiedKind={selectionLinkCopied}
+          onNearby={triggerNearbySearch}
         />
       </div>
 
@@ -2387,20 +2210,6 @@ export default function NuggetDetailPage() {
           onDelete={deleteAnnotation}
           onClose={closeAnnotations}
           onNuggetLink={followNuggetLink}
-        />
-      )}
-
-      {/* "Naheliegendes" — Spinnennetz Stufe 1's manual retrieval view. Same
-          no-backdrop bottom-sheet pattern as AnnotationSheet; a tap on a
-          result opens an in-sheet preview rather than navigating away. */}
-      {nearbyOpen && (
-        <NearbySheet
-          results={nearbyResults}
-          loading={nearbyLoading}
-          error={nearbyError}
-          queryText={nearbyQueryText}
-          onOpenFull={openNearbyResultFull}
-          onClose={() => setNearbyOpen(false)}
         />
       )}
 

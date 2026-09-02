@@ -279,8 +279,8 @@ export default function EditPage() {
       {/* Sticky action bar — Abbrechen / Speichern stay reachable while scrolling
           a long nugget, instead of sitting far below the content. */}
       <header
-        className="sticky top-0 z-30 -mx-4 px-4 pt-3 pb-3 flex items-center justify-between gap-3 win-controls-inset"
-        style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
+        className="sticky z-30 -mx-4 px-4 pt-3 pb-3 flex items-center justify-between gap-3 win-controls-inset"
+        style={{ top: 'var(--tabbar-h, 0px)', background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
         <h1 className="text-xl" style={{ color: 'var(--ink)' }}>
           Bearbeiten
